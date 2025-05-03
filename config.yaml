@@ -6,4 +6,3 @@ Environment Variables:
   EVE_PRIVATE_DATABASE_FOLDER: "_privateData/"
   AUTH_DATA_FOLDER: "auth/.gitignore/"
   SDE_PATH: "_sde/"
-  SYSTEM_GRAPH_FILE: "route/.gitignore/eve_graph.json"
