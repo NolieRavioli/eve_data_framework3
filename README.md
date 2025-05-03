@@ -4,26 +4,26 @@
 It provides authentication, persistent databases, asset fetching, industry job tracking, skill management, and more.
 
 <ol type='1'>
-<a href="#features"><li>✨ Features</li></a>
-<a href="#project-structure"><li>📂 Project Structure</li></a>
-<a href="#quickstart"><li>⚙️ Quickstart</li></a>
+<a href="#-features"><li>✨ Features</li></a>
+<a href="#-project-structure"><li>📂 Project Structure</li></a>
+<a href="#%EF%B8%8F-quickstart"><li>⚙️ Quickstart</li></a>
 <ol>
 <a href="#1-install-requirements"><li>Install Requirements</li></a>
 <a href="#2-configure-environment"><li>Configure Environment</li></a>
 <a href="#3-run-the-app"><li>Run the App</li></a>
 </ol>
-<a href="#security"><li>🔒 Security</li></a>
-<a href="#system-principles"><li>🛠️ System Principles</li></a>
+<a href="#-security"><li>🔒 Security</li></a>
+<a href="#%EF%B8%8F-system-principles"><li>🛠️ System Principles</li></a>
 <a href="#fetchers"><li>🚀 Fetchers</li></a>
 <ol>
 <a href="#private-toon-fetchers"><li>Private Toon Fetchers</li></a>
 <a href="#public-fetchers"><li>Public Fetchers</li></a>
 </ol>
-<a href="#future-roadmap"><li>📖 Future Roadmap</li></a>
-<a href="#development-notes"><li>🧹 Development Notes</li></a>
-<a href="#contributing"><li>🤝 Contributing</li></a>
-<a href="#license"><li>🛡️ License</li></a>
-<a href="#made-with--by-nolan"><li>✨ Made with ♥ by Nolan</li></a>
+<a href="#-future-roadmap"><li>📖 Future Roadmap</li></a>
+<a href="#-development-notes"><li>🧹 Development Notes</li></a>
+<a href="#-contributing"><li>🤝 Contributing</li></a>
+<a href="#%EF%B8%8F-license"><li>🛡️ License</li></a>
+<a href="#-made-with--by-nolan"><li>✨ Made with ♥ by Nolan</li></a>
 </ol>
 
 ---
