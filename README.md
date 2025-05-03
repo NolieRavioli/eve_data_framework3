@@ -14,7 +14,7 @@ It provides authentication, persistent databases, asset fetching, industry job t
 </ol>
 <a href="#-security"><li>🔒 Security</li></a>
 <a href="#%EF%B8%8F-system-principles"><li>🛠️ System Principles</li></a>
-<a href="#fetchers"><li>🚀 Fetchers</li></a>
+<a href="#-fetchers"><li>🚀 Fetchers</li></a>
 <ol>
 <a href="#private-toon-fetchers"><li>Private Toon Fetchers</li></a>
 <a href="#public-fetchers"><li>Public Fetchers</li></a>
