@@ -31,6 +31,9 @@ def safe_request(method, url, max_retries=5, backoff_factor=2, **kwargs):
             if resp.status_code == 403:
                 logger.warning(f"[Forbidden] 403 on {url}, skipping.")
                 return None
+            if resp.status_code == 401:
+                logger.warning(f"[Unauthorized] 401 on {url}, skipping retries.")
+                return None
             resp.raise_for_status()
             return resp
         except requests.RequestException as e:
