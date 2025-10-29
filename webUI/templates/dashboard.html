@@ -70,8 +70,9 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 1.5rem;
+            align-items: start;
         }
 
         .card {
@@ -80,6 +81,16 @@
             background: var(--bg-card);
             box-shadow: 0 18px 45px rgba(8, 47, 73, 0.4);
             border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        .card.table-card {
+            grid-column: span 2;
+        }
+
+        @media (max-width: 1024px) {
+            .card.table-card {
+                grid-column: span 1;
+            }
         }
 
         .card h2 {
@@ -158,10 +169,15 @@
             color: #0b1120;
         }
 
+        .table-wrapper {
+            margin-top: 1rem;
+            overflow-x: auto;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 1rem;
+            min-width: 100%;
         }
 
         th, td {
@@ -328,91 +344,97 @@
                 {% endif %}
             </article>
 
-            <article class="card">
+            <article class="card table-card">
                 <h2>Top Assets</h2>
                 {% if assets_summary %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Quantity</th>
-                            <th>Stacks</th>
-                            <th>Locations</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in assets_summary %}
-                        <tr>
-                            <td>{{ row.name }}</td>
-                            <td>{{ row.quantity }}</td>
-                            <td>{{ row.stacks }}</td>
-                            <td>{{ row.locations|join(', ') }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Quantity</th>
+                                <th>Stacks</th>
+                                <th>Locations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in assets_summary %}
+                            <tr>
+                                <td>{{ row.name }}</td>
+                                <td>{{ row.quantity }}</td>
+                                <td>{{ row.stacks }}</td>
+                                <td>{{ row.locations|join(', ') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
                 {% else %}
                     <p>No assets recorded for this character yet.</p>
                 {% endif %}
             </article>
 
-            <article class="card">
+            <article class="card table-card">
                 <h2>Recent Wallet Transactions</h2>
                 {% if wallet_txns %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Type</th>
-                            <th>Qty</th>
-                            <th>ISK</th>
-                            <th>Unit Price</th>
-                            <th>Direction</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for txn in wallet_txns %}
-                        <tr>
-                            <td>{{ txn.date }}</td>
-                            <td>{{ txn.type_name }}</td>
-                            <td>{{ txn.quantity }}</td>
-                            <td>{{ '%.2f'|format(txn.amount) }}</td>
-                            <td>{{ '%.2f'|format(txn.unit_price or 0) }}</td>
-                            <td>{{ 'Buy' if txn.is_buy else 'Sell' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>ISK</th>
+                                <th>Unit Price</th>
+                                <th>Direction</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in wallet_txns %}
+                            <tr>
+                                <td>{{ txn.date }}</td>
+                                <td>{{ txn.type_name }}</td>
+                                <td>{{ txn.quantity }}</td>
+                                <td>{{ '%.2f'|format(txn.amount) }}</td>
+                                <td>{{ '%.2f'|format(txn.unit_price or 0) }}</td>
+                                <td>{{ 'Buy' if txn.is_buy else 'Sell' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
                 {% else %}
                     <p>Run the wallet update to see transaction history.</p>
                 {% endif %}
             </article>
 
-            <article class="card">
+            <article class="card table-card">
                 <h2>Wallet Journal</h2>
                 {% if wallet_journal %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Type</th>
-                            <th>Amount</th>
-                            <th>Balance</th>
-                            <th>Description</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for entry in wallet_journal %}
-                        <tr>
-                            <td>{{ entry.date }}</td>
-                            <td>{{ entry.ref_type }}</td>
-                            <td>{{ '%.2f'|format(entry.amount or 0) }}</td>
-                            <td>{{ '%.2f'|format(entry.balance or 0) }}</td>
-                            <td>{{ entry.description }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Balance</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in wallet_journal %}
+                            <tr>
+                                <td>{{ entry.date }}</td>
+                                <td>{{ entry.ref_type }}</td>
+                                <td>{{ '%.2f'|format(entry.amount or 0) }}</td>
+                                <td>{{ '%.2f'|format(entry.balance or 0) }}</td>
+                                <td>{{ entry.description }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
                 {% else %}
                     <p>No journal entries stored yet.</p>
                 {% endif %}
