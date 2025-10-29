@@ -9,6 +9,7 @@ from db.database import get_public_session, get_private_session
 from db.models import Character, Structure, MarketStructure, MarketOrder
 from util.sde import region_id_from_system_id
 from util.utils import get_token
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries
 
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
+            resp = esi_get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
 
             if resp.status_code in (403, 404):
                 logger.warning(f"[MarketFetch] Skipping {structure_id} page {page}: HTTP {resp.status_code}")

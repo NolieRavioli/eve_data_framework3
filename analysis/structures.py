@@ -9,6 +9,7 @@ from datetime import datetime
 import requests
 
 from util.utils import get_token, batched
+from util.esi_rate_limiter import esi_request
 from db.database import get_private_session, get_public_session
 from db.models import Structure, Asset, IndustryJob, Character
 
@@ -23,7 +24,8 @@ def safe_request(method, url, max_retries=5, backoff_factor=2, **kwargs):
     delay = 1
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.request(method, url, timeout=30, **kwargs)
+            kwargs.setdefault("timeout", 30)
+            resp = esi_request(method, url, **kwargs)
             if resp.status_code == 420:
                 logger.warning(f"[RateLimit] 420 on {url}, sleeping 7s (attempt {attempt})")
                 time.sleep(7)

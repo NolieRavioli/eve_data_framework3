@@ -1,11 +1,12 @@
 # fetchers/private/personal_assets.py
 
-import requests
 import logging
+import requests
 
 from util.utils import get_token
 from db.database import get_private_session
 from db.models import Asset
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def fetch_assets(char_id: int, access_token: str) -> list:
 
     while True:
         url = f"{ESI}/characters/{char_id}/assets/"
-        resp = requests.get(url, headers=headers, params={"page": page})
+        resp = esi_get(url, headers=headers, params={"page": page})
         resp.raise_for_status()
 
         data = resp.json()

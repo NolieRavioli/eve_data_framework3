@@ -1,13 +1,14 @@
 # fetchers/private/personal_skills.py
 
-import requests
 import logging
+import requests
 from datetime import datetime
 
 from db.database import get_private_session
 from db.models import Skill, SkillQueue
 from util.utils import get_token
 from util.auth import TokenDBManager
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def fetch_skills(char_id: int, access_token: str) -> list[dict]:
     """Fetch all skills for a character."""
     url = f"{ESI}/characters/{char_id}/skills/"
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = esi_get(url, headers=headers)
     resp.raise_for_status()
     return resp.json().get("skills", [])
 
@@ -27,7 +28,7 @@ def fetch_skillqueue(char_id: int, access_token: str) -> list[dict]:
     """Fetch skill queue for a character."""
     url = f"{ESI}/characters/{char_id}/skillqueue/"
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = esi_get(url, headers=headers)
     resp.raise_for_status()
     return resp.json()
 

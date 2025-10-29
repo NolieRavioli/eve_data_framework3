@@ -1,12 +1,13 @@
 # esi/personal_wallet.py
 
-import requests
 import logging
+import requests
 from datetime import datetime
 
 from db.database import get_private_session
 from db.models import WalletJournal, WalletTransaction, WalletBalance
 from util.utils import get_token
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def fetch_wallet_journal(char_id: int, access_token: str) -> list:
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
 
@@ -35,7 +36,7 @@ def fetch_wallet_transactions(char_id: int, access_token: str) -> list:
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
 
@@ -48,7 +49,7 @@ def fetch_wallet_balance(char_id: int, access_token: str) -> float:
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
     payload = resp.json()
 
