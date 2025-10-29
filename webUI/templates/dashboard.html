@@ -70,7 +70,7 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
             gap: 1.5rem;
             align-items: start;
         }
@@ -171,7 +171,9 @@
 
         .table-wrapper {
             margin-top: 1rem;
-            overflow-x: auto;
+            max-height: 420px;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
 
         table {
@@ -325,6 +327,7 @@
                         <a class="chip" href="{{ url_for('update_personal.update_bookmarks') }}">Bookmarks</a>
                         <a class="chip" href="{{ url_for('update_public.update_public_sde') }}">Refresh SDE</a>
                         <a class="chip" href="{{ url_for('update_public.update_public_structures') }}">Structures</a>
+                        <a class="chip" href="{{ url_for('update_public.update_public_structure_markets') }}">Structure Markets</a>
                         <a class="chip" href="{{ url_for('update_public.update_public_market') }}">Public Market</a>
                         <a class="chip" href="{{ url_for('update_public.update_public_contracts') }}">Contracts</a>
                     </div>
