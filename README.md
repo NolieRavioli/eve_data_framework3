@@ -47,23 +47,51 @@ It provides authentication, persistent databases, asset fetching, industry job t
 
 ## 📂 Project Structure
 ```plaintext
-eve_data_framework3/    
-├── _privateData/           # Per-owner SQLite databases (private toon data)  
-├── _publicData/            # Shared public database (e.g., contracts)  
-├── _sde/                   # Static Data Exports (EVE types, stations)  
-├── analysis/               # Analysis modules (e.g., job_slots)  
-├── db/                     # Database Initialization, Models.  
-├── esi/					# Private Data Fetch Modules. Personal toon data (assets, skills, wallet, etc.)  
-│   └── public/             # Public Data Fetch Modules market and structure info  
-├── util/                   # Helpers: Auth, SDE, Utils  
-├── webUI/                  # Flask WebUI, routes, and logic  
-├── !getstruct.py           # Dev tool for project structure output  
-├── scheduler.py            # (Future) Background Task Orchestrator  
-├── main.py                 # Main App Starter  
-├── requirements.txt        # Python Requirements  
-├── config.yaml             # Config file for env variables  
-├── README.md               # This File  
-└── LICENCE.md              # License Information (MIT)  
+eve_data_framework3-codex-analyze-codebase-for-optimization/  
+├── analysis/  
+│   ├── job_slots.py  
+│   └── structures.py  
+├── db/  
+│   ├── database.py  
+│   └── models.py  
+├── esi/  
+│   ├── public/  
+│   │   ├── market_contracts.py  
+│   │   ├── market_station.py  
+│   │   ├── market_structure.py  
+│   │   └── static_data.py  
+│   ├── corp_bookmarks.py  
+│   ├── personal_assets.py  
+│   ├── personal_bookmarks.py  
+│   ├── personal_industry_jobs.py  
+│   ├── personal_skills.py  
+│   └── personal_wallet.py  
+├── util/  
+│   ├── __init__.py  
+│   ├── auth.py  
+│   ├── esi_rate_limiter.py  
+│   ├── sde.py  
+│   └── utils.py  
+├── webUI/  
+│   ├── templates/  
+│   │   ├── console_printout.html  
+│   │   ├── dashboard.html  
+│   │   └── market_browser.html  
+│   ├── __init__.py  
+│   ├── app.py  
+│   ├── dashboard.py  
+│   ├── market_browser.py  
+│   ├── personal_routes.py  
+│   ├── public_routes.py  
+│   └── sso.py  
+├── !getstruct.py  
+├── .gitignore  
+├── LICENCE.md  
+├── README.md  
+├── config.yaml  
+├── main.py  
+├── quick.py  
+└── requirements.txt
 ```
 
 ---
@@ -211,4 +239,5 @@ eve_data_framework3/
 ├── config.yaml  
 ├── main.py  
 └── requirements.txt
+
 ```
