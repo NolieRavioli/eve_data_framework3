@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title or 'Task Output' }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% if redirect_url %}
+    <meta http-equiv="refresh" content="5; url={{ redirect_url }}">
+    {% endif %}
+    <style>
+        body {
+            font-family: "Fira Mono", "Courier New", Courier, monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header, footer {
+            padding: 1rem 1.5rem;
+            background: #252526;
+            border-bottom: 1px solid #333;
+        }
+        footer {
+            border-top: 1px solid #333;
+            border-bottom: none;
+            margin-top: auto;
+            font-size: 0.9rem;
+        }
+        main {
+            padding: 1.5rem;
+        }
+        pre {
+            background: #1e1e1e;
+            color: inherit;
+            padding: 1rem;
+            border: 1px solid #333;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 70vh;
+        }
+        .status-success {
+            color: #4caf50;
+        }
+        .status-error {
+            color: #f44336;
+        }
+        a {
+            color: #82aaff;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>{{ title or 'Task Output' }}</h1>
+</header>
+<main>
+    <p class="{{ 'status-success' if success else 'status-error' }}">
+        {{ 'Task completed successfully.' if success else 'Task encountered an error. See logs below.' }}
+    </p>
+    <pre>{% for line in logs %}{{ line }}
+{% endfor %}</pre>
+</main>
+<footer>
+    {% if redirect_url %}
+        Redirecting shortly… If you are not redirected, <a href="{{ redirect_url }}">click here</a>.
+    {% else %}
+        <a href="{{ url_for('dashboard.home') }}">Return to dashboard</a>
+    {% endif %}
+</footer>
+</body>
+</html>
