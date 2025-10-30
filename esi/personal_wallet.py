@@ -1,12 +1,13 @@
 # esi/personal_wallet.py
 
-import requests
 import logging
+import requests
 from datetime import datetime
 
 from db.database import get_private_session
 from db.models import WalletJournal, WalletTransaction, WalletBalance
 from util.utils import get_token
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def fetch_wallet_journal(char_id: int, access_token: str) -> list:
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
 
@@ -35,26 +36,42 @@ def fetch_wallet_transactions(char_id: int, access_token: str) -> list:
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
 
 
 def fetch_wallet_balance(char_id: int, access_token: str) -> float:
     """Fetch the primary (division 1) wallet balance for a character."""
+
     url = f"{ESI}/characters/{char_id}/wallet/"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
-    resp = requests.get(url, headers=headers, params=DATASOURCE)
+    resp = esi_get(url, headers=headers, params=DATASOURCE)
     resp.raise_for_status()
-    wallets = resp.json()  # eg: [{"division":1,"balance":123.4}, ...]
-    # pick division 1 if present, else first
-    for w in wallets:
-        if w.get("division") == 1:
-            return w.get("balance", 0.0)
-    return wallets[0].get("balance", 0.0) if wallets else 0.0
+    payload = resp.json()
+
+    # The endpoint can return a simple number (legacy behaviour) or
+    # a list of division objects. Handle both to remain future proof.
+    if isinstance(payload, (int, float)):
+        return float(payload)
+
+    if isinstance(payload, dict):
+        return float(payload.get("balance", 0.0))
+
+    if isinstance(payload, list):
+        for entry in payload:
+            division = entry if isinstance(entry, dict) else {}
+            if division.get("division") == 1:
+                return float(division.get("balance", 0.0))
+        if payload:
+            first = payload[0] if isinstance(payload[0], dict) else {}
+            return float(first.get("balance", 0.0))
+
+    logger.warning("[wallet] Unexpected wallet payload for %s: %s", char_id, payload)
+    return 0.0
 
 
 # ──────── Storage ───────────────────────────────────────────────────────────────

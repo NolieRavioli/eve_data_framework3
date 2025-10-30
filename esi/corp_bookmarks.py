@@ -5,6 +5,7 @@ from datetime import datetime
 from util.utils import get_token
 from db.database import get_private_session
 from db.models import CorpBookmark
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ def fetch_corp_bookmarks(char_id: int, token: str) -> list:
     """Fetch corporation bookmarks using a character's access token."""
     url = f"{ESI}/characters/{char_id}/bookmarks/"
     headers = {"Authorization": f"Bearer {token}"}
-    resp = requests.get(url, headers=headers)
+    resp = esi_get(url, headers=headers)
     resp.raise_for_status()
     return resp.json()
 

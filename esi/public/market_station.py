@@ -9,6 +9,7 @@ import requests
 from db.database import get_public_session
 from db.models import MarketOrder
 from util.utils import get_all_region_ids
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def fetch_with_retries(url: str, params: dict, max_retries: int = 3) -> requests
     backoff = 1
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.get(url, headers=HEADERS, params=params)
+            resp = esi_get(url, headers=HEADERS, params=params)
             if resp.status_code == 420:
                 logger.warning(f"420 rate limit on {url}, sleeping 5s (attempt {attempt})")
                 time.sleep(5)
@@ -39,7 +40,7 @@ def fetch_with_retries(url: str, params: dict, max_retries: int = 3) -> requests
             logger.warning(f"Request error on {url} (attempt {attempt}): {e}")
             time.sleep(backoff)
             backoff *= 2
-    return requests.get(url, headers=HEADERS, params=params)
+    return esi_get(url, headers=HEADERS, params=params)
 
 def fetch_market_orders(region_id: int, page: int = 1) -> tuple[list, int]:
     """

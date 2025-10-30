@@ -1,6 +1,7 @@
 import os
 import yaml
 import logging
+
 from db.database import get_public_session
 from db.models import SolarSystem, Stargate
 
@@ -19,8 +20,32 @@ _system_id_to_region   = None
 _market_flat           = {}
 _market_tree           = None
 
+
+def clear_caches() -> None:
+    """Reset all cached SDE structures so a fresh load can occur."""
+
+    global _type_id_to_name, _name_to_type_id, _system_id_to_region, _market_flat, _market_tree
+
+    _type_id_to_name = None
+    _name_to_type_id = None
+    _system_id_to_region = None
+    _market_flat = {}
+    _market_tree = None
+
+    logger.info("SDE caches cleared.")
+
+
+def refresh_all_caches() -> None:
+    """Force all SDE helpers to reload from disk after an update."""
+
+    clear_caches()
+    load_types_data()
+    load_market_tree()
+    _load_system_to_region_map()
+    logger.info("SDE caches repopulated from the latest files.")
+
 # ──────── Type ↔ Name Maps ──────────────────────────────────────────────────────
-def load_types_data():
+def load_types_data() -> None:
     """Load types.yaml into memory."""
     global _type_id_to_name, _name_to_type_id
     if _type_id_to_name is not None:
