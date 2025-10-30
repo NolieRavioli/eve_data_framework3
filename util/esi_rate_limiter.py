@@ -6,9 +6,13 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Deque, Dict, Optional
+from dataclasses import dataclass
+from typing import Deque, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
+from requests import Request, Response
+from requests.structures import CaseInsensitiveDict
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,109 @@ TOKEN_COSTS = {
 
 DEFAULT_WINDOW_SECONDS = 15 * 60  # 15 minutes
 DEFAULT_TOKEN_LIMIT = 1800  # Conservative default: ~1 request / second for 2XX responses.
+_CACHE_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True)
+class _CacheRule:
+    method: str
+    path: str
+    ttl: int
+    match_prefix: bool = False
+
+
+_CACHE_RULES: tuple[_CacheRule, ...] = (
+    _CacheRule(method="GET", path="/latest/universe/structures/", ttl=7 * 24 * 3600),
+    _CacheRule(method="GET", path="/latest/markets/structures/", ttl=30 * 60, match_prefix=True),
+)
+
+
+_CacheKey = Tuple[str, str, bytes, Optional[str]]
+_CACHE: dict[_CacheKey, tuple[float, dict]] = {}
+
+
+def _resolve_cache_ttl(method: str, path: str) -> Optional[int]:
+    for rule in _CACHE_RULES:
+        if method != rule.method:
+            continue
+        if rule.match_prefix and path.startswith(rule.path):
+            return rule.ttl
+        if not rule.match_prefix and path == rule.path:
+            return rule.ttl
+    return None
+
+
+def _prepare_cache_key(method: str, url: str, kwargs: dict) -> tuple[requests.PreparedRequest, Optional[_CacheKey], Optional[int]]:
+    headers = kwargs.get("headers") or {}
+    req = Request(
+        method=method,
+        url=url,
+        headers=headers,
+        params=kwargs.get("params"),
+        data=kwargs.get("data"),
+        json=kwargs.get("json"),
+    )
+    prepared = req.prepare()
+    parsed = urlparse(prepared.url)
+    ttl = _resolve_cache_ttl(prepared.method, parsed.path)
+    if not ttl:
+        return prepared, None, None
+
+    body = prepared.body or b""
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+
+    cache_key: _CacheKey = (
+        prepared.method,
+        prepared.url,
+        body,
+        headers.get("Authorization"),
+    )
+    return prepared, cache_key, ttl
+
+
+def _build_cached_response(payload: dict, prepared: requests.PreparedRequest) -> Response:
+    resp = Response()
+    resp.status_code = payload.get("status_code", 0)
+    resp._content = payload.get("content", b"")
+    resp.headers = CaseInsensitiveDict(payload.get("headers", {}))
+    resp.encoding = payload.get("encoding")
+    resp.reason = payload.get("reason")
+    resp.url = payload.get("url", prepared.url)
+    resp.request = prepared
+    return resp
+
+
+def _get_cached_response(key: _CacheKey, prepared: requests.PreparedRequest) -> Optional[Response]:
+    now = time.time()
+    with _CACHE_LOCK:
+        entry = _CACHE.get(key)
+        if not entry:
+            return None
+        expiry, payload = entry
+        if expiry <= now:
+            del _CACHE[key]
+            return None
+    return _build_cached_response(payload, prepared)
+
+
+def _store_cached_response(
+    key: _CacheKey,
+    response: requests.Response,
+    ttl: int,
+    prepared: requests.PreparedRequest,
+) -> None:
+    payload = {
+        "status_code": response.status_code,
+        "headers": dict(response.headers),
+        "content": response.content,
+        "encoding": response.encoding,
+        "reason": response.reason,
+        "url": response.url or prepared.url,
+    }
+    expires = time.time() + ttl
+    with _CACHE_LOCK:
+        _CACHE[key] = (expires, payload)
 
 
 def _token_cost_for_status(status_code: int) -> int:
@@ -120,6 +227,13 @@ class EsiRateLimiter:
         attempt = 0
         initial_cost = TOKEN_COSTS[2]
 
+        prepared, cache_key, ttl = _prepare_cache_key(method, url, kwargs)
+        if ttl and cache_key:
+            cached = _get_cached_response(cache_key, prepared)
+            if cached is not None:
+                logger.debug("[RateLimiter] Using cached response for %s", prepared.url)
+                return cached
+
         while True:
             attempt += 1
             self._bucket.acquire(initial_cost)
@@ -137,6 +251,9 @@ class EsiRateLimiter:
                 self._bucket.adjust(delta)
 
             self._update_limits_from_headers(response.headers)
+
+            if ttl and cache_key and 200 <= response.status_code < 400:
+                _store_cached_response(cache_key, response, ttl, prepared)
 
             if response.status_code == 429 and attempt < self._max_retries:
                 retry_after = self._parse_retry_after(response.headers.get("Retry-After"))

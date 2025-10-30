@@ -9,6 +9,7 @@ from datetime import datetime
 import requests
 
 from util.utils import get_token, batched
+from util.sde import region_id_from_system_id
 from util.esi_rate_limiter import esi_request
 from db.database import get_private_session, get_public_session
 from db.models import Structure, Asset, IndustryJob, Character
@@ -239,6 +240,7 @@ def discover_all_structures() -> list[int]:
             logger.warning(f"[Discovery] Skipped owner {owner_id} due to: {e}")
 
     logger.info(f"[Discovery] Total unique structure IDs: {len(structure_ids)}")
+    remaining_ids = set(structure_ids)
 
     # --- write to public DB ---
     with get_public_session() as db:
@@ -258,27 +260,42 @@ def discover_all_structures() -> list[int]:
             with get_private_session(owner_id) as pvt:
                 main_char = pvt.query(Character).filter_by(character_id=owner_id).first()
             tokens = get_token(owner_id)
-            token_data = tokens.get(owner_id) or {}
-            access_token = token_data.get("access_token")
-            if not access_token:
-                logger.warning(f"[Enrich] No token for owner {owner_id}")
+            token_candidates = [
+                data for _, data in sorted(tokens.items()) if data.get("access_token")
+            ]
+            if not token_candidates:
+                logger.warning(f"[Enrich] No usable tokens for owner {owner_id}")
                 continue
 
-            for sid in sorted(structure_ids):
+            if not remaining_ids:
+                break
+
+            for sid in list(sorted(remaining_ids)):
                 count += 1
-                info = fetch_structure_info(sid, access_token)
+                info = None
+                for token_data in token_candidates:
+                    access_token = token_data.get("access_token")
+                    if not access_token:
+                        continue
+                    info = fetch_structure_info(sid, access_token)
+                    if info:
+                        break
                 if info:
+                    solar_system_id = info.get("solar_system_id")
+                    region_id = region_id_from_system_id(solar_system_id) if solar_system_id else None
                     with get_public_session() as db:
                         db.merge(Structure(
                             structure_id=sid,
                             name=info.get("name"),
-                            solar_system_id=info.get("solar_system_id"),
+                            solar_system_id=solar_system_id,
+                            region_id=region_id,
                             owner_id=info.get("owner_id"),
                             type_id=info.get("type_id"),
                             last_seen=datetime.utcnow(),
                         ))
                         db.commit()
                         enriched.append(sid)
+                        remaining_ids.discard(sid)
 
                 if count % max(1, total // 1000) == 0:
                     elapsed = time.time() - t0
@@ -287,6 +304,15 @@ def discover_all_structures() -> list[int]:
 
         except Exception as e:
             logger.warning(f"[Enrich] Failed for owner {owner_id}: {e}")
+
+    if remaining_ids:
+        with get_public_session() as db:
+            for sid in sorted(remaining_ids):
+                struct = db.get(Structure, sid)
+                if struct and struct.solar_system_id and not struct.region_id:
+                    struct.region_id = region_id_from_system_id(struct.solar_system_id)
+                    struct.last_seen = datetime.utcnow()
+            db.commit()
 
     logger.info(f"[Discovery] Enriched metadata for {len(enriched)} structures.")
     return enriched

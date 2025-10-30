@@ -34,7 +34,12 @@ def initialize_public_database():
     if _public_engine is None:
         abs_path = os.path.abspath(PUBLIC_DATABASE_FILE).replace("\\", "/")
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        _public_engine = create_engine(f"sqlite:///{abs_path}", future=True)
+        _public_engine = create_engine(
+            f"sqlite:///{abs_path}",
+            future=True,
+            connect_args={"timeout": 30, "check_same_thread": False},
+            pool_pre_ping=True,
+        )
         PublicBase.metadata.create_all(_public_engine)
         logger.info(f"Initialized public database at {abs_path}")
         _PublicSession = sessionmaker(bind=_public_engine)
@@ -52,7 +57,13 @@ def initialize_private_database(owner_id: int):
     abs_path = os.path.abspath(db_path).replace("\\", "/")
     db_url = f"sqlite:///{abs_path}"
     if owner_id not in _private_engines:
-        engine = create_engine(db_url, echo=False, future=True)
+        engine = create_engine(
+            db_url,
+            echo=False,
+            future=True,
+            connect_args={"timeout": 30, "check_same_thread": False},
+            pool_pre_ping=True,
+        )
         PrivateBase.metadata.create_all(engine)
         logger.info(f"Initialized private database for owner {owner_id} at {abs_path}")
         _private_engines[owner_id] = engine
