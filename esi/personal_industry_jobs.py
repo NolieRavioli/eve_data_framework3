@@ -1,13 +1,14 @@
 # fetchers/private/personal_industry_jobs.py
 
-import requests
 import logging
+import requests
 from datetime import datetime
 
 from util.utils import get_token
 from util.auth import TokenDBManager
 from db.database import get_private_session
 from db.models import IndustryJob
+from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def fetch_industry_jobs(char_id: int, access_token: str) -> list:
     """Fetch active industry jobs for a character."""
     url = f"{ESI}/characters/{char_id}/industry/jobs/"
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = esi_get(url, headers=headers)
     resp.raise_for_status()
     return resp.json()
 

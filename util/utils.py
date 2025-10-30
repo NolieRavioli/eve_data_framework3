@@ -16,6 +16,7 @@ import yaml
 from db.database import get_private_session
 from db.models import Character
 from util.auth import CredentialManager, TokenDBManager
+from util.esi_rate_limiter import esi_get, esi_post, esi_request
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +249,8 @@ def safe_request(method, url, **kwargs):
         print(f"[ESI] {method.upper()} {url} kwargs={kwargs}")
     for attempt in range(retries):
         try:
-            resp = requests.request(method, url, timeout=30, **kwargs)
+            kwargs.setdefault("timeout", 30)
+            resp = esi_request(method, url, **kwargs)
             if resp.status_code == 403:
                 logger.warning(f"Access forbidden (403) for {url}. Skipping retries.")
                 resp.raise_for_status()
@@ -269,7 +271,7 @@ def safe_request(method, url, **kwargs):
 def get_portrait(character_id: int):
     """ get esi portraits """
     url = f"{ESI_BASE}/characters/{character_id}/portrait/"
-    resp = requests.get(url, headers=HEADERS, params=DATASOURCE)
+    resp = esi_get(url, headers=HEADERS, params=DATASOURCE)
     resp.raise_for_status()
     if get_runtime_settings().trace_esi:
         print(f"[ESI] Portrait lookup for {character_id}: {resp.json()}")
@@ -284,14 +286,14 @@ def batched(iterable, batch_size):
 def get_all_region_ids():
     """Get all region IDs from ESI."""
     url = f"{ESI_BASE}/universe/regions/"
-    resp = requests.get(url, headers=HEADERS, params=DATASOURCE)
+    resp = esi_get(url, headers=HEADERS, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
 
 def is_structure(structure_id: int) -> bool:
     """Check if a given ID is a structure via ESI."""
     url = f"{ESI_BASE}/universe/structures/{structure_id}/"
-    r = requests.get(url, headers=HEADERS, params=DATASOURCE)
+    r = esi_get(url, headers=HEADERS, params=DATASOURCE)
     return r
 
 def resolve_names_to_ids(names: list[str]) -> dict:
@@ -299,7 +301,7 @@ def resolve_names_to_ids(names: list[str]) -> dict:
     if not names:
         return {}
 
-    response = requests.post(
+    response = esi_post(
         f"{ESI_BASE}/universe/ids/",
         headers=HEADERS,
         params={"datasource": "tranquility", "language": os.getenv("LANGUAGE", "en")},

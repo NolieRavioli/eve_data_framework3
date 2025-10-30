@@ -7,6 +7,7 @@ import requests
 from db.database import get_public_session
 from db.models import PublicContract
 from util.utils import get_all_region_ids
+from util.esi_rate_limiter import esi_get
 
 # ──────── Globals ───────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ def fetch_public_contracts(region_id: int) -> list[dict]:
     url = f"{ESI}/contracts/public/{region_id}/"
 
     while True:
-        resp = requests.get(url, params={"page": page})
+        resp = esi_get(url, params={"page": page})
         if resp.status_code == 204:
             logger.info(f"[Contracts] Region {region_id}: no contracts (204) on page {page}")
             break

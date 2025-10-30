@@ -14,6 +14,7 @@ from db.database import (
     initialize_public_database,
     get_public_session,
 )
+from util.esi_rate_limiter import esi_get
 
 # ─────── Globals ─────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def lookup_info(character_id: int):
     char_url = (
         f"https://esi.evetech.net/latest/characters/{character_id}/?datasource=tranquility"
     )
-    resp = requests.get(char_url)
+    resp = esi_get(char_url)
     resp.raise_for_status()
     char_data = resp.json()
 
