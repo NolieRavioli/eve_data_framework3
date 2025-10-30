@@ -110,28 +110,6 @@ class PublicContract(PublicBase):
     for_corporation         = Column(Boolean, nullable=True)
     last_seen               = Column(DateTime, default=datetime.datetime.utcnow)
 
-class MarketStructure(PublicBase):
-    __tablename__   = "market_structures"
-    structure_id    = Column(Integer, primary_key=True)
-    solar_system_id = Column(Integer, nullable=True)
-    region_id       = Column(Integer, nullable=True)
-    owner_id        = Column(Integer, nullable=True)
-    name            = Column(String, nullable=True)
-    type_id         = Column(Integer, nullable=True)
-    position        = Column(JSON, nullable=True)
-    last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
-
-class MarketStructure(PublicBase):
-    __tablename__   = "market_structures"
-    structure_id    = Column(Integer, primary_key=True)
-    solar_system_id = Column(Integer, nullable=True)
-    region_id       = Column(Integer, nullable=True)
-    owner_id        = Column(Integer, nullable=True)
-    name            = Column(String, nullable=True)
-    type_id         = Column(Integer, nullable=True)
-    position        = Column(JSON, nullable=True)
-    last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
-
 # ──────── Private Database Models ────────────────────────────────────────────────
 
 class Character(PrivateBase):
@@ -302,4 +280,5 @@ class WalletTransaction(PrivateBase):
     date            = Column(DateTime)
     is_buy          = Column(Boolean)
     is_personal     = Column(Boolean)
+
 
