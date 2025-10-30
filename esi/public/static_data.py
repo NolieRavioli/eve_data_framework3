@@ -8,7 +8,7 @@ import yaml
 import logging
 import time
 
-from util.sde import refresh_all_caches
+from util.sde import refresh_all_caches, build_universe_table
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,7 @@ def update_sde():
     migrate_sde_inplace()
     cleanup()
     refresh_all_caches()
+    build_universe_table()
     logger.info("SDE helpers refreshed after update.")
 
 # ──────── Run Script ─────────────────────────────────────────────────────────────
