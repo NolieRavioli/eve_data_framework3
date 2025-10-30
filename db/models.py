@@ -18,13 +18,13 @@ class User(PublicBase):
 class SolarSystem(PublicBase):
     __tablename__       = "systems"
     system_id           = Column(Integer, primary_key=True)
+    constellation_id    = Column(Integer)
     region_id           = Column(Integer, index=True)
+    security            = Column(Float)
     owner_id            = Column(Integer, index=True, nullable=True)    #corporation_id or alliance_id
     faction_id          = Column(Integer, nullable=True)
-    constellation_id    = Column(Integer)
-    security            = Column(Float)
     system_name         = Column(String)
-    region_name         = Column(String, nullable=True)
+    region_name         = Column(String)
     planets             = Column(JSON, nullable=True)   # List of planet IDs
     moons               = Column(JSON, nullable=True)   # List of moon IDs
     stargates           = Column(JSON, nullable=True)   # List of stargate IDs
@@ -39,6 +39,39 @@ class Stargate(PublicBase):
     destination_gate_id     = Column(Integer)
     destination_system_id   = Column(Integer)
     position                = Column(JSON)      # [x, y, z]
+
+class Alliances(PublicBase):
+    __tablename__           = "Alliances"
+    alliance_id             = Column(Integer, primary_key=True)
+    name                    = Column(String)
+    creator_corporation_id  = Column(Integer)
+    creator_id              = Column(Integer)
+    date_founded            = Column(DateTime)
+    executor_corporation_id = Column(Integer)
+    ticker                  = Column(String)
+    corporations            = Column(JSON)
+
+class Structure(PublicBase):
+    __tablename__   = "structures"
+    structure_id    = Column(Integer, primary_key=True)
+    name            = Column(String, nullable=True)
+    solar_system_id = Column(Integer, index=True)
+    region_id       = Column(Integer, index=True)
+    owner_id        = Column(Integer, nullable=True)
+    type_id         = Column(Integer, nullable=True)
+    position        = Column(JSON, nullable=True)
+    last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
+
+class MarketStructure(PublicBase):
+    __tablename__   = "market_structures"
+    structure_id    = Column(Integer, primary_key=True)
+    solar_system_id = Column(Integer)
+    region_id       = Column(Integer)
+    owner_id        = Column(Integer, nullable=True)
+    name            = Column(String, nullable=True)
+    type_id         = Column(Integer, nullable=True)
+    position        = Column(JSON, nullable=True)
+    last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
 
 class MarketOrder(PublicBase):
     __tablename__   = "market_orders"
@@ -77,10 +110,10 @@ class PublicContract(PublicBase):
     for_corporation         = Column(Boolean, nullable=True)
     last_seen               = Column(DateTime, default=datetime.datetime.utcnow)
 
-class Structure(PublicBase):
-    __tablename__   = "structures"
+class MarketStructure(PublicBase):
+    __tablename__   = "market_structures"
     structure_id    = Column(Integer, primary_key=True)
-    solar_system_id = Column(Integer, index=True)
+    solar_system_id = Column(Integer, nullable=True)
     region_id       = Column(Integer, nullable=True)
     owner_id        = Column(Integer, nullable=True)
     name            = Column(String, nullable=True)
@@ -102,40 +135,45 @@ class MarketStructure(PublicBase):
 # ──────── Private Database Models ────────────────────────────────────────────────
 
 class Character(PrivateBase):
-    __tablename__   = "characters"
-    character_id    = Column(Integer, primary_key=True)
-    name            = Column(String)
-    corporation_id  = Column(Integer)
-    birthday        = Column(String)
-    security_status = Column(Float, nullable=True)
-    alliance_id     = Column(Integer, nullable=True)
-    access_token    = Column(String)
-    refresh_token   = Column(String)
-    expires_at      = Column(Float)
-    scopes          = Column(String)
+    __tablename__            = "characters"
+    character_id             = Column(Integer, primary_key=True)
+    name                     = Column(String)
+    security_status          = Column(Float, nullable=True)
+    jump_fatigue_expire_date = Column(DateTime, nullable=True)
+    last_jump_date           = Column(DateTime, nullable=True)
+    last_update_date         = Column(DateTime, nullable=True)
+    corporation_id           = Column(Integer)
+    alliance_id              = Column(Integer, nullable=True)
+    current_system_id        = Column(Integer, nullable=True)
+    current_location_id      = Column(BigInteger, nullable=True)
+    birthday                 = Column(String)
+    access_token             = Column(String)
+    refresh_token            = Column(String)
+    expires_at               = Column(Float)
+    scopes                   = Column(String)
 
 class Asset(PrivateBase):
     __tablename__       = "assets"
     item_id             = Column(BigInteger, primary_key=True)
     character_id        = Column(Integer, index=True)
     type_id             = Column(Integer)
+    is_blueprint_copy   = Column(Boolean, nullable=True)
     location_id         = Column(Integer)
     quantity            = Column(Integer)
     location_type       = Column(String)
     location_flag       = Column(Integer)
-    is_blueprint_copy   = Column(Boolean, nullable=True)
 
 class Blueprint(PrivateBase):
     __tablename__           = "blueprints"
     item_id                 = Column(BigInteger, primary_key=True)
     character_id            = Column(Integer, index=True)
     type_id                 = Column(Integer)
-    location_id             = Column(Integer)
-    location_flag           = Column(String)
     material_efficiency     = Column(Integer)
     time_efficiency         = Column(Integer)
     runs                    = Column(Integer)
     quantity                = Column(Integer)
+    location_id             = Column(Integer)
+    location_flag           = Column(String)
 
 class IndustryJob(PrivateBase):
     __tablename__           = "industry_jobs"
@@ -155,7 +193,38 @@ class IndustryJob(PrivateBase):
     status                  = Column(String)
     start_date              = Column(DateTime)
     end_date                = Column(DateTime)
-    
+
+class LoyaltyPoints(PrivateBase):
+    __tablename__    = "moon_extractions"
+    character_id     = Column(Integer, index=True)
+    corporation_id   = Column(Integer)
+    loyalty_points   = Column(DateTime)
+
+class PersonalOrder(PrivateBase):
+    __tablename__         = "market_orders"
+    order_id        = Column(Integer, primary_key=True)
+    character_id    = Column(Integer, index=True)
+    type_id         = Column(Integer)
+    location_id     = Column(Integer)
+    region_id       = Column(Integer)
+    is_buy_order    = Column(Boolean)
+    issued          = Column(DateTime)
+    duration        = Column(Integer)
+    price           = Column(Float)
+    order_range     = Column(String)
+    volume_remain   = Column(Integer)
+    volume_total    = Column(Integer)
+    min_volume      = Column(Integer)
+    last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
+
+class MoonExtraction(PrivateBase):
+    __tablename__         = "moon_extractions"
+    chunk_arrival_time    = Column(DateTime)
+    extraction_start_time = Column(DateTime)
+    natural_decay_time    = Column(DateTime)
+    moon_id               = Column(Integer)
+    structure_id          = Column(BigInteger)
+
 class PersonalBookmark(PrivateBase):
     __tablename__   = "personal_bookmarks"
     bookmark_id     = Column(BigInteger, primary_key=True)
@@ -167,6 +236,22 @@ class PersonalBookmark(PrivateBase):
     created         = Column(DateTime)
     coordinates     = Column(JSON)
     notes           = Column(String)
+
+class Project(PrivateBase):
+    __tablename__    = "corp_projects"
+    project_id       = Column(String, primary_key=True)
+    character_id    = Column(Integer, index=True)
+    last_modified    = Column(DateTime)
+    name             = Column(String)
+    progress_current = Column(Integer)
+    progress_desired = Column(Integer)
+    reward_initial   = Column(Float)
+    reward_remaining = Column(Float)
+    state            = Column(String)
+    participation_limit = Column(Integer, nullable=True)
+    reward_per_contribution = Column(Float, nullable=True)
+    submission_limit = Column(Integer, nullable=True)
+    submission_multiplier = Column(Float, nullable=True)
 
 class Skill(PrivateBase):
     __tablename__           = "skills"
@@ -217,3 +302,4 @@ class WalletTransaction(PrivateBase):
     date            = Column(DateTime)
     is_buy          = Column(Boolean)
     is_personal     = Column(Boolean)
+
