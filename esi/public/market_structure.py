@@ -4,6 +4,7 @@ import logging
 import requests
 from datetime import datetime
 import time
+from typing import Optional
 
 from db.database import get_public_session, get_private_session
 from db.models import Character, Structure, MarketStructure, MarketOrder
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 ESI_BASE = "https://esi.evetech.net/latest"
 DATASOURCE = {"datasource": "tranquility"}
+
+_STRUCTURE_INFO_CACHE: dict[int, tuple[float, dict]] = {}
+_STRUCTURE_INFO_TTL = 24 * 3600  # cache metadata for a day
 
 def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries: int = 3) -> tuple[list, int]:
     url = f"{ESI_BASE}/markets/structures/{structure_id}/"
@@ -48,6 +52,58 @@ def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries
     logger.error(f"[MarketFetch] Failed after {retries} retries for structure {structure_id} page {page}")
     return [], 1
 
+
+def fetch_structure_details(structure_id: int, token: str) -> Optional[dict]:
+    now = time.time()
+    cached = _STRUCTURE_INFO_CACHE.get(structure_id)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    url = f"{ESI_BASE}/universe/structures/{structure_id}/"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    try:
+        resp = esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
+    except Exception as exc:
+        logger.warning(f"[StructMeta] Request failed for {structure_id}: {exc}")
+        return None
+
+    if resp.status_code in (403, 404):
+        logger.debug(f"[StructMeta] Access denied for {structure_id}: HTTP {resp.status_code}")
+        return None
+
+    try:
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.warning(f"[StructMeta] Failed to parse metadata for {structure_id}: {exc}")
+        return None
+
+    _STRUCTURE_INFO_CACHE[structure_id] = (now + _STRUCTURE_INFO_TTL, data)
+    return data
+
+
+def populate_structure_metadata(structure: Structure, token: str, db_session) -> None:
+    changed = False
+
+    if not structure.solar_system_id or not structure.name or not structure.type_id or not structure.owner_id:
+        info = fetch_structure_details(structure.structure_id, token)
+        if info:
+            structure.name = info.get("name")
+            structure.solar_system_id = info.get("solar_system_id")
+            structure.owner_id = info.get("owner_id")
+            structure.type_id = info.get("type_id")
+            changed = True
+
+    if structure.solar_system_id and not structure.region_id:
+        structure.region_id = region_id_from_system_id(structure.solar_system_id)
+        changed = True
+
+    if changed:
+        structure.last_seen = datetime.utcnow()
+        db_session.flush()
+
+
 def update_structure_market_orders() -> None:
     from os import listdir
     from os.path import isdir, join
@@ -66,7 +122,6 @@ def update_structure_market_orders() -> None:
     tokens = get_token(owner_id)
     char_id, token_data = sorted(tokens.items())[0]
     token = token_data["access_token"]
-    print(f"[DEBUG] Using Bearer Token: {token[:8]}...{token[-8:]}")
 
     with get_public_session() as db:
         structures = db.query(Structure).all()
@@ -86,13 +141,7 @@ def update_structure_market_orders() -> None:
                     token_data = tokens.get(char_id)
                 token = token_data["access_token"]
 
-                orders, pages = fetch_structure_orders(s.structure_id, token, page=1)
-                if not orders:
-                    logger.info(f"{100*count/total:.2f}% done. ETA: {(time.time()-t0)*(1-count/total)/(count/total)}")
-                    continue
-
-                if not s.region_id and s.solar_system_id:
-                    s.region_id = region_id_from_system_id(s.solar_system_id)
+                populate_structure_metadata(s, token, db)
 
                 db.merge(MarketStructure(
                     structure_id=s.structure_id,
@@ -105,8 +154,14 @@ def update_structure_market_orders() -> None:
                     last_seen=datetime.utcnow()
                 ))
 
+                orders, pages = fetch_structure_orders(s.structure_id, token, page=1)
+                if not orders:
+                    db.commit()
+                    logger.info(f"{100*count/total:.2f}% done. ETA: {(time.time()-t0)*(1-count/total)/(count/total)}")
+                    continue
+
                 for o in orders:
-                    num_orders += len(o)
+                    num_orders += 1
                     db.merge(MarketOrder(
                         order_id=o["order_id"],
                         region_id=s.region_id,
@@ -136,6 +191,7 @@ def update_structure_market_orders() -> None:
                     more, _ = fetch_structure_orders(s.structure_id, token, page=page)
 
                     for o in more:
+                        num_orders += 1
                         db.merge(MarketOrder(
                             order_id=o["order_id"],
                             region_id=s.region_id,
@@ -158,6 +214,7 @@ def update_structure_market_orders() -> None:
             
             except Exception:
                 logger.exception(f"[MarketUpdate] ❌ Failed for {s.structure_id}.")
+                db.rollback()
 
 def update_structure_market(owner_id: int) -> None:
     logger.warning("[Compat] update_structure_market(owner_id) is deprecated, using update_structure_market_orders().")
