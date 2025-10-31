@@ -388,6 +388,7 @@ def generate_industry_report(
 
             revenue_per_run = product_price * definition.product_quantity if product_price > 0 else 0.0
             tax_rate = _coerce_tax(settings.facility_tax)
+            revenue_after_tax = revenue_per_run * (1 - tax_rate)
             job_cost = settings.job_cost_per_run if settings.include_job_cost else 0.0
 
             can_build = not missing_materials and product_price > 0 and total_runs > 0
@@ -436,7 +437,7 @@ def generate_industry_report(
         plan_candidates = [e for e in profitable_entries if e.margin_percent >= margin_threshold]
         plan_candidates.sort(key=lambda entry: entry.isk_per_hour, reverse=True)
 
-        plan: List[ManufacturingQueueItem] = [
+        aggregated_plan: List[ManufacturingQueueItem] = [
             ManufacturingQueueItem(
                 product_type_id=entry.product_type_id,
                 product_name=entry.product_name,
@@ -451,6 +452,8 @@ def generate_industry_report(
                 te=entry.te,
                 is_original=entry.is_original,
             )
+            for entry in plan_candidates
+        ]
 
         aggregated_plan.sort(key=lambda item: item.isk_per_hour, reverse=True)
 
@@ -469,6 +472,8 @@ def generate_industry_report(
         me_values = [e.me for e in library_entries]
         te_values = [e.te for e in library_entries]
 
+        buildable_entries = [e for e in library_entries if e.can_build]
+
         summary: Dict[str, object] = {
             "blueprint_total": len(library_entries),
             "buildable_total": len(buildable_entries),
@@ -483,11 +488,7 @@ def generate_industry_report(
             "total_profit": sum(item.total_profit for item in aggregated_plan),
             "average_isk_per_hour": statistics.mean([item.isk_per_hour for item in aggregated_plan]) if aggregated_plan else 0.0,
             "best_blueprint": plan_candidates[0] if plan_candidates else None,
-            "original_total": sum(1 for e in library_entries if e.is_original),
-            "copy_total": sum(1 for e in library_entries if not e.is_original),
             "unbuildable_total": sum(1 for e in library_entries if not e.can_build),
-            "average_me": statistics.mean([e.me for e in library_entries]) if library_entries else 0.0,
-            "average_te": statistics.mean([e.te for e in library_entries]) if library_entries else 0.0,
         }
 
         return IndustryReport(settings=settings, library=display_library, manufacturing_plan=plan, summary=summary)
