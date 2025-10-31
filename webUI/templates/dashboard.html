@@ -322,8 +322,12 @@
                     </div>
                     <div class="action-chips">
                         <a class="chip" href="{{ url_for('update_personal.update_assets') }}">Assets</a>
+                        <a class="chip" href="{{ url_for('update_personal.update_blueprints') }}">Blueprints</a>
                         <a class="chip" href="{{ url_for('update_personal.update_industry') }}">Industry Jobs</a>
-                        <a class="chip" href="{{ url_for('update_personal.update_wallet') }}">Wallet</a>
+                        <a class="chip" href="{{ url_for('update_personal.update_wallet') }}">Wallet (All)</a>
+                        <a class="chip" href="{{ url_for('update_personal.update_wallet_transactions') }}">Wallet Txns</a>
+                        <a class="chip" href="{{ url_for('update_personal.update_wallet_journal') }}">Wallet Journal</a>
+                        <a class="chip" href="{{ url_for('update_personal.update_wallet_balance') }}">Wallet Balance</a>
                         <a class="chip" href="{{ url_for('update_personal.update_skills') }}">Skills</a>
                         <a class="chip" href="{{ url_for('update_personal.update_bookmarks') }}">Bookmarks</a>
                         <a class="chip" href="{{ url_for('update_public.update_public_sde') }}">Refresh SDE</a>

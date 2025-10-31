@@ -1,14 +1,21 @@
 # webUI/update_personal_routes.py
 
-from flask import Blueprint, redirect, url_for, session
 import logging
 
+from flask import Blueprint, redirect, url_for, session
+
 # Private fetchers
-from esi.personal_industry_jobs import fetch_all_industry
-from esi.personal_skills import fetch_all_skills
 from esi.personal_assets import fetch_all_assets
+from esi.personal_blueprints import fetch_all_blueprints
+from esi.personal_industry_jobs import fetch_all_industry
 from esi.personal_bookmarks import update_personal_bookmarks
-from esi.personal_wallet import fetch_all_wallets
+from esi.personal_skills import fetch_all_skills
+from esi.personal_wallet import (
+    fetch_all_balance as fetch_wallet_balances,
+    fetch_all_journals as fetch_wallet_journals,
+    fetch_all_transactions as fetch_wallet_transactions,
+    fetch_all_wallets,
+)
 
 
 # ──────── Setup ──────────────────────────────────────────────────────────────
@@ -49,6 +56,47 @@ def update_wallet():
     logger.info(f"[UpdatePersonal] Fetched wallet transactions for owner {owner_id}")
     return redirect(url_for("dashboard.home"))
 
+
+@update_personal_bp.route("/wallet/transactions")
+def update_wallet_transactions():
+    """Refresh only wallet transactions for linked characters."""
+
+    owner_id = session.get("owner_id")
+    if not owner_id:
+        return "Unauthorized", 401
+
+    fetch_wallet_transactions(owner_id)
+    logger.info(
+        f"[UpdatePersonal] Fetched wallet transactions for owner {owner_id}"
+    )
+    return redirect(url_for("dashboard.home"))
+
+
+@update_personal_bp.route("/wallet/journal")
+def update_wallet_journal():
+    """Refresh only wallet journal entries for linked characters."""
+
+    owner_id = session.get("owner_id")
+    if not owner_id:
+        return "Unauthorized", 401
+
+    fetch_wallet_journals(owner_id)
+    logger.info(f"[UpdatePersonal] Fetched wallet journal for owner {owner_id}")
+    return redirect(url_for("dashboard.home"))
+
+
+@update_personal_bp.route("/wallet/balance")
+def update_wallet_balance():
+    """Refresh wallet balances for linked characters."""
+
+    owner_id = session.get("owner_id")
+    if not owner_id:
+        return "Unauthorized", 401
+
+    fetch_wallet_balances(owner_id)
+    logger.info(f"[UpdatePersonal] Fetched wallet balance for owner {owner_id}")
+    return redirect(url_for("dashboard.home"))
+
 @update_personal_bp.route("/skills")
 def update_skills():
     """Trigger a refresh of personal skills."""
@@ -67,4 +115,17 @@ def update_bookmarks():
         return "Unauthorized", 401
     update_personal_bookmarks(owner_id)
     logger.info(f"[UpdatePersonal] Fetched bookmarks for owner {owner_id}")
+    return redirect(url_for("dashboard.home"))
+
+
+@update_personal_bp.route("/blueprints")
+def update_blueprints():
+    """Trigger a refresh of personal blueprints."""
+
+    owner_id = session.get("owner_id")
+    if not owner_id:
+        return "Unauthorized", 401
+
+    fetch_all_blueprints(owner_id)
+    logger.info(f"[UpdatePersonal] Fetched blueprints for owner {owner_id}")
     return redirect(url_for("dashboard.home"))
