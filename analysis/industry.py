@@ -46,6 +46,15 @@ class MaterialCost:
 
 
 @dataclass
+class MarketPrice:
+    best_buy: float = 0.0
+    best_sell: float = 0.0
+    buy_order_count: int = 0
+    sell_order_count: int = 0
+    override: bool = False
+
+
+@dataclass
 class BlueprintLibraryEntry:
     blueprint_type_id: int
     blueprint_name: str
@@ -350,10 +359,14 @@ def generate_industry_report(
             missing_materials: List[str] = []
             for mat_type_id, base_qty in definition.materials:
                 adjusted_qty = _material_quantity(base_qty, bp.material_efficiency)
-                price = price_map.get(mat_type_id, 0.0)
-                available = price > 0
+                price_info = price_map.get(mat_type_id)
+                price = 0.0
+                available = False
+                if price_info:
+                    price = price_info.best_sell
+                    available = price_info.sell_order_count > 0 or price_info.override
                 if not available:
-                    missing_materials.append(name_from_type_id(mat_type_id))
+                    missing_materials.append(f"{name_from_type_id(mat_type_id)} sell orders")
                 total_cost = adjusted_qty * price if available else 0.0
                 if available:
                     material_cost_per_run += total_cost
@@ -383,8 +396,7 @@ def generate_industry_report(
                     product_has_market = product_price_info.sell_order_count > 0 or product_price_info.override
 
             if not product_has_market or product_price <= 0:
-                can_build = False
-                missing_components.append(f"{product_name} {market_label}")
+                missing_materials.append(f"{product_name} {market_label}")
 
             revenue_per_run = product_price * definition.product_quantity if product_price > 0 else 0.0
             tax_rate = _coerce_tax(settings.facility_tax)
