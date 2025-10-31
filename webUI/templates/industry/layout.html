@@ -132,31 +132,40 @@
             color: var(--text-muted);
         }
 
-        table.sortable th {
+        th.sortable {
             cursor: pointer;
-        }
-
-        table.sortable th.sort-asc::after,
-        table.sortable th.sort-desc::after {
-            content: '';
-            border: 4px solid transparent;
-            border-top-color: currentColor;
             position: relative;
-            display: inline-block;
-            margin-left: 0.4rem;
-            top: -2px;
         }
 
-        table.sortable th.sort-desc::after {
-            transform: rotate(180deg);
-            top: 2px;
+        th.sortable::after {
+            content: "";
+            position: absolute;
+            right: 0.4rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.6rem;
+            opacity: 0.4;
+        }
+
+        th.sortable[data-sort-active="true"][data-sort-direction="asc"]::after {
+            content: "▲";
+            opacity: 0.8;
+        }
+
+        th.sortable[data-sort-active="true"][data-sort-direction="desc"]::after {
+            content: "▼";
+            opacity: 0.8;
         }
 
         tr:last-child td {
             border-bottom: none;
         }
 
-        .badge { 
+        .materials-row td {
+            background: rgba(15, 23, 42, 0.35);
+        }
+
+        .badge {
             display: inline-flex;
             align-items: center;
             gap: 0.3rem;
@@ -357,43 +366,60 @@
     </main>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const tables = document.querySelectorAll('table.sortable');
-            tables.forEach((table) => {
-                const headers = table.querySelectorAll('th');
-                headers.forEach((header, index) => {
-                    header.addEventListener('click', () => {
-                        const currentDirection = header.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
-                        headers.forEach((h) => {
-                            h.classList.remove('sort-asc', 'sort-desc');
-                            h.dataset.sortDirection = '';
-                        });
-                        header.dataset.sortDirection = currentDirection;
-                        header.classList.add(currentDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+            const parseValue = (raw, type) => {
+                if (type === 'number' || type === 'percent') {
+                    if (raw === undefined || raw === null) {
+                        return 0;
+                    }
+                    const normalised = String(raw).replace(/[^0-9.\-]/g, '');
+                    const parsed = parseFloat(normalised);
+                    return Number.isNaN(parsed) ? 0 : parsed;
+                }
+                return String(raw ?? '').trim().toLowerCase();
+            };
 
-                        const tbody = table.tBodies[0];
-                        if (!tbody) {
-                            return;
-                        }
+            const getCellValue = (row, index, type) => {
+                const cell = row.children[index];
+                if (!cell) {
+                    return type === 'number' ? 0 : '';
+                }
+                const raw = cell.dataset.sortValue !== undefined ? cell.dataset.sortValue : cell.textContent;
+                return parseValue(raw, type);
+            };
 
-                        const groups = [];
-                        let row = tbody.firstElementChild;
-                        while (row) {
-                            const group = [row];
-                            let next = row.nextElementSibling;
-                            if (next && next.classList.contains('detail-row')) {
-                                group.push(next);
-                                next = next.nextElementSibling;
+            document.querySelectorAll('table[data-sortable="true"]').forEach((table) => {
+                const tbody = table.tBodies[0];
+                if (!tbody) {
+                    return;
+                }
+
+                const entrySelector = table.dataset.entrySelector || 'tr';
+                const getEntryRows = () => Array.from(tbody.querySelectorAll(entrySelector));
+
+                table.querySelectorAll('th').forEach((th, index) => {
+                    const type = th.dataset.type || 'string';
+                    th.dataset.type = type;
+                    th.classList.add('sortable');
+
+                    th.addEventListener('click', () => {
+                        const nextDirection = th.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+
+                        table.querySelectorAll('th.sortable').forEach((header) => {
+                            if (header !== th) {
+                                header.removeAttribute('data-sort-direction');
+                                header.removeAttribute('data-sort-active');
                             }
-                            groups.push(group);
-                            row = next;
-                        }
+                        });
 
-                        const type = header.dataset.type || 'string';
-                        const multiplier = currentDirection === 'asc' ? 1 : -1;
+                        th.dataset.sortDirection = nextDirection;
+                        th.dataset.sortActive = 'true';
 
-                        groups.sort((a, b) => {
-                            const aValue = extractValue(a[0], index, type);
-                            const bValue = extractValue(b[0], index, type);
+                        const rows = getEntryRows();
+                        const multiplier = nextDirection === 'asc' ? 1 : -1;
+
+                        rows.sort((a, b) => {
+                            const aValue = getCellValue(a, index, th.dataset.type || 'string');
+                            const bValue = getCellValue(b, index, th.dataset.type || 'string');
                             if (aValue < bValue) {
                                 return -1 * multiplier;
                             }
@@ -403,28 +429,18 @@
                             return 0;
                         });
 
-                        const fragment = document.createDocumentFragment();
-                        groups.forEach((group) => group.forEach((r) => fragment.appendChild(r)));
-                        tbody.appendChild(fragment);
+                        rows.forEach((row) => {
+                            tbody.appendChild(row);
+                            const detailsId = row.dataset.entryId;
+                            if (detailsId) {
+                                tbody.querySelectorAll(`tr[data-details-for="${detailsId}"]`).forEach((detail) => {
+                                    tbody.appendChild(detail);
+                                });
+                            }
+                        });
                     });
                 });
             });
-
-            function extractValue(row, index, type) {
-                const cell = row.cells[index];
-                if (!cell) {
-                    return 0;
-                }
-                const rawValue = cell.dataset.sortValue !== undefined ? cell.dataset.sortValue : cell.textContent.trim();
-                if (type === 'number') {
-                    if (rawValue === '∞' || rawValue === '&infin;') {
-                        return Number.POSITIVE_INFINITY;
-                    }
-                    const numeric = parseFloat(rawValue.replace(/[^0-9.-]/g, ''));
-                    return Number.isNaN(numeric) ? 0 : numeric;
-                }
-                return rawValue.toLowerCase();
-            }
         });
     </script>
 </body>

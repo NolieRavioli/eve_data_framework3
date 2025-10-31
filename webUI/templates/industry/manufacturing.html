@@ -9,30 +9,55 @@
         </div>
     {% else %}
         <section class="card">
+            <h2>Manufacturing Snapshot</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <span>Queued Jobs</span>
+                    <strong>{{ report.manufacturing_plan | length }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Total Profit (ISK)</span>
+                    <strong>{{ report.summary.total_profit | round(2) }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Average ISK / hour</span>
+                    <strong>{{ report.summary.average_isk_per_hour | round(2) }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Blueprint Originals</span>
+                    <strong>{{ report.summary.original_total }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Avg ME / TE</span>
+                    <strong>{{ report.summary.average_me | round(1) }} / {{ report.summary.average_te | round(1) }}</strong>
+                </div>
+            </div>
+        </section>
+        <section class="card">
             <h2>Production Opportunities</h2>
             <div class="table-wrapper">
-                <table class="sortable">
+                <table data-sortable="true">
                     <thead>
                         <tr>
                             <th data-type="string">Product</th>
                             <th data-type="string">Blueprint</th>
-                            <th data-type="number">Runs</th>
                             <th data-type="number">ME</th>
                             <th data-type="number">TE</th>
+                            <th data-type="number">Runs</th>
                             <th data-type="number">Total Time (hrs)</th>
                             <th data-type="number">Total Profit</th>
                             <th data-type="number">ISK/hr</th>
-                            <th data-type="number">Margin</th>
+                            <th data-type="number">Margin %</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for job in report.manufacturing_plan %}
                             <tr>
                                 <td>{{ job.product_name }}</td>
-                                <td>{{ job.blueprint_name }}{% if job.is_original %} <span class="badge neutral">BPO</span>{% endif %}</td>
-                                <td data-sort-value="{{ job.total_runs if not job.is_original else 9999999 }}">{% if job.is_original %}&infin;{% else %}{{ job.total_runs }}{% endif %}</td>
-                                <td data-sort-value="{{ job.me }}">{{ job.me }}%</td>
-                                <td data-sort-value="{{ job.te }}">{{ job.te }}%</td>
+                                <td>{{ job.blueprint_name }}</td>
+                                <td data-sort-value="{{ job.me }}">{{ job.me }}</td>
+                                <td data-sort-value="{{ job.te }}">{{ job.te }}</td>
+                                <td data-sort-value="{{ job.total_runs if not job.is_original else (10 ** 9) }}">{{ '∞' if job.is_original else job.total_runs }}</td>
                                 <td data-sort-value="{{ job.total_time_hours }}">{{ job.total_time_hours | round(2) }}</td>
                                 <td data-sort-value="{{ job.total_profit }}">{{ job.total_profit | round(2) }}</td>
                                 <td data-sort-value="{{ job.isk_per_hour }}">{{ job.isk_per_hour | round(2) }}</td>
