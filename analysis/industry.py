@@ -41,6 +41,7 @@ class MaterialCost:
     adjusted_quantity: int
     price: float
     total_cost: float
+    available: bool
 
 
 @dataclass
@@ -53,6 +54,9 @@ class BlueprintLibraryEntry:
     total_runs: int
     me: int
     te: int
+    is_original: bool
+    available_runs: int | None
+    runs_display: str
     product_type_id: int
     product_name: str
     product_quantity: int
@@ -64,6 +68,8 @@ class BlueprintLibraryEntry:
     total_profit: float
     margin_percent: float
     isk_per_hour: float
+    can_build: bool
+    missing_materials: List[str]
     materials: List[MaterialCost] = field(default_factory=list)
 
 
@@ -78,6 +84,9 @@ class ManufacturingQueueItem:
     isk_per_hour: float
     total_time_hours: float
     margin_percent: float
+    me: int
+    te: int
+    is_original: bool
 
 
 @dataclass
@@ -255,7 +264,15 @@ def generate_industry_report(
                 "blueprint_total": 0,
                 "profitable_total": 0,
                 "plan_total": 0,
+                "craftable_total": 0,
+                "original_total": 0,
+                "copy_total": 0,
+                "average_me": 0.0,
+                "average_te": 0.0,
                 "missing_blueprints": [],
+                "total_profit": 0.0,
+                "average_isk_per_hour": 0.0,
+                "best_blueprint": None,
             }
             return IndustryReport(settings=settings, library=[], manufacturing_plan=[], summary=summary)
 
@@ -281,23 +298,37 @@ def generate_industry_report(
                 continue
 
             quantity = max(1, bp.quantity or 1)
-            available_runs = bp.runs or 0
-            if available_runs > 0:
-                runs_per_blueprint = min(available_runs, settings.runs_per_blueprint)
+            raw_runs = bp.runs
+            is_original = raw_runs is not None and raw_runs < 0
+            available_runs = None
+            if raw_runs is not None and raw_runs >= 0:
+                available_runs = raw_runs
+
+            if available_runs is not None:
+                runs_per_blueprint = max(0, min(available_runs, settings.runs_per_blueprint))
             else:
-                runs_per_blueprint = settings.runs_per_blueprint
-            total_runs = max(1, runs_per_blueprint * quantity)
+                runs_per_blueprint = max(0, settings.runs_per_blueprint)
+
+            total_runs = runs_per_blueprint * quantity
+            runs_display = "∞" if is_original else str(available_runs if available_runs is not None else runs_per_blueprint)
 
             time_per_run = _time_per_run(definition.manufacturing_time, bp.time_efficiency, settings)
-            total_time_hours = (time_per_run * total_runs) / max(1, settings.parallel_jobs) / 3600
+            total_time_hours = 0.0
+            if total_runs > 0:
+                total_time_hours = (time_per_run * total_runs) / max(1, settings.parallel_jobs) / 3600
 
             materials_breakdown: List[MaterialCost] = []
             material_cost_per_run = 0.0
+            missing_materials: List[str] = []
             for mat_type_id, base_qty in definition.materials:
                 adjusted_qty = _material_quantity(base_qty, bp.material_efficiency)
                 price = price_map.get(mat_type_id, 0.0)
-                total_cost = adjusted_qty * price
-                material_cost_per_run += total_cost
+                available = price > 0
+                if not available:
+                    missing_materials.append(name_from_type_id(mat_type_id))
+                total_cost = adjusted_qty * price if available else 0.0
+                if available:
+                    material_cost_per_run += total_cost
                 materials_breakdown.append(
                     MaterialCost(
                         type_id=mat_type_id,
@@ -306,6 +337,7 @@ def generate_industry_report(
                         adjusted_quantity=adjusted_qty,
                         price=price,
                         total_cost=total_cost,
+                        available=available,
                     )
                 )
 
@@ -315,10 +347,17 @@ def generate_industry_report(
             revenue_after_tax = revenue_per_run * (1 - tax_rate)
             job_cost = settings.job_cost_per_run if settings.include_job_cost else 0.0
 
-            profit_per_run = revenue_after_tax - material_cost_per_run - job_cost
-            total_profit = profit_per_run * total_runs
-            margin_percent = (profit_per_run / material_cost_per_run) if material_cost_per_run > 0 else 0.0
-            isk_per_hour = total_profit / total_time_hours if total_time_hours > 0 else 0.0
+            can_build = not missing_materials and product_price > 0 and total_runs > 0
+            if can_build:
+                profit_per_run = revenue_after_tax - material_cost_per_run - job_cost
+                total_profit = profit_per_run * total_runs
+                margin_percent = (profit_per_run / material_cost_per_run) if material_cost_per_run > 0 else 0.0
+                isk_per_hour = total_profit / total_time_hours if total_time_hours > 0 else 0.0
+            else:
+                profit_per_run = 0.0
+                total_profit = 0.0
+                margin_percent = 0.0
+                isk_per_hour = 0.0
 
             entry = BlueprintLibraryEntry(
                 blueprint_type_id=bp.type_id,
@@ -329,6 +368,9 @@ def generate_industry_report(
                 total_runs=total_runs,
                 me=bp.material_efficiency or 0,
                 te=bp.time_efficiency or 0,
+                is_original=is_original,
+                available_runs=available_runs,
+                runs_display=runs_display,
                 product_type_id=definition.product_type_id,
                 product_name=name_from_type_id(definition.product_type_id),
                 product_quantity=definition.product_quantity,
@@ -340,11 +382,13 @@ def generate_industry_report(
                 total_profit=total_profit,
                 margin_percent=margin_percent,
                 isk_per_hour=isk_per_hour,
+                can_build=can_build,
+                missing_materials=missing_materials,
                 materials=materials_breakdown,
             )
             library_entries.append(entry)
 
-        profitable_entries = [e for e in library_entries if e.profit_per_run > 0 and e.isk_per_hour > 0]
+        profitable_entries = [e for e in library_entries if e.can_build and e.profit_per_run > 0 and e.isk_per_hour > 0]
         margin_threshold = _coerce_tax(settings.minimum_margin)
         plan_candidates = [e for e in profitable_entries if e.margin_percent >= margin_threshold]
         plan_candidates.sort(key=lambda entry: entry.isk_per_hour, reverse=True)
@@ -360,6 +404,9 @@ def generate_industry_report(
                 isk_per_hour=entry.isk_per_hour,
                 total_time_hours=entry.total_time_hours,
                 margin_percent=entry.margin_percent,
+                me=entry.me,
+                te=entry.te,
+                is_original=entry.is_original,
             )
             for entry in plan_candidates
         ]
@@ -370,10 +417,20 @@ def generate_industry_report(
         if library_limit is not None:
             display_library = library_entries[:library_limit]
 
+        original_total = sum(1 for e in library_entries if e.is_original)
+        craftable_total = sum(1 for e in library_entries if e.can_build)
+        me_values = [e.me for e in library_entries]
+        te_values = [e.te for e in library_entries]
+
         summary: Dict[str, object] = {
             "blueprint_total": len(library_entries),
             "profitable_total": len(profitable_entries),
             "plan_total": len(plan_candidates),
+            "craftable_total": craftable_total,
+            "original_total": original_total,
+            "copy_total": len(library_entries) - original_total,
+            "average_me": statistics.mean(me_values) if me_values else 0.0,
+            "average_te": statistics.mean(te_values) if te_values else 0.0,
             "missing_blueprints": sorted(set(missing)),
             "total_profit": sum(e.total_profit for e in plan_candidates),
             "average_isk_per_hour": statistics.mean([e.isk_per_hour for e in plan_candidates]) if plan_candidates else 0.0,

@@ -38,6 +38,32 @@
             {% endif %}
         </section>
 
+        <section class="card">
+            <h2>Blueprint Health</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <span>Craftable Today</span>
+                    <strong>{{ summary.craftable_total or 0 }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Blueprint Originals</span>
+                    <strong>{{ summary.original_total or 0 }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Blueprint Copies</span>
+                    <strong>{{ summary.copy_total or 0 }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Average ME</span>
+                    <strong>{{ summary.average_me | default(0.0) | round(1) }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Average TE</span>
+                    <strong>{{ summary.average_te | default(0.0) | round(1) }}</strong>
+                </div>
+            </div>
+        </section>
+
         {% if summary.best_blueprint %}
             {% set top = summary.best_blueprint %}
             <section class="card">
@@ -50,6 +76,10 @@
                     <div class="metric">
                         <span>Product</span>
                         <strong>{{ top.product_name }}</strong>
+                    </div>
+                    <div class="metric">
+                        <span>Blueprint ME / TE</span>
+                        <strong>{{ top.me }} / {{ top.te }}</strong>
                     </div>
                     <div class="metric">
                         <span>ISK / hour</span>
@@ -68,14 +98,16 @@
                 <h2>Blueprint Library Preview</h2>
                 {% if report and report.library %}
                     <div class="table-wrapper">
-                        <table>
+                        <table data-sortable="true">
                             <thead>
                                 <tr>
-                                    <th>Blueprint</th>
-                                    <th>Product</th>
-                                    <th>Runs</th>
-                                    <th>Profit/run</th>
-                                    <th>ISK/hr</th>
+                                    <th data-type="string">Blueprint</th>
+                                    <th data-type="string">Product</th>
+                                    <th data-type="number">Runs</th>
+                                    <th data-type="number">ME</th>
+                                    <th data-type="number">TE</th>
+                                    <th data-type="number">Profit/run</th>
+                                    <th data-type="number">ISK/hr</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -83,7 +115,9 @@
                                     <tr>
                                         <td>{{ entry.blueprint_name }}</td>
                                         <td>{{ entry.product_name }}</td>
-                                        <td>{{ entry.total_runs }}</td>
+                                        <td data-sort-value="{{ entry.available_runs if entry.available_runs is not none else (10 ** 9) }}">{{ entry.runs_display }}</td>
+                                        <td data-sort-value="{{ entry.me }}">{{ entry.me }}</td>
+                                        <td data-sort-value="{{ entry.te }}">{{ entry.te }}</td>
                                         <td>{{ entry.profit_per_run | round(2) }}</td>
                                         <td>{{ entry.isk_per_hour | round(2) }}</td>
                                     </tr>
