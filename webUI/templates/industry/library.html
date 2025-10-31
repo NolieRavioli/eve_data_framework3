@@ -23,49 +23,75 @@
                     <span>Plan Ready</span>
                     <strong>{{ report.summary.plan_total }}</strong>
                 </div>
+                <div class="metric">
+                    <span>Craftable Today</span>
+                    <strong>{{ report.summary.craftable_total }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Avg ME / TE</span>
+                    <strong>{{ report.summary.average_me | round(1) }} / {{ report.summary.average_te | round(1) }}</strong>
+                </div>
             </div>
         </section>
         <section class="card">
             <h2>Blueprint Inventory</h2>
             <div class="table-wrapper">
-                <table>
+                <table data-sortable="true" data-entry-selector="tr[data-entry-row='true']">
                     <thead>
                         <tr>
-                            <th>Blueprint</th>
-                            <th>Product</th>
-                            <th>Character</th>
-                            <th>Runs</th>
-                            <th>ME</th>
-                            <th>TE</th>
-                            <th>Material Cost/run</th>
-                            <th>Revenue/run</th>
-                            <th>Profit/run</th>
-                            <th>ISK/hr</th>
+                            <th data-type="string">Blueprint</th>
+                            <th data-type="string">Product</th>
+                            <th data-type="string">Character</th>
+                            <th data-type="number">Runs</th>
+                            <th data-type="number">ME</th>
+                            <th data-type="number">TE</th>
+                            <th data-type="number">Material Cost/run</th>
+                            <th data-type="number">Revenue/run</th>
+                            <th data-type="number">Profit/run</th>
+                            <th data-type="number">ISK/hr</th>
+                            <th data-type="string">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for entry in report.library %}
-                            <tr>
+                            <tr data-entry-row="true" data-entry-id="{{ entry.blueprint_type_id }}">
                                 <td>{{ entry.blueprint_name }}</td>
                                 <td>{{ entry.product_name }}</td>
                                 <td>{{ entry.character_name }}</td>
-                                <td>{{ entry.total_runs }}</td>
-                                <td>{{ entry.me }}</td>
-                                <td>{{ entry.te }}</td>
-                                <td>{{ entry.material_cost_per_run | round(2) }}</td>
-                                <td>{{ entry.revenue_per_run | round(2) }}</td>
-                                <td>{{ entry.profit_per_run | round(2) }}</td>
-                                <td>{{ entry.isk_per_hour | round(2) }}</td>
+                                <td data-sort-value="{{ entry.available_runs if entry.available_runs is not none else (10 ** 9) }}">{{ entry.runs_display }}</td>
+                                <td data-sort-value="{{ entry.me }}">{{ entry.me }}</td>
+                                <td data-sort-value="{{ entry.te }}">{{ entry.te }}</td>
+                                <td data-sort-value="{{ entry.material_cost_per_run }}">{{ entry.material_cost_per_run | round(2) }}</td>
+                                <td data-sort-value="{{ entry.revenue_per_run }}">{{ entry.revenue_per_run | round(2) }}</td>
+                                <td data-sort-value="{{ entry.profit_per_run }}">{{ entry.profit_per_run | round(2) }}</td>
+                                <td data-sort-value="{{ entry.isk_per_hour }}">{{ entry.isk_per_hour | round(2) }}</td>
+                                <td>
+                                    {% if entry.can_build %}
+                                        <span class="badge success">Ready</span>
+                                    {% elif entry.total_runs == 0 %}
+                                        <span class="badge danger">No Runs Available</span>
+                                    {% else %}
+                                        <span class="badge danger">Missing Inputs</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% if entry.materials %}
-                                <tr>
-                                    <td colspan="10">
+                                <tr class="materials-row" data-details-for="{{ entry.blueprint_type_id }}">
+                                    <td colspan="11">
                                         <strong>Materials per run</strong>
                                         <ul>
                                             {% for mat in entry.materials %}
-                                                <li>{{ mat.name }} — {{ mat.adjusted_quantity }} units @ {{ mat.price | round(2) }} ISK ({{ mat.total_cost | round(2) }} ISK)</li>
+                                                <li>
+                                                    {{ mat.name }} — {{ mat.adjusted_quantity }} units @ {{ mat.price | round(2) }} ISK ({{ mat.total_cost | round(2) }} ISK)
+                                                    {% if not mat.available %}
+                                                        <span class="badge danger">No market price</span>
+                                                    {% endif %}
+                                                </li>
                                             {% endfor %}
                                         </ul>
+                                        {% if entry.missing_materials %}
+                                            <p class="badge danger">Missing inputs: {{ entry.missing_materials | join(', ') }}</p>
+                                        {% endif %}
                                     </td>
                                 </tr>
                             {% endif %}

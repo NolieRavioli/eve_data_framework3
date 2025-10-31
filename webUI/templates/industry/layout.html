@@ -132,8 +132,37 @@
             color: var(--text-muted);
         }
 
+        th.sortable {
+            cursor: pointer;
+            position: relative;
+        }
+
+        th.sortable::after {
+            content: "";
+            position: absolute;
+            right: 0.4rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.6rem;
+            opacity: 0.4;
+        }
+
+        th.sortable[data-sort-active="true"][data-sort-direction="asc"]::after {
+            content: "▲";
+            opacity: 0.8;
+        }
+
+        th.sortable[data-sort-active="true"][data-sort-direction="desc"]::after {
+            content: "▼";
+            opacity: 0.8;
+        }
+
         tr:last-child td {
             border-bottom: none;
+        }
+
+        .materials-row td {
+            background: rgba(15, 23, 42, 0.35);
         }
 
         .badge {
@@ -312,5 +341,84 @@
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const parseValue = (raw, type) => {
+                if (type === 'number' || type === 'percent') {
+                    if (raw === undefined || raw === null) {
+                        return 0;
+                    }
+                    const normalised = String(raw).replace(/[^0-9.\-]/g, '');
+                    const parsed = parseFloat(normalised);
+                    return Number.isNaN(parsed) ? 0 : parsed;
+                }
+                return String(raw ?? '').trim().toLowerCase();
+            };
+
+            const getCellValue = (row, index, type) => {
+                const cell = row.children[index];
+                if (!cell) {
+                    return type === 'number' ? 0 : '';
+                }
+                const raw = cell.dataset.sortValue !== undefined ? cell.dataset.sortValue : cell.textContent;
+                return parseValue(raw, type);
+            };
+
+            document.querySelectorAll('table[data-sortable="true"]').forEach((table) => {
+                const tbody = table.tBodies[0];
+                if (!tbody) {
+                    return;
+                }
+
+                const entrySelector = table.dataset.entrySelector || 'tr';
+                const getEntryRows = () => Array.from(tbody.querySelectorAll(entrySelector));
+
+                table.querySelectorAll('th').forEach((th, index) => {
+                    const type = th.dataset.type || 'string';
+                    th.dataset.type = type;
+                    th.classList.add('sortable');
+
+                    th.addEventListener('click', () => {
+                        const nextDirection = th.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+
+                        table.querySelectorAll('th.sortable').forEach((header) => {
+                            if (header !== th) {
+                                header.removeAttribute('data-sort-direction');
+                                header.removeAttribute('data-sort-active');
+                            }
+                        });
+
+                        th.dataset.sortDirection = nextDirection;
+                        th.dataset.sortActive = 'true';
+
+                        const rows = getEntryRows();
+                        const multiplier = nextDirection === 'asc' ? 1 : -1;
+
+                        rows.sort((a, b) => {
+                            const aValue = getCellValue(a, index, th.dataset.type || 'string');
+                            const bValue = getCellValue(b, index, th.dataset.type || 'string');
+                            if (aValue < bValue) {
+                                return -1 * multiplier;
+                            }
+                            if (aValue > bValue) {
+                                return 1 * multiplier;
+                            }
+                            return 0;
+                        });
+
+                        rows.forEach((row) => {
+                            tbody.appendChild(row);
+                            const detailsId = row.dataset.entryId;
+                            if (detailsId) {
+                                tbody.querySelectorAll(`tr[data-details-for="${detailsId}"]`).forEach((detail) => {
+                                    tbody.appendChild(detail);
+                                });
+                            }
+                        });
+                    });
+                });
+            });
+        });
+    </script>
 </body>
 </html>
