@@ -1,6 +1,16 @@
 # db/models.py
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, BigInteger
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    JSON,
+    BigInteger,
+    PrimaryKeyConstraint,
+)
 from sqlalchemy.orm import declarative_base
 import datetime
 
@@ -173,10 +183,12 @@ class IndustryJob(PrivateBase):
     end_date                = Column(DateTime)
 
 class LoyaltyPoints(PrivateBase):
-    __tablename__    = "moon_extractions"
-    character_id     = Column(Integer, index=True)
-    corporation_id   = Column(Integer)
-    loyalty_points   = Column(DateTime)
+    __tablename__ = "loyalty_points"
+    __table_args__ = (PrimaryKeyConstraint("character_id", "corporation_id"),)
+
+    character_id = Column(Integer, index=True)
+    corporation_id = Column(Integer, index=True)
+    loyalty_points = Column(Integer)
 
 class PersonalOrder(PrivateBase):
     __tablename__         = "market_orders"
@@ -196,12 +208,14 @@ class PersonalOrder(PrivateBase):
     last_seen       = Column(DateTime, default=datetime.datetime.utcnow)
 
 class MoonExtraction(PrivateBase):
-    __tablename__         = "moon_extractions"
-    chunk_arrival_time    = Column(DateTime)
+    __tablename__ = "moon_extractions"
+    __table_args__ = (PrimaryKeyConstraint("structure_id", "chunk_arrival_time"),)
+
+    chunk_arrival_time = Column(DateTime)
     extraction_start_time = Column(DateTime)
-    natural_decay_time    = Column(DateTime)
-    moon_id               = Column(Integer)
-    structure_id          = Column(BigInteger)
+    natural_decay_time = Column(DateTime)
+    moon_id = Column(Integer)
+    structure_id = Column(BigInteger, index=True)
 
 class PersonalBookmark(PrivateBase):
     __tablename__   = "personal_bookmarks"
