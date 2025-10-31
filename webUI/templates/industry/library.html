@@ -16,6 +16,10 @@
                     <strong>{{ report.summary.blueprint_total }}</strong>
                 </div>
                 <div class="metric">
+                    <span>Buildable</span>
+                    <strong>{{ report.summary.buildable_total }}</strong>
+                </div>
+                <div class="metric">
                     <span>Profitable</span>
                     <strong>{{ report.summary.profitable_total }}</strong>
                 </div>
@@ -79,7 +83,7 @@
                                 <tr class="materials-row" data-details-for="{{ entry.blueprint_type_id }}">
                                     <td colspan="11">
                                         <strong>Materials per run</strong>
-                                        <ul>
+                                        <ul class="materials-list">
                                             {% for mat in entry.materials %}
                                                 <li>
                                                     {{ mat.name }} — {{ mat.adjusted_quantity }} units @ {{ mat.price | round(2) }} ISK ({{ mat.total_cost | round(2) }} ISK)

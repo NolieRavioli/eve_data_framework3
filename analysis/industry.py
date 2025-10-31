@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import statistics
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -208,33 +209,58 @@ def _collect_price_map(
     settings: ManufacturingSettings,
     public_session: Session,
     overrides: Optional[Mapping[int, float]] = None,
-) -> Dict[int, float]:
+) -> Dict[int, MarketPrice]:
     ids = {int(tid) for tid in type_ids if tid is not None}
     overrides = overrides or {}
-    prices: Dict[int, float] = {tid: overrides.get(tid, 0.0) for tid in ids}
+    prices: Dict[int, MarketPrice] = {}
 
     if not ids:
         return prices
 
-    query = public_session.query(
-        MarketOrder.type_id,
-        func.min(MarketOrder.price).label("min_price"),
-        func.max(MarketOrder.price).label("max_price"),
-    ).filter(MarketOrder.type_id.in_(ids))
+    sell_query = (
+        public_session.query(
+            MarketOrder.type_id,
+            func.min(MarketOrder.price).label("price"),
+            func.count(MarketOrder.order_id).label("order_count"),
+        )
+        .filter(MarketOrder.type_id.in_(ids), MarketOrder.is_buy_order.is_(False))
+    )
+    buy_query = (
+        public_session.query(
+            MarketOrder.type_id,
+            func.max(MarketOrder.price).label("price"),
+            func.count(MarketOrder.order_id).label("order_count"),
+        )
+        .filter(MarketOrder.type_id.in_(ids), MarketOrder.is_buy_order.is_(True))
+    )
 
     if settings.region_id is not None:
-        query = query.filter(MarketOrder.region_id == settings.region_id)
+        sell_query = sell_query.filter(MarketOrder.region_id == settings.region_id)
+        buy_query = buy_query.filter(MarketOrder.region_id == settings.region_id)
 
-    query = query.group_by(MarketOrder.type_id)
+    for row in sell_query.group_by(MarketOrder.type_id).all():
+        info = prices.setdefault(row.type_id, MarketPrice())
+        info.best_sell = float(row.price or 0.0)
+        info.sell_order_count = int(row.order_count or 0)
 
-    for row in query.all():
-        if row.type_id in overrides and overrides[row.type_id] >= 0:
-            prices[row.type_id] = overrides[row.type_id]
+    for row in buy_query.group_by(MarketOrder.type_id).all():
+        info = prices.setdefault(row.type_id, MarketPrice())
+        info.best_buy = float(row.price or 0.0)
+        info.buy_order_count = int(row.order_count or 0)
+
+    for type_id, price in overrides.items():
+        if price < 0:
             continue
-        if settings.price_source == "buy":
-            prices[row.type_id] = float(row.max_price or 0.0)
-        else:
-            prices[row.type_id] = float(row.min_price or 0.0)
+        info = prices.setdefault(int(type_id), MarketPrice())
+        info.best_buy = float(price)
+        info.best_sell = float(price)
+        availability = 1 if price > 0 else 0
+        info.buy_order_count = max(info.buy_order_count, availability)
+        info.sell_order_count = max(info.sell_order_count, availability)
+        info.override = True
+
+    for type_id in ids:
+        prices.setdefault(type_id, MarketPrice())
 
     return prices
 
@@ -262,6 +288,7 @@ def generate_industry_report(
         if not blueprints:
             summary = {
                 "blueprint_total": 0,
+                "buildable_total": 0,
                 "profitable_total": 0,
                 "plan_total": 0,
                 "craftable_total": 0,
@@ -289,7 +316,8 @@ def generate_industry_report(
             for mat_id, _ in definition.materials:
                 relevant_types.add(mat_id)
 
-        price_map = _collect_price_map(relevant_types | set(settings.override_prices.keys()), settings, pub, settings.override_prices)
+        override_ids = set(settings.override_prices.keys())
+        price_map = _collect_price_map(relevant_types | override_ids, settings, pub, settings.override_prices)
 
         library_entries: List[BlueprintLibraryEntry] = []
         for bp in blueprints:
@@ -341,10 +369,25 @@ def generate_industry_report(
                     )
                 )
 
-            product_price = price_map.get(definition.product_type_id, 0.0)
-            revenue_per_run = product_price * definition.product_quantity
+            product_name = name_from_type_id(definition.product_type_id)
+            product_price_info = price_map.get(definition.product_type_id)
+            product_price = 0.0
+            product_has_market = False
+            market_label = "sell orders" if settings.price_source == "sell" else "buy orders"
+            if product_price_info:
+                if settings.price_source == "buy":
+                    product_price = product_price_info.best_buy
+                    product_has_market = product_price_info.buy_order_count > 0 or product_price_info.override
+                else:
+                    product_price = product_price_info.best_sell
+                    product_has_market = product_price_info.sell_order_count > 0 or product_price_info.override
+
+            if not product_has_market or product_price <= 0:
+                can_build = False
+                missing_components.append(f"{product_name} {market_label}")
+
+            revenue_per_run = product_price * definition.product_quantity if product_price > 0 else 0.0
             tax_rate = _coerce_tax(settings.facility_tax)
-            revenue_after_tax = revenue_per_run * (1 - tax_rate)
             job_cost = settings.job_cost_per_run if settings.include_job_cost else 0.0
 
             can_build = not missing_materials and product_price > 0 and total_runs > 0
@@ -372,7 +415,7 @@ def generate_industry_report(
                 available_runs=available_runs,
                 runs_display=runs_display,
                 product_type_id=definition.product_type_id,
-                product_name=name_from_type_id(definition.product_type_id),
+                product_name=product_name,
                 product_quantity=definition.product_quantity,
                 time_per_run_seconds=time_per_run,
                 total_time_hours=total_time_hours,
@@ -408,10 +451,14 @@ def generate_industry_report(
                 te=entry.te,
                 is_original=entry.is_original,
             )
-            for entry in plan_candidates
-        ]
+
+        aggregated_plan.sort(key=lambda item: item.isk_per_hour, reverse=True)
+
+        plan: List[ManufacturingQueueItem]
         if plan_limit is not None:
-            plan = plan[:plan_limit]
+            plan = aggregated_plan[:plan_limit]
+        else:
+            plan = aggregated_plan
 
         display_library = library_entries
         if library_limit is not None:
@@ -424,6 +471,7 @@ def generate_industry_report(
 
         summary: Dict[str, object] = {
             "blueprint_total": len(library_entries),
+            "buildable_total": len(buildable_entries),
             "profitable_total": len(profitable_entries),
             "plan_total": len(plan_candidates),
             "craftable_total": craftable_total,
@@ -432,9 +480,14 @@ def generate_industry_report(
             "average_me": statistics.mean(me_values) if me_values else 0.0,
             "average_te": statistics.mean(te_values) if te_values else 0.0,
             "missing_blueprints": sorted(set(missing)),
-            "total_profit": sum(e.total_profit for e in plan_candidates),
-            "average_isk_per_hour": statistics.mean([e.isk_per_hour for e in plan_candidates]) if plan_candidates else 0.0,
+            "total_profit": sum(item.total_profit for item in aggregated_plan),
+            "average_isk_per_hour": statistics.mean([item.isk_per_hour for item in aggregated_plan]) if aggregated_plan else 0.0,
             "best_blueprint": plan_candidates[0] if plan_candidates else None,
+            "original_total": sum(1 for e in library_entries if e.is_original),
+            "copy_total": sum(1 for e in library_entries if not e.is_original),
+            "unbuildable_total": sum(1 for e in library_entries if not e.can_build),
+            "average_me": statistics.mean([e.me for e in library_entries]) if library_entries else 0.0,
+            "average_te": statistics.mean([e.te for e in library_entries]) if library_entries else 0.0,
         }
 
         return IndustryReport(settings=settings, library=display_library, manufacturing_plan=plan, summary=summary)
