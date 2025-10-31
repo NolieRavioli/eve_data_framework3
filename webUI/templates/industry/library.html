@@ -1,5 +1,195 @@
 {% extends 'industry/layout.html' %}
 {% block title %}Blueprint Library{% endblock %}
+{% block extra_head %}
+<style>
+    .metrics.metrics--wide {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+
+    .metric small {
+        display: block;
+        margin-top: 0.35rem;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+    }
+
+    .library-layout {
+        display: grid;
+        grid-template-columns: minmax(460px, 1.35fr) minmax(340px, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+    }
+
+    .library-table table tbody tr {
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+
+    .library-table table tbody tr:hover {
+        background: rgba(56, 189, 248, 0.12);
+    }
+
+    .library-table table tbody tr.is-selected {
+        background: rgba(14, 165, 233, 0.22);
+        box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.4);
+    }
+
+    .library-table__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .library-table__header span {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    .library-detail {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        min-height: 100%;
+    }
+
+    .library-detail__empty {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 2rem 1.5rem;
+        border: 1px dashed rgba(148, 163, 184, 0.25);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.3);
+    }
+
+    .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .detail-header h2 {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+
+    .detail-header h3 {
+        margin: 0.2rem 0 0;
+        font-size: 1.3rem;
+    }
+
+    .detail-header p {
+        margin: 0.2rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    .detail-badges {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .detail-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+
+    .detail-meta span {
+        display: block;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .detail-meta strong {
+        display: block;
+        font-size: 1rem;
+        margin-top: 0.2rem;
+    }
+
+    .detail-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1rem;
+    }
+
+    .detail-metric {
+        background: rgba(15, 23, 42, 0.45);
+        border-radius: 16px;
+        padding: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .detail-metric span {
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .detail-metric strong {
+        display: block;
+        margin-top: 0.35rem;
+        font-size: 1.1rem;
+    }
+
+    .materials-table th,
+    .materials-table td {
+        font-size: 0.78rem;
+    }
+
+    .materials-table td.numeric {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .materials-table tbody tr.build-preferred td {
+        background: rgba(52, 211, 153, 0.12);
+    }
+
+    .materials-table tbody tr.build-more-expensive td {
+        background: rgba(248, 113, 113, 0.08);
+    }
+
+    .materials-footnote {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.6rem;
+    }
+
+    .materials-footnote.danger {
+        color: var(--danger);
+    }
+
+    .materials-missing {
+        margin: 0.6rem 0 0;
+        padding-left: 1.1rem;
+        color: var(--danger);
+        font-size: 0.8rem;
+    }
+
+    @media (max-width: 1180px) {
+        .library-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 720px) {
+        .metrics.metrics--wide {
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
     {% if not report or not report.library %}
         <div class="empty-state">
@@ -10,99 +200,232 @@
     {% else %}
         <section class="card">
             <h2>Library Summary</h2>
-            <div class="metrics">
+            <div class="metrics metrics--wide">
                 <div class="metric">
                     <span>Total Blueprints</span>
                     <strong>{{ report.summary.blueprint_total }}</strong>
+                    <small>Originals {{ report.summary.original_total }} • Copies {{ report.summary.copy_total }}</small>
                 </div>
                 <div class="metric">
-                    <span>Buildable</span>
+                    <span>Build Ready</span>
                     <strong>{{ report.summary.buildable_total }}</strong>
+                    <small>{{ report.summary.craftable_total }} craftable • {{ report.summary.unbuildable_total }} blocked</small>
                 </div>
                 <div class="metric">
-                    <span>Profitable</span>
+                    <span>Profitable Plans</span>
                     <strong>{{ report.summary.profitable_total }}</strong>
+                    <small>{{ report.summary.plan_total }} meet margin target</small>
                 </div>
                 <div class="metric">
-                    <span>Plan Ready</span>
-                    <strong>{{ report.summary.plan_total }}</strong>
+                    <span>Component Build Options</span>
+                    <strong>{{ report.summary.materials_with_build_option }}</strong>
+                    <small>{{ report.summary.materials_build_cheaper }} cheaper to build</small>
                 </div>
                 <div class="metric">
-                    <span>Craftable Today</span>
-                    <strong>{{ report.summary.craftable_total }}</strong>
+                    <span>Average Build Savings</span>
+                    <strong>{{ '{:,.2f}'.format(report.summary.average_build_savings) }}</strong>
+                    <small>Total savings {{ '{:,.2f}'.format(report.summary.total_build_savings) }}</small>
                 </div>
                 <div class="metric">
-                    <span>Avg ME / TE</span>
-                    <strong>{{ report.summary.average_me | round(1) }} / {{ report.summary.average_te | round(1) }}</strong>
+                    <span>Total Profit Potential</span>
+                    <strong>{{ '{:,.0f}'.format(report.summary.total_profit) }}</strong>
+                    <small>Avg ISK/hr {{ '{:,.2f}'.format(report.summary.average_isk_per_hour) }}</small>
                 </div>
             </div>
         </section>
-        <section class="card">
-            <h2>Blueprint Inventory</h2>
-            <div class="table-wrapper">
-                <table data-sortable="true" data-entry-selector="tr[data-entry-row='true']">
-                    <thead>
-                        <tr>
-                            <th data-type="string">Blueprint</th>
-                            <th data-type="string">Product</th>
-                            <th data-type="string">Character</th>
-                            <th data-type="number">Runs</th>
-                            <th data-type="number">ME</th>
-                            <th data-type="number">TE</th>
-                            <th data-type="number">Material Cost/run</th>
-                            <th data-type="number">Revenue/run</th>
-                            <th data-type="number">Profit/run</th>
-                            <th data-type="number">ISK/hr</th>
-                            <th data-type="string">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for entry in report.library %}
-                            <tr data-entry-row="true" data-entry-id="{{ entry.blueprint_type_id }}">
-                                <td>{{ entry.blueprint_name }}</td>
-                                <td>{{ entry.product_name }}</td>
-                                <td>{{ entry.character_name }}</td>
-                                <td data-sort-value="{{ entry.available_runs if entry.available_runs is not none else (10 ** 9) }}">{{ entry.runs_display }}</td>
-                                <td data-sort-value="{{ entry.me }}">{{ entry.me }}</td>
-                                <td data-sort-value="{{ entry.te }}">{{ entry.te }}</td>
-                                <td data-sort-value="{{ entry.material_cost_per_run }}">{{ entry.material_cost_per_run | round(2) }}</td>
-                                <td data-sort-value="{{ entry.revenue_per_run }}">{{ entry.revenue_per_run | round(2) }}</td>
-                                <td data-sort-value="{{ entry.profit_per_run }}">{{ entry.profit_per_run | round(2) }}</td>
-                                <td data-sort-value="{{ entry.isk_per_hour }}">{{ entry.isk_per_hour | round(2) }}</td>
-                                <td>
-                                    {% if entry.can_build %}
-                                        <span class="badge success">Ready</span>
-                                    {% elif entry.total_runs == 0 %}
-                                        <span class="badge danger">No Runs Available</span>
-                                    {% else %}
-                                        <span class="badge danger">Missing Inputs</span>
-                                    {% endif %}
-                                </td>
+
+        <div class="library-layout">
+            <section class="card library-table">
+                <div class="library-table__header">
+                    <h2>Blueprint Inventory</h2>
+                    <span>{{ report.summary.blueprint_total }} entries</span>
+                </div>
+                <div class="table-wrapper">
+                    <table data-sortable="true" data-entry-selector="tr[data-entry-row='true']">
+                        <thead>
+                            <tr>
+                                <th data-type="string">Blueprint</th>
+                                <th data-type="string">Product</th>
+                                <th data-type="string">Character</th>
+                                <th data-type="number">Runs</th>
+                                <th data-type="number">Material Cost/run</th>
+                                <th data-type="number">Revenue/run</th>
+                                <th data-type="number">Profit/run</th>
+                                <th data-type="number">ISK/hr</th>
+                                <th data-type="number">Margin%</th>
+                                <th data-type="number">Build Options</th>
+                                <th data-type="string">Status</th>
                             </tr>
-                            {% if entry.materials %}
-                                <tr class="materials-row" data-details-for="{{ entry.blueprint_type_id }}">
-                                    <td colspan="11">
-                                        <strong>Materials per run</strong>
-                                        <ul class="materials-list">
-                                            {% for mat in entry.materials %}
-                                                <li>
-                                                    {{ mat.name }} — {{ mat.adjusted_quantity }} units @ {{ mat.price | round(2) }} ISK ({{ mat.total_cost | round(2) }} ISK)
-                                                    {% if not mat.available %}
-                                                        <span class="badge danger">No market price</span>
-                                                    {% endif %}
-                                                </li>
-                                            {% endfor %}
-                                        </ul>
-                                        {% if entry.missing_materials %}
-                                            <p class="badge danger">Missing inputs: {{ entry.missing_materials | join(', ') }}</p>
+                        </thead>
+                        <tbody>
+                            {% for entry in report.library %}
+                                {% set buildable_materials = entry.materials | selectattr('buildable', 'equalto', True) | list %}
+                                {% set preferred_materials = entry.materials | selectattr('build_preferred', 'equalto', True) | list %}
+                                <tr data-entry-row="true" data-entry-id="{{ entry.blueprint_type_id }}" class="{% if selected_entry and selected_entry.blueprint_type_id == entry.blueprint_type_id %}is-selected{% endif %}">
+                                    <td>{{ entry.blueprint_name }}</td>
+                                    <td>{{ entry.product_name }}</td>
+                                    <td>{{ entry.character_name }}</td>
+                                    <td data-sort-value="{{ entry.available_runs if entry.available_runs is not none else (10 ** 9) }}">{{ entry.runs_display }}</td>
+                                    <td data-sort-value="{{ entry.material_cost_per_run }}">{{ '{:,.2f}'.format(entry.material_cost_per_run) }}</td>
+                                    <td data-sort-value="{{ entry.revenue_per_run }}">{{ '{:,.2f}'.format(entry.revenue_per_run) }}</td>
+                                    <td data-sort-value="{{ entry.profit_per_run }}">{{ '{:,.2f}'.format(entry.profit_per_run) }}</td>
+                                    <td data-sort-value="{{ entry.isk_per_hour }}">{{ '{:,.2f}'.format(entry.isk_per_hour) }}</td>
+                                    <td data-sort-value="{{ entry.margin_percent }}">{{ '{:,.2f}'.format(entry.margin_percent * 100) }}%</td>
+                                    <td data-sort-value="{{ preferred_materials|length }}">
+                                        {% if buildable_materials %}
+                                            <span class="badge {% if preferred_materials|length > 0 %}success{% else %}neutral{% endif %}">
+                                                {{ preferred_materials|length }} / {{ buildable_materials|length }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge neutral">Market Buy</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if entry.can_build %}
+                                            <span class="badge success">Ready</span>
+                                        {% elif entry.total_runs == 0 %}
+                                            <span class="badge danger">No Runs</span>
+                                        {% else %}
+                                            <span class="badge danger">Missing Inputs</span>
                                         {% endif %}
                                     </td>
                                 </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card library-detail" id="library-detail" data-has-selection="{{ 'true' if selected_entry else 'false' }}">
+                {% if not selected_entry %}
+                    <div class="library-detail__empty">Select a blueprint from the table to inspect build details.</div>
+                {% else %}
+                    <header class="detail-header">
+                        <div>
+                            <h2>Blueprint Detail</h2>
+                            <h3 data-field="blueprint-name">{{ selected_entry.blueprint_name }}</h3>
+                            <p data-field="product-line">{{ selected_entry.product_name }} • {{ selected_entry.product_quantity }} units per run</p>
+                        </div>
+                        <div class="detail-badges">
+                            <span class="badge neutral" data-field="blueprint-kind">{{ 'Original Blueprint' if selected_entry.is_original else 'Copy Blueprint' }}</span>
+                            <span class="badge {% if selected_entry.can_build %}success{% else %}danger{% endif %}" data-field="status-badge">
+                                {% if selected_entry.can_build %}Build Ready{% elif selected_entry.total_runs == 0 %}No Runs Available{% else %}Missing Inputs{% endif %}
+                            </span>
+                        </div>
+                    </header>
+
+                    <div class="detail-meta">
+                        <div>
+                            <span>Character</span>
+                            <strong data-field="character-name">{{ selected_entry.character_name }}</strong>
+                        </div>
+                        <div>
+                            <span>Runs Available</span>
+                            <strong data-field="runs">{{ selected_entry.runs_display }}</strong>
+                        </div>
+                        <div>
+                            <span>Research (ME / TE)</span>
+                            <strong data-field="research">{{ selected_entry.me }} / {{ selected_entry.te }}</strong>
+                        </div>
+                        <div>
+                            <span>Total Build Time</span>
+                            <strong data-field="total-time">{{ '{:,.2f}'.format(selected_entry.total_time_hours) }} h</strong>
+                        </div>
+                    </div>
+
+                    <div class="detail-metrics">
+                        <div class="detail-metric">
+                            <span>Material Cost / run</span>
+                            <strong data-field="material-cost">{{ '{:,.2f}'.format(selected_entry.material_cost_per_run) }}</strong>
+                        </div>
+                        <div class="detail-metric">
+                            <span>Revenue / run</span>
+                            <strong data-field="revenue">{{ '{:,.2f}'.format(selected_entry.revenue_per_run) }}</strong>
+                        </div>
+                        <div class="detail-metric">
+                            <span>Profit / run</span>
+                            <strong data-field="profit">{{ '{:,.2f}'.format(selected_entry.profit_per_run) }}</strong>
+                        </div>
+                        <div class="detail-metric">
+                            <span>ISK per hour</span>
+                            <strong data-field="isk-per-hour">{{ '{:,.2f}'.format(selected_entry.isk_per_hour) }}</strong>
+                        </div>
+                        <div class="detail-metric">
+                            <span>Total Profit</span>
+                            <strong data-field="total-profit">{{ '{:,.2f}'.format(selected_entry.total_profit) }}</strong>
+                        </div>
+                        <div class="detail-metric">
+                            <span>Margin</span>
+                            <strong data-field="margin">{{ '{:,.2f}'.format(selected_entry.margin_percent * 100) }}%</strong>
+                        </div>
+                    </div>
+
+                    <div class="detail-materials">
+                        <h3>Material Breakdown</h3>
+                        <div class="table-wrapper">
+                            <table class="materials-table">
+                                <thead>
+                                    <tr>
+                                        <th>Material</th>
+                                        <th class="numeric">Qty</th>
+                                        <th class="numeric">Market / unit</th>
+                                        <th class="numeric">Market total</th>
+                                        <th class="numeric">Build / unit</th>
+                                        <th class="numeric">Build total</th>
+                                        <th class="numeric">Savings</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-materials-body>
+                                    {% for material in selected_entry.materials %}
+                                        {% set row_class = '' %}
+                                        {% if material.build_preferred %}
+                                            {% set row_class = row_class + ' build-preferred' %}
+                                        {% elif material.savings_vs_market is not none and material.savings_vs_market < 0 %}
+                                            {% set row_class = row_class + ' build-more-expensive' %}
+                                        {% endif %}
+                                        <tr class="{{ row_class.strip() }}">
+                                            <td>{{ material.name }}</td>
+                                            <td class="numeric">{{ material.adjusted_quantity }}</td>
+                                            <td class="numeric">{{ '{:,.2f}'.format(material.price) if material.price else '—' }}</td>
+                                            <td class="numeric">{{ '{:,.2f}'.format(material.total_cost) if material.total_cost else '—' }}</td>
+                                            <td class="numeric">
+                                                {% if material.build_cost_per_unit is not none %}
+                                                    {{ '{:,.2f}'.format(material.build_cost_per_unit) }}
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </td>
+                                            <td class="numeric">
+                                                {% if material.build_cost_total is not none %}
+                                                    {{ '{:,.2f}'.format(material.build_cost_total) }}
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </td>
+                                            <td class="numeric">
+                                                {% if material.savings_vs_market is not none %}
+                                                    {{ '{:,.2f}'.format(material.savings_vs_market) }}
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="materials-footnote" data-missing-list>
+                            {% if selected_entry.missing_materials %}
+                                Missing inputs: {{ selected_entry.missing_materials | join(', ') }}
+                            {% else %}
+                                All required materials have market coverage.
                             {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                        </div>
+                    </div>
+                {% endif %}
+            </section>
+        </div>
+
+        <script id="library-data" type="application/json">{{ library_data_json | safe }}</script>
     {% endif %}
 {% endblock %}

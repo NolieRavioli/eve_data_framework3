@@ -43,6 +43,11 @@ class MaterialCost:
     price: float
     total_cost: float
     available: bool
+    buildable: bool = False
+    build_cost_per_unit: float | None = None
+    build_cost_total: float | None = None
+    savings_vs_market: float | None = None
+    build_preferred: bool = False
 
 
 @dataclass
@@ -309,6 +314,10 @@ def generate_industry_report(
                 "total_profit": 0.0,
                 "average_isk_per_hour": 0.0,
                 "best_blueprint": None,
+                "materials_with_build_option": 0,
+                "materials_build_cheaper": 0,
+                "average_build_savings": 0.0,
+                "total_build_savings": 0.0,
             }
             return IndustryReport(settings=settings, library=[], manufacturing_plan=[], summary=summary)
 
@@ -357,16 +366,21 @@ def generate_industry_report(
             materials_breakdown: List[MaterialCost] = []
             material_cost_per_run = 0.0
             missing_materials: List[str] = []
+            market_label = "sell orders" if settings.price_source == "sell" else "buy orders"
             for mat_type_id, base_qty in definition.materials:
                 adjusted_qty = _material_quantity(base_qty, bp.material_efficiency)
                 price_info = price_map.get(mat_type_id)
                 price = 0.0
                 available = False
                 if price_info:
-                    price = price_info.best_sell
-                    available = price_info.sell_order_count > 0 or price_info.override
+                    if settings.price_source == "buy":
+                        price = price_info.best_buy
+                        available = price_info.buy_order_count > 0 or price_info.override
+                    else:
+                        price = price_info.best_sell
+                        available = price_info.sell_order_count > 0 or price_info.override
                 if not available:
-                    missing_materials.append(f"{name_from_type_id(mat_type_id)} sell orders")
+                    missing_materials.append(f"{name_from_type_id(mat_type_id)} {market_label}")
                 total_cost = adjusted_qty * price if available else 0.0
                 if available:
                     material_cost_per_run += total_cost
@@ -475,6 +489,35 @@ def generate_industry_report(
         else:
             plan = aggregated_plan
 
+        product_index = {entry.product_type_id: entry for entry in library_entries}
+        component_job_cost = settings.job_cost_per_run if settings.include_job_cost else 0.0
+        for entry in library_entries:
+            for material in entry.materials:
+                component_entry = product_index.get(material.type_id)
+                if component_entry and component_entry.total_runs > 0:
+                    per_run_cost = component_entry.material_cost_per_run + component_job_cost
+                    per_unit_cost = per_run_cost / max(1, component_entry.product_quantity)
+                    total_build_cost = per_unit_cost * material.adjusted_quantity
+                    material.buildable = True
+                    material.build_cost_per_unit = per_unit_cost
+                    material.build_cost_total = total_build_cost
+                    savings = None
+                    if material.total_cost > 0:
+                        savings = material.total_cost - total_build_cost
+                    elif not material.available:
+                        savings = None
+                    material.savings_vs_market = savings
+                    if savings is not None and savings > 0:
+                        material.build_preferred = True
+                    elif not material.available:
+                        material.build_preferred = True
+                else:
+                    material.buildable = False
+                    material.build_cost_per_unit = None
+                    material.build_cost_total = None
+                    material.savings_vs_market = None
+                    material.build_preferred = False
+
         display_library = library_entries
         if library_limit is not None:
             display_library = library_entries[:library_limit]
@@ -485,6 +528,18 @@ def generate_industry_report(
         te_values = [e.te for e in library_entries]
 
         buildable_entries = [e for e in library_entries if e.can_build]
+
+        materials_with_build_option = 0
+        materials_build_cheaper = 0
+        build_savings: List[float] = []
+        for entry in library_entries:
+            for material in entry.materials:
+                if material.buildable:
+                    materials_with_build_option += 1
+                    if material.build_preferred:
+                        materials_build_cheaper += 1
+                    if material.savings_vs_market is not None and material.savings_vs_market > 0:
+                        build_savings.append(material.savings_vs_market)
 
         summary: Dict[str, object] = {
             "blueprint_total": len(library_entries),
@@ -501,6 +556,10 @@ def generate_industry_report(
             "average_isk_per_hour": statistics.mean([item.isk_per_hour for item in aggregated_plan]) if aggregated_plan else 0.0,
             "best_blueprint": plan_candidates[0] if plan_candidates else None,
             "unbuildable_total": sum(1 for e in library_entries if not e.can_build),
+            "materials_with_build_option": materials_with_build_option,
+            "materials_build_cheaper": materials_build_cheaper,
+            "average_build_savings": statistics.mean(build_savings) if build_savings else 0.0,
+            "total_build_savings": sum(build_savings) if build_savings else 0.0,
         }
 
         return IndustryReport(settings=settings, library=display_library, manufacturing_plan=plan, summary=summary)

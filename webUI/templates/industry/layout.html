@@ -441,6 +441,213 @@
                     });
                 });
             });
+
+            const detailScript = document.getElementById('library-data');
+            const detailRoot = document.getElementById('library-detail');
+            if (detailScript && detailRoot) {
+                let entries = [];
+                try {
+                    entries = JSON.parse(detailScript.textContent || '[]');
+                } catch (error) {
+                    console.error('Failed to parse library data payload', error);
+                }
+
+                if (entries.length > 0) {
+                    const entryById = new Map(entries.map((entry) => [String(entry.blueprint_type_id), entry]));
+                    const rows = Array.from(document.querySelectorAll('tr[data-entry-row="true"]'));
+
+                    const field = (selector) => detailRoot.querySelector(`[data-field="${selector}"]`);
+                    const materialsBody = detailRoot.querySelector('[data-materials-body]');
+                    const missingContainer = detailRoot.querySelector('[data-missing-list]');
+
+                    const toNumber = (value) => {
+                        const number = Number(value);
+                        return Number.isFinite(number) ? number : 0;
+                    };
+
+                    const formatNumber = (value, options = {}) => {
+                        const number = Number(value);
+                        if (!Number.isFinite(number)) {
+                            return '—';
+                        }
+                        return number.toLocaleString(undefined, options);
+                    };
+
+                    const formatCurrency = (value) => formatNumber(value, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                    });
+
+                    const formatPercent = (value) => {
+                        const number = Number(value);
+                        if (!Number.isFinite(number)) {
+                            return '—';
+                        }
+                        return `${(number * 100).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })}%`;
+                    };
+
+                    const formatHours = (value) => {
+                        const number = Number(value);
+                        if (!Number.isFinite(number)) {
+                            return '—';
+                        }
+                        return `${number.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })} h`;
+                    };
+
+                    const updateStatusBadge = (entry) => {
+                        const badge = field('status-badge');
+                        if (!badge) {
+                            return;
+                        }
+                        badge.classList.remove('success', 'danger', 'neutral');
+                        if (entry.can_build) {
+                            badge.classList.add('success');
+                            badge.textContent = 'Build Ready';
+                        } else if (entry.total_runs === 0) {
+                            badge.classList.add('danger');
+                            badge.textContent = 'No Runs Available';
+                        } else {
+                            badge.classList.add('danger');
+                            badge.textContent = 'Missing Inputs';
+                        }
+                    };
+
+                    const renderMaterials = (entry) => {
+                        if (!materialsBody) {
+                            return;
+                        }
+                        const rowsHtml = (entry.materials || []).map((material) => {
+                            const classes = [];
+                            if (material.build_preferred) {
+                                classes.push('build-preferred');
+                            } else if (material.savings_vs_market !== null && material.savings_vs_market < 0) {
+                                classes.push('build-more-expensive');
+                            }
+                            const hasMarket = Boolean(material.available);
+                            const marketUnit = hasMarket ? formatCurrency(material.price) : '—';
+                            const marketTotal = hasMarket ? formatCurrency(material.total_cost) : '—';
+                            const buildUnit = material.build_cost_per_unit !== null && material.build_cost_per_unit !== undefined
+                                ? formatCurrency(material.build_cost_per_unit)
+                                : '—';
+                            const buildTotal = material.build_cost_total !== null && material.build_cost_total !== undefined
+                                ? formatCurrency(material.build_cost_total)
+                                : '—';
+                            const savings = material.savings_vs_market !== null && material.savings_vs_market !== undefined
+                                ? formatCurrency(material.savings_vs_market)
+                                : '—';
+                            return `
+                                <tr class="${classes.join(' ')}">
+                                    <td>${material.name}</td>
+                                    <td class="numeric">${toNumber(material.adjusted_quantity).toLocaleString()}</td>
+                                    <td class="numeric">${marketUnit}</td>
+                                    <td class="numeric">${marketTotal}</td>
+                                    <td class="numeric">${buildUnit}</td>
+                                    <td class="numeric">${buildTotal}</td>
+                                    <td class="numeric">${savings}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                        materialsBody.innerHTML = rowsHtml;
+
+                        if (missingContainer) {
+                            if (entry.missing_materials && entry.missing_materials.length > 0) {
+                                missingContainer.textContent = `Missing inputs: ${entry.missing_materials.join(', ')}`;
+                                missingContainer.classList.add('danger');
+                            } else {
+                                missingContainer.textContent = 'All required materials have market coverage.';
+                                missingContainer.classList.remove('danger');
+                            }
+                        }
+                    };
+
+                    const updateDetail = (entry) => {
+                        detailRoot.dataset.hasSelection = 'true';
+                        const nameField = field('blueprint-name');
+                        if (nameField) {
+                            nameField.textContent = entry.blueprint_name;
+                        }
+                        const productLine = field('product-line');
+                        if (productLine) {
+                            productLine.textContent = `${entry.product_name} • ${entry.product_quantity} units per run`;
+                        }
+                        const kind = field('blueprint-kind');
+                        if (kind) {
+                            kind.textContent = entry.is_original ? 'Original Blueprint' : 'Copy Blueprint';
+                            kind.classList.remove('success', 'danger', 'neutral');
+                            kind.classList.add(entry.is_original ? 'success' : 'neutral');
+                        }
+                        const characterField = field('character-name');
+                        if (characterField) {
+                            characterField.textContent = entry.character_name;
+                        }
+                        const runsField = field('runs');
+                        if (runsField) {
+                            runsField.textContent = entry.runs_display;
+                        }
+                        const researchField = field('research');
+                        if (researchField) {
+                            researchField.textContent = `${entry.me} / ${entry.te}`;
+                        }
+                        const totalTimeField = field('total-time');
+                        if (totalTimeField) {
+                            totalTimeField.textContent = formatHours(entry.total_time_hours);
+                        }
+                        const materialCostField = field('material-cost');
+                        if (materialCostField) {
+                            materialCostField.textContent = formatCurrency(entry.material_cost_per_run);
+                        }
+                        const revenueField = field('revenue');
+                        if (revenueField) {
+                            revenueField.textContent = formatCurrency(entry.revenue_per_run);
+                        }
+                        const profitField = field('profit');
+                        if (profitField) {
+                            profitField.textContent = formatCurrency(entry.profit_per_run);
+                        }
+                        const iskField = field('isk-per-hour');
+                        if (iskField) {
+                            iskField.textContent = formatCurrency(entry.isk_per_hour);
+                        }
+                        const totalProfitField = field('total-profit');
+                        if (totalProfitField) {
+                            totalProfitField.textContent = formatCurrency(entry.total_profit);
+                        }
+                        const marginField = field('margin');
+                        if (marginField) {
+                            marginField.textContent = formatPercent(entry.margin_percent);
+                        }
+                        updateStatusBadge(entry);
+                        renderMaterials(entry);
+                    };
+
+                    const selectRow = (row) => {
+                        const entryId = row.dataset.entryId;
+                        if (!entryById.has(entryId)) {
+                            return;
+                        }
+                        rows.forEach((item) => item.classList.toggle('is-selected', item === row));
+                        const entry = entryById.get(entryId);
+                        updateDetail(entry);
+                    };
+
+                    rows.forEach((row) => {
+                        row.addEventListener('click', () => selectRow(row));
+                    });
+
+                    const preselected = rows.find((row) => row.classList.contains('is-selected'));
+                    if (preselected) {
+                        selectRow(preselected);
+                    } else if (rows.length > 0) {
+                        selectRow(rows[0]);
+                    }
+                }
+            }
         });
     </script>
 </body>

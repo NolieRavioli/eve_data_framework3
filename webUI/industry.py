@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+
 from flask import (Blueprint, redirect, render_template, request, session,
                    url_for, flash)
 
@@ -50,10 +53,18 @@ def library():
     settings = load_manufacturing_settings(owner_id)
     report = generate_industry_report(owner_id, settings, library_limit=None, plan_limit=10)
 
+    library_data_json = "[]"
+    selected_entry = None
+    if report and report.library:
+        library_data_json = json.dumps([asdict(entry) for entry in report.library])
+        selected_entry = report.library[0]
+
     return render_template(
         "industry/library.html",
         settings=settings,
         report=report,
+        selected_entry=selected_entry,
+        library_data_json=library_data_json,
     )
 
 
