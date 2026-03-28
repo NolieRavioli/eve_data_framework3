@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Data Sync - EVE Data Framework{% endblock %}
+
+{% block extra_css %}
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.sync-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sync-card .sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 0.55rem;
+}
+
+.sync-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.95rem;
+  text-decoration: none;
+  background: rgba(7, 18, 29, 0.56);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.sync-action:hover {
+  border-color: rgba(105, 210, 255, 0.28);
+  background: rgba(105, 210, 255, 0.08);
+}
+
+.sync-action.public:hover {
+  border-color: rgba(244, 181, 76, 0.28);
+  background: rgba(244, 181, 76, 0.1);
+}
+
+@media (max-width: 1120px) {
+  .sync-grid {
+    grid-template-columns: 1fr;
+  }
+}
+{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Data Sync</h1>
+    <div class="pg-sub">Every action enqueues a background task and opens live progress immediately.</div>
+  </div>
+  <div class="toolbar">
+    <form method="post" action="{{ url_for('tasks.collect_all') }}" style="display:inline">
+      <button type="submit" class="btn btn-a">Collect All</button>
+    </form>
+    <a href="{{ url_for('tasks.task_list') }}" class="btn btn-g">Open Tasks</a>
+  </div>
+</div>
+
+<div class="pg-body">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v">{{ sync_totals.personal }}</span>
+      <span class="l">Personal Endpoints</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ sync_totals.corporation }}</span>
+      <span class="l">Corporation Endpoints</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ sync_totals.public }}</span>
+      <span class="l">Public Endpoints</span>
+    </div>
+    <div class="stat">
+      <span class="v ok">{{ sync_totals.all }}</span>
+      <span class="l">Total Actions</span>
+    </div>
+  </div>
+
+  <div class="notice">
+    New characters queue a full first-time collection automatically after authentication. Use this page for targeted refreshes and reruns.
+  </div>
+
+  <div class="sync-grid">
+    {% for section in sync_sections %}
+    <div class="card sync-card">
+      <div class="section-head">
+        <div>
+          <div class="ct" style="margin-bottom:0.35rem">{{ section.title }}</div>
+          <div class="sub">{{ section.subtitle }}</div>
+        </div>
+        <span class="pill">{{ section.actions|length }} actions</span>
+      </div>
+
+      <div class="action-grid">
+        {% for action in section.actions %}
+        <a href="{{ url_for(action.endpoint) }}" class="sync-action {{ 'public' if section.tone == 'public' else '' }}">
+          <span>{{ action.label }}</span>
+          <span class="muted">Run</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,201 +1,279 @@
-﻿<!-- templates/market_browser.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Market Browser</title>
-    <style>
-        body {
-            display: flex;
-            font-family: sans-serif;
-            margin: 0;
-        }
+{% extends "base.html" %}
+{% block title %}Market Browser - EVE Data Framework{% endblock %}
 
-        .sidebar {
-            width: 25vw;
-            padding: 20px;
-            background-color: #f2f2f2;
-            height: 100vh;
-            box-sizing: border-box;
-            overflow-y: auto;
-            border-right: 1px solid #ccc;
-        }
+{% block extra_css %}
+.market-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 1rem;
+}
 
-        .main {
-            flex-grow: 1;
-            padding: 20px;
-        }
+.market-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.9rem;
+  align-self: start;
+}
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
+.market-fields {
+  display: grid;
+  gap: 0.75rem;
+}
 
-        th, td {
-            padding: 6px 12px;
-            border: 1px solid #ccc;
-            text-align: left;
-        }
+.market-fields label {
+  display: grid;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 
-        .category-tree ul {
-            list-style-type: none;
-            padding-left: 20px;
-        }
+.market-fields span {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+}
 
-        .category-tree li {
-            cursor: pointer;
-            margin: 5px 0;
-        }
+.tree {
+  max-height: 58vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+  font-size: 0.78rem;
+}
 
-        .category-tree .collapsed > ul {
-            display: none;
-        }
+.tree ul {
+  list-style: none;
+  padding-left: 0.9rem;
+}
 
-        .arrow {
-            display: inline-block;
-            width: 1em;
-        }
-    </style>
-    <script>
-        function toggleCategory(event) {
-            event.stopPropagation();
-            const li = event.target.closest("li");
-            const arrow = li.querySelector(".arrow");
-            li.classList.toggle("collapsed");
-            arrow.textContent = li.classList.contains("collapsed") ? "⯈" : "⯆";
-        }
-    </script>
-</head>
-<body>
-    <div class="sidebar">
-        <h2>Market Filters</h2>
-        <form method="get">
-            <label for="itemInput">Item Name(s):</label><br>
-            <input id="itemInput" name="type_id"
-                   value="{{ query or '' }}"
-                   placeholder="e.g. Tritanium,Pyerite">
-            <br><br>
+.tree > ul {
+  padding-left: 0;
+}
 
-            <label for="groupInput">Group ID:</label><br>
-            <input id="groupInput" name="group_id"
-                   value="{{ request.args.get('group_id','') }}"
-                   placeholder="e.g. 1361">
-            <br><br>
+.tree li {
+  margin: 0;
+}
 
-            <label>Region ID:</label><br>
-            <input name="region_id" value="{{ request.args.get('region_id','') }}">
-            <br><br>
+.tree a {
+  display: inline-block;
+  padding: 0.18rem 0.3rem;
+  border-radius: 0.45rem;
+  text-decoration: none;
+}
 
-            <label>Location ID:</label><br>
-            <input name="location_id" value="{{ request.args.get('location_id','') }}">
-            <br><br>
+.tree a:hover {
+  background: rgba(105, 210, 255, 0.08);
+}
 
-            <label>Order Type:</label><br>
+.tree .arrow {
+  display: inline-block;
+  width: 0.9rem;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.tree .collapsed > ul {
+  display: none;
+}
+
+@media (max-width: 1080px) {
+  .market-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .market-sidebar {
+    position: static;
+  }
+}
+{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Market Browser</h1>
+    <div class="pg-sub">{{ total }} matching orders across the current filters</div>
+  </div>
+  <div class="pill-row">
+    <span class="pill">Page {{ page }}</span>
+    <span class="pill">{{ results|length }} loaded</span>
+  </div>
+</div>
+
+<div class="pg-body">
+  <div class="market-layout">
+    <aside class="market-sidebar">
+      <div class="card stack">
+        <div class="ct" style="margin:0">Filters</div>
+        <form method="get" class="market-fields">
+          <label>
+            <span>Item Name</span>
+            <input id="market-search" name="type_id" value="{{ query or '' }}" list="market-suggestions" placeholder="e.g. Tritanium">
+            <datalist id="market-suggestions"></datalist>
+          </label>
+
+          <label>
+            <span>Group ID</span>
+            <input name="group_id" value="{{ request.args.get('group_id', '') }}" placeholder="e.g. 1361">
+          </label>
+
+          <label>
+            <span>Region ID</span>
+            <input name="region_id" value="{{ request.args.get('region_id', '') }}">
+          </label>
+
+          <label>
+            <span>Location ID</span>
+            <input name="location_id" value="{{ request.args.get('location_id', '') }}">
+          </label>
+
+          <label>
+            <span>Order Type</span>
             <select name="is_buy">
-                <option value="">Both</option>
-                <option value="1" {% if request.args.get('is_buy')=='1' %}selected{% endif %}>Buy</option>
-                <option value="0" {% if request.args.get('is_buy')=='0' %}selected{% endif %}>Sell</option>
+              <option value="">Both</option>
+              <option value="1" {{ 'selected' if request.args.get('is_buy') == '1' }}>Buy Orders</option>
+              <option value="0" {{ 'selected' if request.args.get('is_buy') == '0' }}>Sell Orders</option>
             </select>
-            <br><br>
+          </label>
 
-            <label>Sort By:</label><br>
+          <label>
+            <span>Sort By</span>
             <select name="sort_by">
-                <option value="price" {% if sort_by=='price' %}selected{% endif %}>Price</option>
-                <option value="volume" {% if sort_by=='volume' %}selected{% endif %}>Volume</option>
+              <option value="price" {{ 'selected' if sort_by == 'price' }}>Price</option>
+              <option value="volume" {{ 'selected' if sort_by == 'volume' }}>Volume</option>
             </select>
-            <br><br>
+          </label>
 
-            <button type="submit">Apply</button>
+          <div class="toolbar">
+            <button type="submit" class="btn btn-a">Apply</button>
+            <a href="{{ url_for('market_browser.browser') }}" class="btn btn-g">Reset</a>
+          </div>
         </form>
+      </div>
 
-        <h3>Market Category Tree</h3>
-        <div class="category-tree">
-            {% macro render_group(group) %}
-            <li class="collapsed">
-                <span class="arrow" onclick="toggleCategory(event)">⯈</span>
-                <a href="{{ url_for('market_browser.browser',
-                              type_id=request.args.get('type_id',''),
-                              group_id=group.id,
-                              region_id=request.args.get('region_id',''),
-                              location_id=request.args.get('location_id',''),
-                              is_buy=request.args.get('is_buy',''),
-                              sort_by=sort_by,
-                              page=1) }}"
-                   onclick="event.stopPropagation();">
-                    {{ group.name }}
-                </a>
-                <ul>
-                    {% for child in group.children %}
-                    {{ render_group(child) }}
-                    {% endfor %}
-                    {% for tid in group.types %}
-                    <li onclick="event.stopPropagation();">
-                        <a href="{{ url_for('market_browser.browser',
-                                    type_id=tid,
-                                    group_id='',
-                                    region_id=request.args.get('region_id',''),
-                                    location_id=request.args.get('location_id',''),
-                                    is_buy=request.args.get('is_buy',''),
-                                    sort_by=sort_by,
-                                    page=1) }}">
-                            {{ name_from_type_id(tid) }}
-                        </a>
-                    </li>
-                    {% endfor %}
-                </ul>
-            </li>
-            {% endmacro %}
-
-            <ul>
-                {% for group in market_tree %}
-                {{ render_group(group) }}
-                {% endfor %}
-            </ul>
+      <div class="card stack">
+        <div class="section-head">
+          <div class="ct" style="margin:0">Category Tree</div>
+          <span class="pill">Browse by group</span>
         </div>
-    </div>
+        <div class="tree">
+          {% macro render_group(group) %}
+          <li class="collapsed">
+            <span class="arrow" onclick="toggleCat(event)">+</span>
+            <a href="{{ url_for('market_browser.browser', type_id=request.args.get('type_id', ''), group_id=group.id, region_id=request.args.get('region_id', ''), location_id=request.args.get('location_id', ''), is_buy=request.args.get('is_buy', ''), sort_by=sort_by, page=1) }}" onclick="event.stopPropagation()">{{ group.name }}</a>
+            <ul>
+              {% for child in group.children %}{{ render_group(child) }}{% endfor %}
+              {% for tid in group.types %}
+              <li onclick="event.stopPropagation()">
+                <a href="{{ url_for('market_browser.browser', type_id=tid, group_id='', region_id=request.args.get('region_id', ''), location_id=request.args.get('location_id', ''), is_buy=request.args.get('is_buy', ''), sort_by=sort_by, page=1) }}">{{ name_from_type_id(tid) }}</a>
+              </li>
+              {% endfor %}
+            </ul>
+          </li>
+          {% endmacro %}
+          <ul>{% for group in market_tree %}{{ render_group(group) }}{% endfor %}</ul>
+        </div>
+      </div>
+    </aside>
 
-    <div class="main">
-        <h1>Market Orders</h1> <a href="../">(back to dashboard)</a>
-        <p>Showing {{ results|length }} of {{ total }} results</p>
+    <div class="card stack">
+      <div class="section-head">
+        <div>
+          <div class="ct" style="margin-bottom:0.35rem">Orders</div>
+          <div class="muted" style="font-size:0.8rem">Narrow by item, region, location, and side. Empty item matches now return zero rows instead of the full market.</div>
+        </div>
+        <div class="pill-row">
+          {% if query %}<span class="pill">Item {{ query }}</span>{% endif %}
+          {% if region_id %}<span class="pill">Region {{ region_id }}</span>{% endif %}
+          {% if location_id %}<span class="pill">Location {{ location_id }}</span>{% endif %}
+        </div>
+      </div>
 
+      {% if results %}
+      <div class="tw tw-scroll" style="max-height:calc(100vh - 260px)">
         <table>
-            <tr>
-                <th>Order ID</th>
-                <th>Item Name</th>
-                <th>Region</th>
-                <th>Location</th>
-                <th>Buy/Sell</th>
-                <th>Price</th>
-                <th>Volume</th>
-            </tr>
+          <thead>
+            <tr><th>Item</th><th>Side</th><th>Price</th><th>Volume</th><th>Region</th><th>Location</th></tr>
+          </thead>
+          <tbody>
             {% for row in results %}
             <tr>
-                <td>{{ row.order_id }}</td>
-                <td>{{ name_from_type_id(row.type_id) }}</td>
-                <td>{{ row.region_id }}</td>
-                <td>{{ row.location_id }}</td>
-                <td>{{ "Buy" if row.is_buy_order else "Sell" }}</td>
-                <td>{{ "%.2f"|format(row.price) }}</td>
-                <td>{{ row.volume_remain }} / {{ row.volume_total }}</td>
+              <td>{{ name_from_type_id(row.type_id) }}</td>
+              <td><span class="bdg {{ 'bdg-warn' if row.is_buy_order else 'bdg-ok' }}">{{ 'Buy' if row.is_buy_order else 'Sell' }}</span></td>
+              <td class="pos">{{ '{:,.2f}'.format(row.price) }}</td>
+              <td>{{ '{:,}'.format(row.volume_remain) }} / {{ '{:,}'.format(row.volume_total) }}</td>
+              <td class="mono muted">{{ row.region_id }}</td>
+              <td class="mono muted">{{ row.location_id }}</td>
             </tr>
             {% endfor %}
+          </tbody>
         </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="ei">></div>
+        <p>No orders match the current filters.</p>
+        <p>Try a broader item name, a different group, or clear region and location filters.</p>
+      </div>
+      {% endif %}
 
-        <div>
-            {% set qs = request.args.to_dict() %}
-            {% if page > 1 %}
-            {% set prev = qs.copy() %}
-            {% set _ = prev.update({'page': page-1}) %}
-            <a href="{{ url_for('market_browser.browser',
-                             **prev) }}">Previous</a>
-            {% endif %}
-            {% if page*page_size < total %}
-            {% set nxt = qs.copy() %}
-            {% set _ = nxt.update({'page': page+1}) %}
-            <a href="{{ url_for('market_browser.browser',
-                             **nxt) }}">Next</a>
-            {% endif %}
+      <div class="section-head">
+        <span class="pill">Showing {{ results|length }} of {{ total }}</span>
+        <div class="toolbar">
+          {% set qs = request.args.to_dict() %}
+          {% if page > 1 %}
+          {% set prev = qs.copy() %}{% set _ = prev.update({'page': page - 1}) %}
+          <a href="{{ url_for('market_browser.browser', **prev) }}" class="btn btn-g">Prev</a>
+          {% endif %}
+          {% if page * page_size < total %}
+          {% set nxt = qs.copy() %}{% set _ = nxt.update({'page': page + 1}) %}
+          <a href="{{ url_for('market_browser.browser', **nxt) }}" class="btn btn-g">Next</a>
+          {% endif %}
         </div>
+      </div>
     </div>
-</body>
-</html>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCat(event) {
+  event.stopPropagation();
+  var item = event.target.closest('li');
+  item.classList.toggle('collapsed');
+  event.target.textContent = item.classList.contains('collapsed') ? '+' : '-';
+}
+
+(function () {
+  var input = document.getElementById('market-search');
+  var datalist = document.getElementById('market-suggestions');
+  var timer = null;
+
+  if (!input || !datalist) return;
+
+  input.addEventListener('input', function () {
+    var value = input.value.trim();
+    if (timer) window.clearTimeout(timer);
+    if (value.length < 2) {
+      datalist.innerHTML = '';
+      return;
+    }
+
+    timer = window.setTimeout(function () {
+      fetch('/market/autocomplete?q=' + encodeURIComponent(value))
+        .then(function (response) { return response.json(); })
+        .then(function (items) {
+          datalist.innerHTML = '';
+          items.forEach(function (name) {
+            var option = document.createElement('option');
+            option.value = name;
+            datalist.appendChild(option);
+          });
+        });
+    }, 120);
+  });
+}());
+</script>
+{% endblock %}

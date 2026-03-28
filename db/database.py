@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db.models import (
-    User, SolarSystem, Stargate, MarketOrder,
+    User, SiteAdmin, SolarSystem, Stargate, MarketOrder,
     PublicContract, Structure, MarketStructure,
     Character, Asset, Blueprint, IndustryJob,
     PersonalBookmark, Skill,SkillQueue,

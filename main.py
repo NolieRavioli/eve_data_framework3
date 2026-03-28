@@ -3,7 +3,9 @@
 import logging
 
 from db.database import initialize_public_database
-from util.utils import ensure_dependencies, initialize_runtime_environment
+from util.utils import ensure_dependencies, initialize_runtime_environment, load_config, CONFIG_PATH
+from util.data_collection_queue import get_collection_queue
+from util.sde import startup_load_sde
 from webUI.app import start_webUI
 
 logger = logging.getLogger(__name__)
@@ -17,6 +19,14 @@ def main() -> None:
 
     logger.info("Initializing databases...")
     initialize_public_database()
+
+    # Load SDE data into memory with console progress output.
+    # config.yaml -> SDE section controls which datasets are loaded.
+    cfg = load_config(CONFIG_PATH)
+    startup_load_sde(cfg.get("SDE", {}))
+
+    logger.info("Starting background data collection queue...")
+    get_collection_queue()  # starts the daemon thread
 
     logger.info("Starting EVE Data Framework WebUI...")
     start_webUI(settings)

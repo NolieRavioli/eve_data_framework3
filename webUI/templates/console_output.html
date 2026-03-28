@@ -1,95 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>{{ title }}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            font-family: "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-            background-color: #0b0c10;
-            color: #e0e0e0;
-            margin: 0;
-            padding: 0;
-        }
-        .wrapper {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 32px 24px 48px;
-        }
-        h1 {
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        .status {
-            margin-bottom: 24px;
-            font-size: 0.95rem;
-            opacity: 0.85;
-        }
-        pre {
-            background-color: #141820;
-            border-radius: 6px;
-            padding: 16px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-        }
-        a {
-            color: #76c7ff;
-        }
-        .actions {
-            margin-top: 16px;
-        }
-        .status.success {
-            color: #7dd97b;
-        }
-        .status.failure {
-            color: #ff8f8f;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>{{ title }} — EVE Data Framework</title>
+  <style>
+    :root { --bg:#070d1b; --card:rgba(10,20,40,0.9); --a:#38bdf8; --txt:#c4d4e8; --dim:rgba(180,200,220,0.42); --ok:#2dd4a0; --bad:#f06050; --bdr:rgba(56,189,248,0.13); font-family:"Segoe UI",system-ui,sans-serif; }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--txt); min-height:100vh; }
+    .topbar { padding:1rem 2rem; background:rgba(5,10,20,0.95); border-bottom:1px solid var(--bdr); display:flex; align-items:center; gap:1rem; }
+    .topbar .brand { font-size:0.68rem; font-weight:800; letter-spacing:3px; text-transform:uppercase; color:var(--a); }
+    .topbar a { color:var(--dim); text-decoration:none; font-size:0.82rem; }
+    .topbar a:hover { color:var(--a); }
+    .wrap { max-width:900px; margin:0 auto; padding:2rem 1.5rem; }
+    h1 { font-size:1.4rem; font-weight:700; color:#eef4fc; margin-bottom:0.4rem; }
+    .status { font-size:0.88rem; padding:0.5rem 0.8rem; border-radius:8px; margin-bottom:1.2rem; display:inline-block; }
+    .status.ok { background:rgba(45,212,160,0.1); color:var(--ok); }
+    .status.fail { background:rgba(240,96,80,0.1); color:var(--bad); }
+    pre { background:#020710; border:1px solid var(--bdr); border-radius:12px; padding:1.2rem; overflow-x:auto; white-space:pre-wrap; word-break:break-word; font-family:"Cascadia Code","Fira Code",monospace; font-size:0.78rem; line-height:1.65; max-height:600px; overflow-y:auto; }
+    .actions { margin-top:1.2rem; font-size:0.82rem; color:var(--dim); }
+    .actions a { color:var(--a); }
+  </style>
 </head>
 <body>
-<div class="wrapper">
-    <h1>{{ title }}</h1>
-    <div class="status {{ 'success' if success else 'failure' }}">
-        {% if success %}
-            Operation finished successfully.
-        {% else %}
-            Operation encountered an error. Check the log output below.
-        {% endif %}
-    </div>
-    <pre>{{ log_output|e }}</pre>
-    <div class="actions">
-        <p>
-            You will be redirected in
-            <span id="countdown">{{ (redirect_delay // 1000) if redirect_delay else 0 }}</span>
-            seconds. If not, <a href="{{ redirect_url }}">click here to return</a>.
-        </p>
-    </div>
+<div class="topbar">
+  <span class="brand">EVE &middot; Data</span>
+  <a href="/">&#x2190; Dashboard</a>
+</div>
+<div class="wrap">
+  <h1>{{ title }}</h1>
+  <div class="status {{ 'ok' if success else 'fail' }}">
+    {{ 'Operation completed successfully.' if success else 'Operation encountered an error.' }}
+  </div>
+  <pre>{{ log_output|e }}</pre>
+  <div class="actions">
+    <p>Redirecting in <span id="cd">{{ (redirect_delay // 1000) if redirect_delay else 0 }}</span>s.
+    <a href="{{ redirect_url }}">Click here</a> if not redirected.</p>
+  </div>
 </div>
 <script>
-    (function() {
-        var delay = {{ redirect_delay|int }};
-        if (delay > 0) {
-            var seconds = Math.ceil(delay / 1000);
-            var countdownEl = document.getElementById('countdown');
-            if (countdownEl) {
-                countdownEl.textContent = seconds;
-                var timer = setInterval(function() {
-                    seconds -= 1;
-                    if (seconds <= 0) {
-                        clearInterval(timer);
-                        seconds = 0;
-                    }
-                    countdownEl.textContent = seconds;
-                }, 1000);
-            }
-            setTimeout(function() {
-                window.location.href = {{ redirect_url|tojson }};
-            }, delay);
-        }
-    })();
+(function(){
+  var d = {{ redirect_delay|int }};
+  if (!d) return;
+  var s = Math.ceil(d/1000), el = document.getElementById('cd');
+  el && (el.textContent = s);
+  var t = setInterval(function(){ s--; el && (el.textContent = s); if(s<=0){ clearInterval(t); window.location="{{ redirect_url }}"; } }, 1000);
+})();
 </script>
 </body>
 </html>

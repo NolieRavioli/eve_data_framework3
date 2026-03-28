@@ -205,6 +205,18 @@ class _TokenBucket:
                         self._total += remaining
                         break
 
+    def get_stats(self) -> dict:
+        """Return a snapshot of current token-bucket usage."""
+        with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            return {
+                "tokens_used": self._total,
+                "tokens_limit": self.limit,
+                "tokens_remaining": max(0, self.limit - self._total),
+                "window_seconds": self.window,
+            }
+
 
 class EsiRateLimiter:
     """Serialize ESI requests through a single floating-window token bucket."""
@@ -220,12 +232,14 @@ class EsiRateLimiter:
         self._bucket = _TokenBucket(limit=token_limit, window=window_seconds)
         self._max_retries = max(1, max_retries)
         self._default_retry_after = max(1, default_retry_after)
+        self._requests_total = 0
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Perform an HTTP request against ESI obeying rate limits and retries."""
 
         attempt = 0
         initial_cost = TOKEN_COSTS[2]
+        lane = getattr(_request_lane, "lane", None)
 
         prepared, cache_key, ttl = _prepare_cache_key(method, url, kwargs)
         if ttl and cache_key:
@@ -234,41 +248,60 @@ class EsiRateLimiter:
                 logger.debug("[RateLimiter] Using cached response for %s", prepared.url)
                 return cached
 
+        retry_sleep: float = 0
         while True:
             attempt += 1
-            self._bucket.acquire(initial_cost)
+            if retry_sleep:
+                time.sleep(retry_sleep)
+                retry_sleep = 0
+
+            if lane:
+                _ALTERNATING_GATE.acquire(lane)
             try:
-                response = requests.request(method, url, **kwargs)
-            except Exception:
-                # Return the reserved tokens since no response was obtained.
-                self._bucket.adjust(-initial_cost)
-                raise
+                self._bucket.acquire(initial_cost)
+                kwargs.setdefault("timeout", 30)
+                try:
+                    response = requests.request(method, url, **kwargs)
+                except Exception:
+                    # Return the reserved tokens since no response was obtained.
+                    self._bucket.adjust(-initial_cost)
+                    raise
 
-            # Adjust for the actual status cost if different from optimistic reservation.
-            actual_cost = _token_cost_for_status(response.status_code)
-            delta = actual_cost - initial_cost
-            if delta:
-                self._bucket.adjust(delta)
+                # Adjust for the actual status cost if different from optimistic reservation.
+                actual_cost = _token_cost_for_status(response.status_code)
+                delta = actual_cost - initial_cost
+                if delta:
+                    self._bucket.adjust(delta)
 
-            self._update_limits_from_headers(response.headers)
+                self._update_limits_from_headers(response.headers)
 
-            if ttl and cache_key and 200 <= response.status_code < 400:
-                _store_cached_response(cache_key, response, ttl, prepared)
+                if ttl and cache_key and 200 <= response.status_code < 400:
+                    _store_cached_response(cache_key, response, ttl, prepared)
 
-            if response.status_code == 429 and attempt < self._max_retries:
-                retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
-                logger.warning(
-                    "[RateLimiter] 429 received for %s %s. Sleeping %ss (attempt %s/%s)",
-                    method.upper(),
-                    url,
-                    retry_after,
-                    attempt,
-                    self._max_retries,
-                )
-                time.sleep(retry_after)
-                continue
+                if response.status_code == 429 and attempt < self._max_retries:
+                    retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
+                    logger.warning(
+                        "[RateLimiter] 429 received for %s %s. Sleeping %ss (attempt %s/%s)",
+                        method.upper(),
+                        url,
+                        retry_after,
+                        attempt,
+                        self._max_retries,
+                    )
+                    retry_sleep = retry_after   # sleep AFTER releasing the gate
+                    continue
 
-            return response
+                self._requests_total += 1
+                if _post_request_hook is not None:
+                    try:
+                        _post_request_hook(self.get_stats())
+                    except Exception:
+                        pass
+
+                return response
+            finally:
+                if lane:
+                    _ALTERNATING_GATE.release(lane)
 
     def _parse_retry_after(self, header_value: Optional[str]) -> int:
         if not header_value:
@@ -278,6 +311,12 @@ class EsiRateLimiter:
             return max(self._default_retry_after, delay)
         except (TypeError, ValueError):
             return self._default_retry_after
+
+    def get_stats(self) -> dict:
+        """Return a snapshot of current rate-limiter usage."""
+        stats = self._bucket.get_stats()
+        stats["requests_total"] = self._requests_total
+        return stats
 
     def _update_limits_from_headers(self, headers: Dict[str, str]) -> None:
         """Refresh the bucket configuration based on ESI rate limit headers if present."""
@@ -306,8 +345,66 @@ class EsiRateLimiter:
             return None
 
 
+# ── Fair-alternating gate ────────────────────────────────────────────────────
+
+class _FairAlternatingLock:
+    """Ensures that when both 'public' and 'private' ESI threads are active
+    simultaneously they take strict alternating turns.  When only one lane is
+    active it proceeds without blocking."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last: Optional[str] = None            # lane that last completed
+        self._active: dict = {"public": False, "private": False}
+        self._ready: dict = {                       # signalled when other lane releases
+            "public":  threading.Event(),
+            "private": threading.Event(),
+        }
+        self._ready["public"].set()
+        self._ready["private"].set()
+
+    def acquire(self, lane: str) -> None:
+        other = "private" if lane == "public" else "public"
+        with self._lock:
+            self._active[lane] = True
+        while True:
+            with self._lock:
+                # Go freely if the other lane is idle or if we didn't go last
+                if not self._active[other] or self._last != lane:
+                    return
+                self._ready[lane].clear()
+            self._ready[lane].wait(timeout=2.0)   # other lane is waiting AND we went last
+
+    def release(self, lane: str) -> None:
+        other = "private" if lane == "public" else "public"
+        with self._lock:
+            self._last = lane
+            self._active[lane] = False
+            self._ready[other].set()
+
+
+_ALTERNATING_GATE = _FairAlternatingLock()
+
+# Thread-local used by task workers to declare which queue they belong to.
+_request_lane: threading.local = threading.local()
+
+
+def set_request_lane(lane: Optional[str]) -> None:
+    """Declare the ESI lane for the current thread ('public', 'private', or None).
+    Call once at the start of each worker thread before making any ESI requests."""
+    _request_lane.lane = lane
+
+
 _GLOBAL_LIMITER: Optional[EsiRateLimiter] = None
 _GLOBAL_LOCK = threading.Lock()
+
+# Optional callback fired after every real ESI request: fn(stats: dict) -> None
+_post_request_hook: Optional[Callable] = None
+
+
+def set_post_request_hook(fn) -> None:
+    global _post_request_hook
+    _post_request_hook = fn
 
 
 def get_esi_rate_limiter() -> EsiRateLimiter:

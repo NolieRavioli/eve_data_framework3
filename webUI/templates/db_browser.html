@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DB Browser — EVE Data Framework</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --bg-card: rgba(15, 23, 42, 0.80);
+            --text: #e2e8f0;
+            --accent: #38bdf8;
+            --danger: #f87171;
+            --ok: #34d399;
+            font-family: "Segoe UI", Roboto, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: linear-gradient(135deg, #0f172a 0%, #111827 35%, #1e293b 100%);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 24px rgba(8, 47, 73, 0.6);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar h1 { margin: 0; font-size: 1.3rem; letter-spacing: 1px; }
+
+        .nav-actions { display: flex; gap: 0.8rem; }
+
+        .nav-actions a {
+            color: var(--text);
+            text-decoration: none;
+            padding: 0.45rem 1rem;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.2);
+            font-weight: 600;
+            font-size: 0.88rem;
+            transition: background 0.2s;
+        }
+
+        .nav-actions a:hover { background: var(--accent); color: #0b1120; }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            height: calc(100vh - 60px);
+        }
+
+        .sidebar {
+            overflow-y: auto;
+            padding: 1rem;
+            border-right: 1px solid rgba(148, 163, 184, 0.15);
+            background: rgba(10, 20, 40, 0.5);
+        }
+
+        .sidebar h3 {
+            margin: 0 0 0.7rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--accent);
+        }
+
+        .table-item {
+            padding: 0.45rem 0.7rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-bottom: 2px;
+            transition: background 0.15s;
+        }
+
+        .table-item:hover, .table-item.active {
+            background: rgba(56, 189, 248, 0.18);
+            color: var(--accent);
+        }
+
+        .col-list {
+            display: none;
+            margin: 0.3rem 0 0.5rem 0.8rem;
+            font-size: 0.75rem;
+            color: rgba(226, 232, 240, 0.55);
+        }
+
+        .col-list.visible { display: block; }
+        .col-list li { list-style: none; padding: 0.1rem 0; }
+
+        .main-panel {
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            gap: 1rem;
+            overflow: hidden;
+        }
+
+        .query-box {
+            background: var(--bg-card);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 14px;
+            padding: 1.2rem;
+        }
+
+        .query-box h2 {
+            margin: 0 0 0.7rem;
+            font-size: 0.88rem;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--accent);
+        }
+
+        textarea#sql-input {
+            width: 100%;
+            height: 110px;
+            background: #020a13;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: "Cascadia Code", "Fira Code", monospace;
+            font-size: 0.85rem;
+            padding: 0.8rem;
+            resize: vertical;
+            outline: none;
+        }
+
+        textarea#sql-input:focus { border-color: var(--accent); }
+
+        .query-controls {
+            display: flex;
+            gap: 0.7rem;
+            margin-top: 0.7rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.45rem 1.1rem;
+            border-radius: 999px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.84rem;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover { opacity: 0.8; }
+        .btn-primary { background: var(--accent); color: #0b1120; }
+        .btn-warn { background: rgba(148,163,184,0.2); color: var(--text); }
+
+        #query-status { font-size: 0.82rem; color: rgba(226,232,240,0.55); }
+        #query-status.err { color: var(--danger); }
+        #query-status.ok { color: var(--ok); }
+
+        .results-box {
+            flex: 1;
+            overflow: hidden;
+            background: var(--bg-card);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 14px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .results-box h2 {
+            margin: 0 0 0.5rem;
+            font-size: 0.88rem;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--accent);
+        }
+
+        .table-wrap {
+            flex: 1;
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        th, td {
+            padding: 0.5rem 0.7rem;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 20, 40, 0.97);
+            text-transform: uppercase;
+            font-size: 0.68rem;
+            letter-spacing: 0.7px;
+            border-bottom: 1px solid rgba(148,163,184,0.25);
+        }
+
+        tr:nth-child(even) { background: rgba(148, 163, 184, 0.05); }
+
+        #row-count {
+            margin-top: 0.5rem;
+            font-size: 0.78rem;
+            color: rgba(226,232,240,0.45);
+        }
+    </style>
+</head>
+<body>
+
+<header class="navbar">
+    <h1>&#x1F5C4; DB Browser — {{ db_label }}</h1>
+    <nav class="nav-actions">
+        <a href="{{ url_for('admin.index') }}">&#x21A9; Admin</a>
+        <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <!-- Sidebar: Table tree -->
+    <aside class="sidebar">
+        <h3>Tables</h3>
+        {% for tname, cols in tables.items() %}
+        <div>
+            <div class="table-item" onclick="selectTable('{{ tname }}', this)">{{ tname }}</div>
+            <ul class="col-list" id="cols-{{ tname }}">
+                {% for col in cols %}
+                <li>&#x25B8; {{ col }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </aside>
+
+    <!-- Main panel: Query editor + results -->
+    <div class="main-panel">
+        <div class="query-box">
+            <h2>SQL Query <span style="font-size:0.7rem;opacity:0.5;font-style:italic;text-transform:none;">(SELECT / PRAGMA only — max 500 rows)</span></h2>
+            <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM users LIMIT 50;"></textarea>
+            <div class="query-controls">
+                <button class="btn btn-primary" onclick="runQuery()">&#x25B6; Run</button>
+                <button class="btn btn-warn" onclick="clearQuery()">Clear</button>
+                <span id="query-status"></span>
+            </div>
+        </div>
+
+        <div class="results-box">
+            <h2>Results</h2>
+            <div class="table-wrap">
+                <table id="results-table">
+                    <thead id="results-head"></thead>
+                    <tbody id="results-body"></tbody>
+                </table>
+            </div>
+            <div id="row-count"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let activeTableEl = null;
+
+    function selectTable(name, el) {
+        // Toggle columns
+        const cols = document.getElementById('cols-' + name);
+        if (activeTableEl && activeTableEl !== el) {
+            const prev = activeTableEl.nextElementSibling;
+            if (prev) prev.classList.remove('visible');
+            activeTableEl.classList.remove('active');
+        }
+        activeTableEl = el;
+        el.classList.toggle('active');
+        cols.classList.toggle('visible');
+        // Fill query box with a SELECT
+        document.getElementById('sql-input').value = `SELECT * FROM "${name}" LIMIT 100;`;
+    }
+
+    function clearQuery() {
+        document.getElementById('sql-input').value = '';
+        document.getElementById('results-head').innerHTML = '';
+        document.getElementById('results-body').innerHTML = '';
+        document.getElementById('row-count').textContent = '';
+        setStatus('', '');
+    }
+
+    function setStatus(msg, cls) {
+        const el = document.getElementById('query-status');
+        el.textContent = msg;
+        el.className = cls;
+    }
+
+    async function runQuery() {
+        const sql = document.getElementById('sql-input').value.trim();
+        if (!sql) return;
+        setStatus('Running…', '');
+        try {
+            const r = await fetch('/admin/db_browser/query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sql}),
+            });
+            const j = await r.json();
+            if (j.error) { setStatus('Error: ' + j.error, 'err'); return; }
+
+            const head = document.getElementById('results-head');
+            const body = document.getElementById('results-body');
+            head.innerHTML = '<tr>' + j.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+            body.innerHTML = j.rows.map(row =>
+                '<tr>' + j.columns.map(c => {
+                    let v = row[c];
+                    if (v === null || v === undefined) v = '<span style="opacity:0.35">NULL</span>';
+                    else if (typeof v === 'object') v = JSON.stringify(v);
+                    return `<td>${v}</td>`;
+                }).join('') + '</tr>'
+            ).join('');
+
+            const cnt = j.rows.length;
+            document.getElementById('row-count').textContent = `${cnt} row${cnt !== 1 ? 's' : ''} returned${cnt === 500 ? ' (limit reached)' : ''}`;
+            setStatus(`OK — ${cnt} rows`, 'ok');
+        } catch (e) {
+            setStatus('Fetch error: ' + e.message, 'err');
+        }
+    }
+
+    // Allow Ctrl+Enter to run query
+    document.getElementById('sql-input').addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runQuery();
+    });
+</script>
+
+</body>
+</html>

@@ -1,69 +1,63 @@
 # webUI/market_browser.py
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, jsonify, render_template, request
+
 from db.database import get_public_session
 from db.models import MarketOrder
-from util.sde import (
-    load_market_tree,
-    load_types_data,
-    get_types_in_group,
-    resolve_type_ids,
-    name_from_type_id,
-    _name_to_type_id,
-    _type_id_to_name,
-)
+from util import sde
+from webUI.context import base_ctx
 
 market_bp = Blueprint("market_browser", __name__, url_prefix="/market")
 
 
 @market_bp.route("/")
 def browser():
-    # ensure SDE data is loaded
-    load_types_data()
-    load_market_tree()
+    sde.load_types_data()
+    sde.load_market_tree()
 
-    # --- filters from query params ---
-    raw_query     = request.args.get("type_id", "")
-    group_id      = request.args.get("group_id", type=int)
-    region_id     = request.args.get("region_id", type=int)
-    location_id   = request.args.get("location_id", type=int)
-    is_buy        = request.args.get("is_buy", type=int)
-    sort_by       = request.args.get("sort_by", "price")
-    page          = request.args.get("page", 1, type=int)
-    page_size     = 50
+    raw_query = request.args.get("type_id", "").strip()
+    group_id = request.args.get("group_id", type=int)
+    region_id = request.args.get("region_id", type=int)
+    location_id = request.args.get("location_id", type=int)
+    is_buy = request.args.get("is_buy", type=int)
+    sort_by = request.args.get("sort_by", "price")
+    page = request.args.get("page", 1, type=int)
+    page_size = 50
 
-    # determine the set of type IDs to filter by
     if group_id:
-        type_ids = set(get_types_in_group(group_id))
+        type_ids = set(sde.get_types_in_group(group_id))
     else:
-        type_ids = resolve_type_ids(raw_query)
+        type_ids = sde.resolve_type_ids(raw_query)
+    has_type_filter = bool(group_id or raw_query)
 
-    # --- build and execute query ---
-    session = get_public_session()
-    qry = session.query(MarketOrder)
-    if type_ids:
-        qry = qry.filter(MarketOrder.type_id.in_(type_ids))
-    if region_id:
-        qry = qry.filter(MarketOrder.region_id == region_id)
-    if location_id:
-        qry = qry.filter(MarketOrder.location_id == location_id)
-    if is_buy in (0, 1):
-        qry = qry.filter(MarketOrder.is_buy_order == bool(is_buy))
+    db = get_public_session()
+    try:
+        query = db.query(MarketOrder)
+        if type_ids:
+            query = query.filter(MarketOrder.type_id.in_(type_ids))
+        elif has_type_filter:
+            query = query.filter(MarketOrder.type_id == -1)
 
-    if sort_by == "price":
-        qry = qry.order_by(MarketOrder.price.asc())
-    elif sort_by == "volume":
-        qry = qry.order_by(MarketOrder.volume_remain.desc())
+        if region_id:
+            query = query.filter(MarketOrder.region_id == region_id)
+        if location_id:
+            query = query.filter(MarketOrder.location_id == location_id)
+        if is_buy in (0, 1):
+            query = query.filter(MarketOrder.is_buy_order == bool(is_buy))
 
-    total   = qry.count()
-    results = qry.offset((page - 1) * page_size).limit(page_size).all()
-    session.close()
+        if sort_by == "volume":
+            query = query.order_by(MarketOrder.volume_remain.desc())
+        else:
+            query = query.order_by(MarketOrder.price.asc())
 
-    # reload tree for sidebar
-    market_tree = load_market_tree()
+        total = query.count()
+        results = query.offset((page - 1) * page_size).limit(page_size).all()
+    finally:
+        db.close()
 
     return render_template(
         "market_browser.html",
+        **base_ctx("market"),
         results=results,
         page=page,
         total=total,
@@ -74,25 +68,23 @@ def browser():
         location_id=location_id,
         is_buy=is_buy,
         sort_by=sort_by,
-        market_tree=market_tree,
-        name_from_type_id=name_from_type_id,
+        market_tree=sde.load_market_tree(),
+        name_from_type_id=sde.name_from_type_id,
     )
 
 
 @market_bp.route("/autocomplete")
 def autocomplete():
-    """
-    Return up to 10 item‐name suggestions matching the 'q' prefix.
-    """
+    """Return up to 10 item-name suggestions matching the q prefix."""
+
     prefix = request.args.get("q", "").strip().lower()
     suggestions = []
     if prefix:
-        load_types_data()
-        for name, tid in _name_to_type_id.items():
+        sde.load_types_data()
+        for name, type_id in (sde._name_to_type_id or {}).items():
             if name.startswith(prefix):
-                # re‐capitalize via the canonical map
-                suggestions.append(_type_id_to_name.get(tid))
+                suggestions.append((sde._type_id_to_name or {}).get(type_id))
                 if len(suggestions) >= 10:
                     break
 
-    return jsonify(suggestions)
+    return jsonify([name for name in suggestions if name])

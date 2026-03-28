@@ -216,7 +216,7 @@ def discover_all_structures() -> list[int]:
     # --- find all owner folders ---
     owner_ids = [
         int(d) for d in os.listdir(PRIVATE_DATA_FOLDER)
-        if d.isdigit() and os.path.isdir(os.path.join(PRIVATE_DATA_FOLDER, d))
+        if d.isdigit() and int(d) > 0 and os.path.isdir(os.path.join(PRIVATE_DATA_FOLDER, d))
     ]
     logger.info(f"[Discovery] Found {len(owner_ids)} owners.")
 
@@ -240,25 +240,33 @@ def discover_all_structures() -> list[int]:
             logger.warning(f"[Discovery] Skipped owner {owner_id} due to: {e}")
 
     logger.info(f"[Discovery] Total unique structure IDs: {len(structure_ids)}")
-    remaining_ids = set(structure_ids)
 
-    # --- write to public DB ---
+    # --- write NEW structures to public DB (never overwrite existing metadata) ---
     with get_public_session() as db:
-        for sid in sorted(structure_ids):
-            db.merge(Structure(structure_id=sid, last_seen=datetime.utcnow()))
-        db.commit()
+        existing_ids = {row[0] for row in db.query(Structure.structure_id).all()}
+        new_ids = structure_ids - existing_ids
+        for sid in sorted(new_ids):
+            db.add(Structure(structure_id=sid, last_seen=datetime.utcnow()))
+        if new_ids:
+            db.commit()
+        logger.info(f"[Discovery] {len(new_ids)} new structures added to DB  ({len(existing_ids)} already known).")
+
+        # Only enrich structures that are missing name metadata
+        remaining_ids = {
+            row[0] for row in db.query(Structure.structure_id).filter(Structure.name.is_(None)).all()
+        }
+
+    logger.info(f"[Enrich] {len(remaining_ids)} structures need metadata enrichment.")
 
     # --- enrich metadata ---
     enriched = []
-    total = len(structure_ids)
+    total = max(len(remaining_ids), 1)
     count = 0
+    log_every = max(1, total // 20)  # ~5% intervals
     t0 = time.time()
 
     for owner_id in owner_ids:
         try:
-            # get the character row for name/credentials
-            with get_private_session(owner_id) as pvt:
-                main_char = pvt.query(Character).filter_by(character_id=owner_id).first()
             tokens = get_token(owner_id)
             token_candidates = [
                 data for _, data in sorted(tokens.items()) if data.get("access_token")
@@ -269,6 +277,8 @@ def discover_all_structures() -> list[int]:
 
             if not remaining_ids:
                 break
+
+            logger.info(f"[Enrich] Starting enrichment pass with owner {owner_id}  ({len(token_candidates)} token(s))")
 
             for sid in list(sorted(remaining_ids)):
                 count += 1
@@ -294,13 +304,13 @@ def discover_all_structures() -> list[int]:
                             last_seen=datetime.utcnow(),
                         ))
                         db.commit()
-                        enriched.append(sid)
-                        remaining_ids.discard(sid)
+                    enriched.append(sid)
+                    remaining_ids.discard(sid)
 
-                if count % max(1, total // 1000) == 0:
+                if count % log_every == 0 or count == total:
                     elapsed = time.time() - t0
-                    eta = (elapsed / count) * (total - count)
-                    logger.info(f"[Enrich] {100*count/total:.1f}% done. ETA {eta:.1f}s")
+                    eta = (elapsed / count) * (total - count) if count else 0
+                    logger.info(f"[Enrich] {count}/{total}  ({100*count/total:.1f}%)  ETA {eta:.0f}s  enriched {len(enriched)}")
 
         except Exception as e:
             logger.warning(f"[Enrich] Failed for owner {owner_id}: {e}")

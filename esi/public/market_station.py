@@ -106,7 +106,6 @@ def fetch_all_market_data() -> None:
             save_orders_to_db(region_id, first_page)
 
             for page in range(2, total_pages + 1):
-                time.sleep(0.033)  # ESI rate limit avoidance
                 page_data, _ = fetch_market_orders(region_id, page)
                 if not page_data:
                     break

@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Task Queue - EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Task Queue</h1>
+    <div class="pg-sub">{{ 'Admin view across all owners' if is_admin else 'Your background work and live sync state' }}</div>
+  </div>
+  <div class="toolbar">
+    <button class="btn btn-g" onclick="clearDone()">Clear Completed</button>
+    <form method="post" action="{{ url_for('tasks.collect_all') }}" style="display:inline">
+      <button type="submit" class="btn btn-a">Collect All</button>
+    </form>
+    <a href="{{ url_for('dashboard.sync') }}" class="btn btn-g">Run Sync</a>
+  </div>
+</div>
+
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">
+    <div>
+      <div class="ct" style="margin:0;margin-bottom:0.2rem">Global ESI Rate Limiter</div>
+      <div class="muted" style="font-size:0.78rem">Shared across all tasks — public and private queues</div>
+    </div>
+  </div>
+  <div style="background:rgba(0,0,0,0.35);border-radius:999px;height:8px;overflow:hidden;margin-bottom:0.6rem">
+    <div id="esi-bar" style="height:100%;border-radius:999px;width:0%;background:var(--accent);transition:width 0.5s"></div>
+  </div>
+  <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:0.8rem">
+    <span class="muted">Tokens used&nbsp;<strong id="esi-used" class="mono" style="color:var(--txt)">—</strong></span>
+    <span class="muted">Limit&nbsp;<strong id="esi-limit" class="mono" style="color:var(--txt)">—</strong></span>
+    <span class="muted">Remaining&nbsp;<strong id="esi-remaining" class="mono" style="color:var(--txt)">—</strong></span>
+    <span class="muted">Window&nbsp;<strong id="esi-window" class="mono" style="color:var(--txt)">—</strong>s</span>
+    <span class="muted">Requests&nbsp;<strong id="esi-reqs" class="mono" style="color:var(--txt)">—</strong></span>
+  </div>
+</div>
+
+<div class="pg-body">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v">{{ task_summary.total }}</span>
+      <span class="l">Visible Tasks</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.running }}</span>
+      <span class="l">Running</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.pending }}</span>
+      <span class="l">Pending</span>
+    </div>
+    <div class="stat">
+      <span class="v ok">{{ task_summary.complete }}</span>
+      <span class="l">Complete</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.failed + task_summary.cancelled }}</span>
+      <span class="l">Stopped</span>
+    </div>
+  </div>
+
+  {% if tasks %}
+  <div class="card stack">
+    <div class="section-head">
+      <div class="ct" style="margin:0">Queue Detail</div>
+      {% if task_summary.running or task_summary.pending %}
+      <span class="pill">Live via SSE</span>
+      {% else %}
+      <span class="pill">Idle</span>
+      {% endif %}
+    </div>
+    <div class="tw tw-scroll">
+      <table id="task-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            {% if is_admin %}<th>Owner</th>{% endif %}
+            <th>Status</th>
+            <th>Queue</th>
+            <th>Queued</th>
+            <th>Started</th>
+            <th>Finished</th>
+            <th>ESI Req</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          <tr id="row-{{ t.task_id }}">
+            <td>
+              <a href="{{ url_for('tasks.task_progress', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
+              <div class="mono muted" style="margin-top:0.18rem">{{ t.task_id }}</div>
+            </td>
+            {% if is_admin %}
+            <td class="mono muted">{{ t.owner_id }}</td>
+            {% endif %}
+            <td>
+              <span class="bdg
+                {% if t.status == 'complete' %}bdg-ok
+                {% elif t.status == 'failed' %}bdg-bad
+                {% elif t.status == 'running' %}bdg-blue
+                {% elif t.status == 'pending' %}bdg-warn
+                {% else %}bdg-warn{% endif %}">{{ t.status }}</span>
+            </td>
+            <td>
+              <span class="bdg {% if t.queue == 'public' %}bdg-blue{% endif %}" data-col="queue">{{ t.queue or 'private' }}</span>
+            </td>
+            <td class="mono muted" style="white-space:nowrap">{{ t.created_at or '\u2014' }}</td>
+            <td class="mono muted" style="white-space:nowrap" data-col="started">{{ t.started_at or '\u2014' }}</td>
+            <td class="mono muted" style="white-space:nowrap" data-col="finished">{{ t.finished_at or '\u2014' }}</td>
+            <td class="esi-rate-cell">
+              {% if t.esi_rate %}
+              {% set pct = (t.esi_rate.tokens_used / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
+              <div style="width:90px;background:rgba(0,0,0,0.35);border-radius:999px;height:5px;overflow:hidden;margin-bottom:0.3rem">
+                <div class="esi-mini-bar" style="height:100%;border-radius:999px;width:{{ pct|round(1) }}%;background:{% if pct >= 90 %}var(--bad){% elif pct >= 70 %}var(--warn){% else %}var(--accent){% endif %}"></div>
+              </div>
+              <span class="esi-mini-label mono" style="font-size:0.68rem;color:var(--muted)">{{ t.esi_rate.requests_total }} req &nbsp;{{ t.esi_rate.tokens_remaining }}/{{ t.esi_rate.tokens_limit }}</span>
+              {% else %}
+              <span class="muted" style="font-size:0.72rem">—</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap" data-col="action">
+              {% if t.status == 'pending' %}
+              <button class="btn btn-g cancel-btn" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="cancelTask('{{ t.task_id }}', this)">Cancel</button>
+              {% endif %}
+              <a href="{{ url_for('tasks.task_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty card">
+    <div class="ei">~</div>
+    <p>No tasks in queue.</p>
+    <p>Use the <a href="{{ url_for('dashboard.sync') }}" class="lnk">Data Sync</a> page to start collection.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function cancelTask(taskId, button) {
+  fetch('/tasks/' + taskId + '/cancel', { method: 'POST' })
+    .then(function (response) { return response.json(); })
+    .then(function (payload) {
+      if (!payload.cancelled) {
+        if (payload.message) alert(payload.message);
+        return;
+      }
+      var row = document.getElementById('row-' + taskId);
+      if (row) {
+        var badge = row.querySelector('.bdg');
+        if (badge) { badge.textContent = 'cancelled'; badge.className = 'bdg bdg-warn'; }
+      }
+      if (button) button.remove();
+    });
+}
+
+function clearDone() {
+  fetch('/tasks/clear', { method: 'POST' })
+    .then(function (response) { return response.json(); })
+    .then(function () { location.reload(); });
+}
+
+(function () {
+  // Live ESI rate card - SSE push from /tasks/rate_stream
+  var esiCard      = document.getElementById('esi-rate-card');
+  var esiBar       = document.getElementById('esi-bar');
+  var esiUsed      = document.getElementById('esi-used');
+  var esiLimit     = document.getElementById('esi-limit');
+  var esiRemaining = document.getElementById('esi-remaining');
+  var esiWindow    = document.getElementById('esi-window');
+  var esiReqs      = document.getElementById('esi-reqs');
+
+  function applyRateStats(d) {
+    var s = d.limiter;
+    if (!s || s.requests_total === 0) return;
+    esiCard.style.display = '';
+    var pct = s.tokens_limit > 0 ? (s.tokens_used / s.tokens_limit * 100) : 0;
+    esiBar.style.width      = pct.toFixed(1) + '%';
+    esiBar.style.background = pct >= 90 ? 'var(--bad)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)';
+    esiUsed.textContent      = s.tokens_used.toLocaleString();
+    esiLimit.textContent     = s.tokens_limit.toLocaleString();
+    esiRemaining.textContent = s.tokens_remaining.toLocaleString();
+    esiWindow.textContent    = s.window_seconds;
+    esiReqs.textContent      = s.requests_total.toLocaleString();
+
+    // Live-update every row from the tasks snapshot
+    (d.tasks || []).forEach(function (t) {
+      var row = document.getElementById('row-' + t.task_id);
+      if (!row) return;
+
+      // Status badge
+      var badge = row.querySelector('.bdg');
+      if (badge) {
+        badge.textContent = t.status;
+        badge.className = 'bdg' + (
+          t.status === 'complete' ? ' bdg-ok' :
+          t.status === 'failed'   ? ' bdg-bad' :
+          t.status === 'running'  ? ' bdg-blue' : ' bdg-warn'
+        );
+      }
+
+      // Queue badge
+      var qBadge = row.querySelector('[data-col="queue"]');
+      if (qBadge) {
+        qBadge.textContent = t.queue || 'private';
+        qBadge.className   = 'bdg' + (t.queue === 'public' ? ' bdg-blue' : '');
+      }
+
+      // Timestamps
+      var startedEl  = row.querySelector('[data-col="started"]');
+      var finishedEl = row.querySelector('[data-col="finished"]');
+      if (startedEl  && t.started_at)  startedEl.textContent  = t.started_at;
+      if (finishedEl && t.finished_at) finishedEl.textContent = t.finished_at;
+
+      // ESI rate mini-bar
+      var cell = row.querySelector('.esi-rate-cell');
+      if (cell && t.esi_rate) {
+        var r   = t.esi_rate;
+        var p   = r.tokens_limit > 0 ? (r.tokens_used / r.tokens_limit * 100) : 0;
+        var bar = cell.querySelector('.esi-mini-bar');
+        var lbl = cell.querySelector('.esi-mini-label');
+        if (!bar) {
+          cell.innerHTML =
+            '<div style="width:90px;background:rgba(0,0,0,0.35);border-radius:999px;height:5px;overflow:hidden;margin-bottom:0.3rem">' +
+              '<div class="esi-mini-bar" style="height:100%;border-radius:999px;width:0%;background:var(--accent)"></div>' +
+            '</div>' +
+            '<span class="esi-mini-label mono" style="font-size:0.68rem;color:var(--muted)"></span>';
+          bar = cell.querySelector('.esi-mini-bar');
+          lbl = cell.querySelector('.esi-mini-label');
+        }
+        if (bar) {
+          bar.style.width      = p.toFixed(1) + '%';
+          bar.style.background = p >= 90 ? 'var(--bad)' : p >= 70 ? 'var(--warn)' : 'var(--accent)';
+        }
+        if (lbl) lbl.textContent =
+          r.requests_total.toLocaleString() + ' req  ' +
+          r.tokens_remaining.toLocaleString() + '/' + r.tokens_limit.toLocaleString();
+      }
+
+      // Cancel button visibility
+      var actionCell = row.querySelector('[data-col="action"]');
+      if (actionCell) {
+        var cancelBtn = actionCell.querySelector('.cancel-btn');
+        if (t.status === 'pending' && !cancelBtn) {
+          var btn = document.createElement('button');
+          btn.className = 'btn btn-g cancel-btn';
+          btn.style.cssText = 'padding:0.3rem 0.65rem;font-size:0.72rem';
+          btn.textContent = 'Cancel';
+          (function (tid, b) { b.onclick = function () { cancelTask(tid, b); }; }(t.task_id, btn));
+          actionCell.insertBefore(btn, actionCell.firstChild);
+        } else if (t.status !== 'pending' && cancelBtn) {
+          cancelBtn.remove();
+        }
+      }
+    });
+  }
+
+  (function openRateStream() {
+    var es = new EventSource('/tasks/rate_stream');
+    es.onmessage = function (ev) {
+      try { applyRateStats(JSON.parse(ev.data)); } catch (e) {}
+    };
+    es.onerror = function () {
+      es.close();
+      setTimeout(openRateStream, 5000);
+    };
+  }());
+}());
+</script>
+{% endblock %}

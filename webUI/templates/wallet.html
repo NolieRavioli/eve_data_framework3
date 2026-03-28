@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Wallet - EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Wallet</h1>
+    <div class="pg-sub">{{ current_name }}</div>
+  </div>
+  <div class="pill-row">
+    {% if wallet_summary.last_transaction_at %}
+    <span class="pill">Last trade {{ wallet_summary.last_transaction_at }}</span>
+    {% endif %}
+    {% if wallet_summary.last_journal_at %}
+    <span class="pill">Last journal {{ wallet_summary.last_journal_at }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="pg-body">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v isk">{{ '{:,.2f}'.format(wallet_balance or 0) }}</span>
+      <span class="l">Current Balance</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ wallet_summary.transactions or 0 }}</span>
+      <span class="l">Trades Loaded</span>
+    </div>
+    <div class="stat">
+      <span class="v {{ 'ok' if (wallet_summary.net_transactions or 0) >= 0 else '' }}">{{ '{:,.0f}'.format(wallet_summary.net_transactions or 0) }}</span>
+      <span class="l">Trade Net</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ wallet_summary.journal_entries or 0 }}</span>
+      <span class="l">Journal Rows</span>
+    </div>
+    <div class="stat">
+      <span class="v {{ 'ok' if (wallet_summary.journal_net or 0) >= 0 else '' }}">{{ '{:,.0f}'.format(wallet_summary.journal_net or 0) }}</span>
+      <span class="l">Journal Net</span>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card stack">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Transactions</div>
+        <div class="pill-row">
+          <span class="pill">{{ wallet_summary.sells or 0 }} sells</span>
+          <span class="pill">{{ wallet_summary.buys or 0 }} buys</span>
+        </div>
+      </div>
+
+      {% if wallet_txns %}
+      <div class="tw tw-scroll" style="max-height:680px">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th><th>Side</th></tr>
+          </thead>
+          <tbody>
+            {% for t in wallet_txns %}
+            <tr>
+              <td class="mono muted" style="white-space:nowrap">{{ t.date }}</td>
+              <td>{{ t.type_name }}</td>
+              <td>{{ '{:,}'.format(t.quantity or 0) }}</td>
+              <td>{{ '{:,.2f}'.format(t.unit_price or 0) }}</td>
+              <td class="{{ 'neg' if t.is_buy else 'pos' }}">{{ '{:,.2f}'.format(t.amount or 0) }}</td>
+              <td><span class="bdg {{ 'bdg-bad' if t.is_buy else 'bdg-ok' }}">{{ 'Buy' if t.is_buy else 'Sell' }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="ei">$</div>
+        <p>No transactions yet.</p>
+        <p>Run a Wallet sync to populate this view.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card stack">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Journal</div>
+        <div class="pill-row">
+          <span class="pill">{{ '{:,.0f}'.format(wallet_summary.journal_credits or 0) }} credits</span>
+          <span class="pill">{{ '{:,.0f}'.format(wallet_summary.journal_debits or 0) }} debits</span>
+        </div>
+      </div>
+
+      {% if wallet_journal %}
+      <div class="tw tw-scroll" style="max-height:680px">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Ref Type</th><th>Amount</th><th>Balance</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            {% for entry in wallet_journal %}
+            <tr>
+              <td class="mono muted" style="white-space:nowrap">{{ entry.date }}</td>
+              <td>{{ entry.ref_type }}</td>
+              <td class="{{ 'pos' if (entry.amount or 0) >= 0 else 'neg' }}">{{ '{:,.2f}'.format(entry.amount or 0) }}</td>
+              <td>{{ '{:,.2f}'.format(entry.balance or 0) }}</td>
+              <td class="muted">{{ entry.description or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="ei">=</div>
+        <p>No journal entries yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

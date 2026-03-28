@@ -15,6 +15,9 @@ from requests_oauthlib import OAuth2Session
 
 from util.auth import CredentialManager, TokenDBManager
 from util.utils import RuntimeSettings, get_runtime_settings
+from esi.data_collector import enqueue_full_collection
+from db.database import get_private_session, get_public_session
+from db.models import Character, User, SiteAdmin
 
 # ─────── Globals ─────────────────────────────────────────────────────────────
 
@@ -134,6 +137,27 @@ def add_toon():
     return redirect(auth_url)
 
 
+@auth_bp.route("/switch_character/<int:character_id>")
+def switch_character(character_id: int):
+    """Set the active linked character for the current owner."""
+
+    owner_id = session.get("owner_id")
+    if not owner_id:
+        return redirect(url_for("auth.login"))
+
+    db = get_private_session(owner_id)
+    try:
+        char = db.get(Character, character_id)
+        if not char:
+            return "Character not linked to this owner.", 404
+    finally:
+        db.close()
+
+    session["character_id"] = character_id
+    next_url = request.args.get("next") or url_for("dashboard.home")
+    return redirect(next_url)
+
+
 def _validate_state(returned_state: Optional[str]):
     if not returned_state:
         return None, None, ("Missing OAuth state.", 400)
@@ -199,6 +223,17 @@ def callback():
             session["owner_id"] = owner_id
             session["character_id"] = character_id
 
+        # ── Check first-ever owner BEFORE save_tokens adds the User row ──────
+        pub_db = get_public_session()
+        existing_owner_count = pub_db.query(User.owner_id).distinct().count()
+        is_first_owner = (existing_owner_count == 0) and not is_add_toon
+        pub_db.close()
+
+        # Check if this is a brand-new character before saving (save_tokens upserts)
+        _db = get_private_session(owner_id)
+        is_new_character = _db.get(Character, character_id) is None
+        _db.close()
+
         mgr = TokenDBManager(owner_id)
         mgr.save_tokens(
             character_id,
@@ -211,9 +246,33 @@ def callback():
         session["access_token"] = token["access_token"]
         session["refresh_token"] = token["refresh_token"]
 
+        # ── Assign site owner role to the very first owner ────────────────────
+        if is_first_owner:
+            pub_db2 = get_public_session()
+            try:
+                pub_db2.add(SiteAdmin(owner_id=owner_id, is_site_owner=True, granted_by=None))
+                pub_db2.commit()
+                logger.info(f"[Auth] Owner {owner_id} assigned as site owner (first login).")
+            finally:
+                pub_db2.close()
+
+        # ── Set is_admin in session for all logins ────────────────────────────
+        if not is_add_toon:
+            pub_db3 = get_public_session()
+            try:
+                admin_row = pub_db3.get(SiteAdmin, owner_id)
+                session["is_admin"] = admin_row is not None
+            finally:
+                pub_db3.close()
+
+        if is_new_character:
+            logger.info(f"[Auth] New character {character_id} — triggering full data collection.")
+            enqueue_full_collection(owner_id)
+
         if _settings.debug_mode:
             print(
                 f"[Auth] Session updated owner={owner_id} "
+                f"is_admin={session.get('is_admin')} "
                 f"characters={[session.get('character_id')]}")
 
         return redirect(url_for("dashboard.home"))

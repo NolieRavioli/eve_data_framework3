@@ -6,3 +6,16 @@ Environment Variables:
   EVE_PRIVATE_DATABASE_FOLDER: "_privateData/"
   AUTH_DATA_FOLDER: "auth/.gitignore/"
   SDE_PATH: "_sde/"
+
+# SDE section toggles — set false to skip a dataset at startup.
+# Disabled sections will lazy-load on first use (or return defaults if they're
+# expensive enough that you never want them).
+SDE:
+  load_types: true           # type ID <-> name maps          (~26 MB, ~4s)
+  load_groups: true          # item group hierarchy            (~0.3 MB, fast)
+  load_categories: true      # item categories                 (~0.1 MB, fast)
+  load_market_groups: true   # market group tree               (~0.3 MB, fast)
+  load_universe: true        # solar-system -> region map      (8,400+ files, ~15s)
+  load_blueprints: false     # manufacturing blueprints        (~4 MB, ~8s)
+  load_type_materials: false # reprocessing materials          (~2 MB, ~3s)
+  load_type_dogma: false     # item dogma attributes           (~26 MB, ~60s+)

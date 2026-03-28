@@ -128,7 +128,10 @@ def update_structure_market_orders() -> None:
         logger.info(f"[MarketUpdate] Checking {len(structures)} structures.")
         total = len(structures)
         count = 0
+        skipped = 0
+        orders_total = 0
         t0 = time.time()
+        log_every = max(1, total // 20)  # ~5% intervals
         for s in structures:
             count += 1
             num_orders = 0
@@ -156,8 +159,12 @@ def update_structure_market_orders() -> None:
 
                 orders, pages = fetch_structure_orders(s.structure_id, token, page=1)
                 if not orders:
+                    skipped += 1
                     db.commit()
-                    logger.info(f"{100*count/total:.2f}% done. ETA: {(time.time()-t0)*(1-count/total)/(count/total)}")
+                    if count % log_every == 0 or count == total:
+                        elapsed = time.time() - t0
+                        eta = (elapsed / count) * (total - count) if count else 0
+                        logger.info(f"[Progress] {count}/{total}  ({100*count/total:.1f}%)  ETA {eta:.0f}s  orders {orders_total:,}  skipped {skipped}")
                     continue
 
                 for o in orders:
@@ -209,11 +216,15 @@ def update_structure_market_orders() -> None:
                         ))
 
                 db.commit()
-                logger.info(f"[MarketUpdate] ✅ Synced {num_orders}+ orders for {s.structure_id}.")
-                logger.info(f"{100*count/total:.2f}% done. ETA: {(time.time()-t0)*(1-count/total)/(count/total)}")
+                orders_total += num_orders
+                logger.debug(f"[MarketUpdate] Synced {num_orders} orders for {s.structure_id}.")
+                if count % log_every == 0 or count == total:
+                    elapsed = time.time() - t0
+                    eta = (elapsed / count) * (total - count) if count else 0
+                    logger.info(f"[Progress] {count}/{total}  ({100*count/total:.1f}%)  ETA {eta:.0f}s  orders {orders_total:,}  skipped {skipped}")
             
             except Exception:
-                logger.exception(f"[MarketUpdate] ❌ Failed for {s.structure_id}.")
+                logger.exception(f"[MarketUpdate] Failed for {s.structure_id}.")
                 db.rollback()
 
 def update_structure_market(owner_id: int) -> None:
