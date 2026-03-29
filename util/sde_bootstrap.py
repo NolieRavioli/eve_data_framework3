@@ -12,7 +12,7 @@ import yaml
 
 from util.esi_spec_registry import refresh_esi_spec_registry
 from util.sde import refresh_all_caches
-from util import sde_store
+from util import sde_loader, sde_store
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
 def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
     source_meta = source_meta or {}
     _progress_print(f"[SDE] rebuilding warehouse at {sde_store.get_database_path()}")
-    sde_store.build_sde_warehouse(
+    sde_loader.build_sde_warehouse(
         source_root=SDE_PATH,
         supported_languages=_supported_languages(),
         source_hash=source_meta.get("sha256"),

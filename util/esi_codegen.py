@@ -723,6 +723,14 @@ def check_generated_is_current() -> None:
                 "Run: python -m util.esi_codegen"
             )
 
+    # ── Collector packages ────────────────────────────────────────────────
+    from util.collector_codegen import collectors_are_current
+    if not collectors_are_current(expected_date):
+        raise RuntimeError(
+            f"esi/personal|corp|public_api/ collector packages are missing or stale "
+            f"(expected {expected_date}).  Run: python build.py --collectors"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI

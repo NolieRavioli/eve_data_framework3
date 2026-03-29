@@ -251,13 +251,33 @@ def db_browser_query():
 def esi_catalog():
     """Searchable catalog of all 208 ESI operations."""
     from esi.generated.manifest import OPERATIONS, COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
+    from db.database import get_private_session
+    from db.models import Character
+
     ops = sorted(OPERATIONS.values(), key=lambda o: ((o.get("tags") or [""])[0], o.get("operation_id", "")))
+
+    # Resolve the display name for the active session character so the template
+    # can show whether authenticated operations will have a token available.
+    char_name: str | None = None
+    character_id = session.get("character_id")
+    owner_id = session.get("owner_id")
+    if character_id and owner_id:
+        db = get_private_session(owner_id)
+        try:
+            char = db.get(Character, character_id)
+            if char:
+                char_name = char.name
+        finally:
+            db.close()
+
     return render_template(
         "admin_esi.html",
         operations=ops,
         compatibility_date=COMPATIBILITY_DATE,
         operation_count=OPERATION_COUNT,
         scope_count=len(ALL_SCOPES),
+        active_character_id=character_id,
+        active_character_name=char_name,
     )
 
 

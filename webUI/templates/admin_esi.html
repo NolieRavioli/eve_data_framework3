@@ -8,6 +8,19 @@
     <p class="pg-sub">{{ operation_count }} operations · {{ scope_count }} scopes · spec {{ compatibility_date }}</p>
   </div>
   <div style="display:flex;gap:.6rem;align-items:center;">
+    {% if active_character_name %}
+    <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;
+                 color:var(--good);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);
+                 border-radius:.6rem;padding:.3rem .65rem;">
+      🔑 {{ active_character_name }}
+    </span>
+    {% else %}
+    <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;
+                 color:var(--warn);background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);
+                 border-radius:.6rem;padding:.3rem .65rem;">
+      ⚠ Not logged in — authenticated routes will fail
+    </span>
+    {% endif %}
     <a href="{{ url_for('admin.index') }}" class="btn-sm">← Admin</a>
   </div>
 </div>

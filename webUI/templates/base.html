@@ -915,11 +915,6 @@
       {% if base_logged_in %}
       <div class="nav-group">
         <div class="nav-label">Tools</div>
-        {% if base_is_admin %}
-        <a href="{{ url_for('admin.esi_catalog') }}" class="nav-link {{ 'active' if active_page == 'esi_explorer' else '' }}">
-          <span class="nav-ic">⚡</span><span>ESI Explorer</span>
-        </a>
-        {% endif %}
         <a href="{{ url_for('tasks.task_list') }}" class="nav-link {{ 'active' if active_page == 'tasks' else '' }}">
           <span class="nav-ic">=</span><span>Task Queue</span>
         </a>
@@ -944,12 +939,19 @@
       {% endif %}
     </nav>
 
-    <div class="sidebar-foot">
-      {% if base_logged_in and base_is_admin %}
-      <a href="{{ url_for('admin.index') }}" class="nav-link">
-        <span class="nav-ic">!</span><span>Admin Panel</span>
-      </a>
+      {% if base_is_admin %}
+      <div class="nav-group" style="margin-bottom:.25rem;">
+        <div class="nav-label">Admin</div>
+        <a href="{{ url_for('admin.index') }}" class="nav-link {{ 'active' if active_page == 'admin' else '' }}">
+          <span class="nav-ic">!</span><span>Admin Panel</span>
+        </a>
+        <a href="{{ url_for('admin.esi_catalog') }}" class="nav-link {{ 'active' if active_page == 'esi_explorer' else '' }}">
+          <span class="nav-ic">⚡</span><span>ESI Explorer</span>
+        </a>
+      </div>
       {% endif %}
+
+    <div class="sidebar-foot">
       {% if base_logged_in %}
       <a href="{{ url_for('auth.add_toon') }}" class="nav-link">
         <span class="nav-ic">+</span><span>Add Toon</span>

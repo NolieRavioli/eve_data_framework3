@@ -13,9 +13,7 @@ from typing import Iterable, Optional
 import requests
 import yaml
 
-from db.database import get_private_session
-from db.models import Character
-from util.auth import CredentialManager, TokenDBManager
+from util.auth import CredentialManager, TokenDBManager, get_token, refresh_token  # noqa: F401 re-exports
 from util.esi_rate_limiter import esi_get, esi_request
 
 logger = logging.getLogger(__name__)
@@ -26,7 +24,6 @@ ESI_BASE = "https://esi.evetech.net/latest"
 HEADERS = {"Accept": "application/json"}
 DATASOURCE = {"datasource": "tranquility"}
 
-TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
 
 REQUIRED_MODULES = (
     "sqlalchemy",
@@ -194,76 +191,9 @@ def load_config(config_path: str = CONFIG_PATH) -> dict:
     return cfg
 
 # ──────── Token / Character Utilities ───────────────────────────────────────────
-
-def get_token(owner_id: int, character_ids: Optional[Iterable[int]] = None) -> dict:
-    """
-    Return { character_id: TokenRow } dict for all characters linked to an owner.
-    If any tokens are expired, refresh them automatically and SAVE them.
-    """
-    token_map = {}
-    selected_ids = (
-        {int(value) for value in character_ids}
-        if character_ids is not None
-        else None
-    )
-    now = time.time()
-    session = get_private_session(owner_id)
-    token_db = TokenDBManager(owner_id)
-    try:
-        tokens = session.query(Character).all()
-        for token in tokens:
-            if selected_ids is not None and token.character_id not in selected_ids:
-                continue
-            if token.expires_at and token.expires_at < now:
-                logger.info(f"Token expired for {token.character_id}, refreshing...")
-                try:
-                    refreshed = refresh_token(token.refresh_token)
-                    # Update the SQLAlchemy model
-                    token.access_token = refreshed["access_token"]
-                    token.refresh_token = refreshed["refresh_token"]
-                    token.expires_at = refreshed.get("expires_at", now + refreshed.get("expires_in", 1200))
-                    token.scopes = refreshed.get("scope", token.scopes)
-                    # Save to SQLAlchemy (private toon db)
-                    session.commit()
-                    # Save to raw SQLite (token db)
-                    token_db.save_tokens(
-                        character_id=token.character_id,
-                        access_token=token.access_token,
-                        refresh_token=token.refresh_token,
-                        expires_at=token.expires_at,
-                        scopes=token.scopes
-                    )
-                except Exception as e:
-                    logger.error(f"[TokenManager] Failed to refresh token for {token.character_id}: {e}")
-                    continue
-            token_map[token.character_id] = {
-                "corporation_id": token.corporation_id,
-                "alliance_id": token.alliance_id,
-                "security_status": token.security_status,
-                "access_token": token.access_token,
-                "refresh_token": token.refresh_token,
-                "expires_at": token.expires_at,
-                "scopes": token.scopes,
-            }
-    finally:
-        session.close()
-    return token_map
-
-def refresh_token(refresh_token: str) -> dict:
-    client_id, client_secret, _, _ = CredentialManager.load_credentials()
-    r = requests.post(
-        TOKEN_URL,
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-            "client_secret": client_secret
-        }
-    )
-    r.raise_for_status()
-    token_data = r.json()
-    token_data["expires_at"] = time.time() + token_data.get("expires_in", 1200)
-    return token_data
+# get_token and refresh_token live in util.auth and are re-exported from this module.
+# Import them via: from util.utils import get_token, refresh_token
+# or directly via: from util.auth import get_token, refresh_token
 
 # ──────── ESI Utilities ──────────────────────────────────────────────────────────
 

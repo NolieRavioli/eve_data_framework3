@@ -1,12 +1,16 @@
 import json
 import logging
 import os
-from typing import Tuple
+import time
+from typing import Iterable, Optional, Tuple
+
+import requests
 
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 
 from db.database import get_private_session, initialize_private_database
+from db.models import Character
 from util import sde_store
 from util.esi_rate_limiter import esi_get
 
@@ -145,3 +149,84 @@ class TokenDBManager:
             session_priv.commit()
         finally:
             session_priv.close()
+
+
+# ---------------------------------------------------------------------------
+# Token retrieval and refresh helpers
+# ---------------------------------------------------------------------------
+
+TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
+
+
+def get_token(owner_id: int, character_ids: Optional[Iterable[int]] = None) -> dict:
+    """Return ``{character_id: token_dict}`` for all characters of an owner.
+
+    Expired tokens are refreshed automatically and persisted before returning.
+    """
+    token_map = {}
+    selected_ids = (
+        {int(value) for value in character_ids} if character_ids is not None else None
+    )
+    now = time.time()
+    session = get_private_session(owner_id)
+    token_db = TokenDBManager(owner_id)
+    try:
+        tokens = session.query(Character).all()
+        for token in tokens:
+            if selected_ids is not None and token.character_id not in selected_ids:
+                continue
+            if token.expires_at and token.expires_at < now:
+                logger.info("Token expired for %s, refreshing...", token.character_id)
+                try:
+                    refreshed = refresh_token(token.refresh_token)
+                    token.access_token = refreshed["access_token"]
+                    token.refresh_token = refreshed["refresh_token"]
+                    token.expires_at = refreshed.get(
+                        "expires_at", now + refreshed.get("expires_in", 1200)
+                    )
+                    token.scopes = refreshed.get("scope", token.scopes)
+                    session.commit()
+                    token_db.save_tokens(
+                        character_id=token.character_id,
+                        access_token=token.access_token,
+                        refresh_token=token.refresh_token,
+                        expires_at=token.expires_at,
+                        scopes=token.scopes,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[TokenManager] Failed to refresh token for %s: %s",
+                        token.character_id,
+                        exc,
+                    )
+                    continue
+            token_map[token.character_id] = {
+                "corporation_id": token.corporation_id,
+                "alliance_id": token.alliance_id,
+                "security_status": token.security_status,
+                "access_token": token.access_token,
+                "refresh_token": token.refresh_token,
+                "expires_at": token.expires_at,
+                "scopes": token.scopes,
+            }
+    finally:
+        session.close()
+    return token_map
+
+
+def refresh_token(refresh_token_str: str) -> dict:
+    """Exchange a refresh token for a new access token via EVE SSO."""
+    client_id, client_secret, _, _ = CredentialManager.load_credentials()
+    r = requests.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token_str,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+    )
+    r.raise_for_status()
+    token_data = r.json()
+    token_data["expires_at"] = time.time() + token_data.get("expires_in", 1200)
+    return token_data
