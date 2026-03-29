@@ -1,7 +1,7 @@
 """DuckDB-backed SDE facade with YAML fallback.
 
 The public helper surface stays stable for the rest of the app, but the primary
-backend is the persisted `_publicData/sde.duckdb` warehouse. When that file is
+backend is the persisted `_publicData/public.duckdb` warehouse. When that file is
 missing, helpers fall back to direct YAML reads from `_sde`.
 """
 
@@ -348,9 +348,21 @@ def startup_load_sde(cfg: dict | None = None) -> None:
         for key, default in _SECTION_DEFAULTS.items()
     }
 
-    backend = "DuckDB warehouse" if _warehouse_ready() else "YAML fallback"
     print()
-    print(f"[SDE] backend={backend} path={_warehouse_path()}")
+    if not _warehouse_ready():
+        print(f"\r[SDE] no warehouse found at {_warehouse_path()} - building before server start", flush=True)
+        from esi.public.static_data import update_sde
+
+        update_sde()
+        return
+
+    backend = "DuckDB warehouse"
+    print(f"[SDE] using existing {backend} at {_warehouse_path()} (bootstrap skipped)")
+    if _warehouse_ready():
+        try:
+            sde_store.ensure_esi_registry_current(_warehouse_path())
+        except Exception as exc:
+            logger.warning("Failed to ensure the ESI registry is synced into DuckDB: %s", exc)
     warm = [key for key, enabled in _startup_cfg.items() if enabled]
     if warm:
         print(f"[SDE] warming: {', '.join(warm)}")

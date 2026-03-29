@@ -1,10 +1,9 @@
-# webUI/admin.py
 """
 Admin panel blueprint.
 - Live console via Server-Sent Events (SSE)
 - Database statistics
 - User management (promote / demote site admins)
-- SQL database browser (read-only)
+- DuckDB workspace browser (read-only)
 """
 
 import collections
@@ -25,10 +24,7 @@ from flask import (
     session,
     stream_with_context,
 )
-from sqlalchemy import inspect, text
 
-from db.database import get_public_session, initialize_public_database
-from db.models import SiteAdmin, User
 from util import sde_store
 from util.esi_spec_registry import get_registry_status
 
@@ -37,8 +33,6 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
 class _AdminLogHandler(logging.Handler):
-    """Capture formatted log records into a shared ring buffer for SSE."""
-
     _buffer: collections.deque[tuple[int, str]] = collections.deque(maxlen=500)
     _cursor = 0
     _lock = threading.Lock()
@@ -70,8 +64,6 @@ logging.getLogger().addHandler(_handler)
 
 
 def require_admin(fn):
-    """Decorator: 403 if the session owner is not a site admin."""
-
     @wraps(fn)
     def _inner(*args, **kwargs):
         if not session.get("is_admin"):
@@ -82,64 +74,30 @@ def require_admin(fn):
 
 
 def _is_site_owner(owner_id: int) -> bool:
-    db = get_public_session()
-    try:
-        row = db.get(SiteAdmin, owner_id)
-        return bool(row and row.is_site_owner)
-    finally:
-        db.close()
+    row = sde_store.get_site_admin(owner_id)
+    return bool(row and row.get("is_site_owner"))
 
 
 def _db_stats() -> dict[str, int]:
-    """Return row counts for the public database tables."""
+    counts = sde_store.public_table_counts()
+    return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
 
-    engine = initialize_public_database()
-    db = get_public_session()
-    try:
-        inspector = inspect(engine)
-        table_counts: dict[str, int] = {}
-        for table_name in inspector.get_table_names():
-            result = db.execute(text(f'SELECT COUNT(*) FROM "{table_name}"'))
-            table_counts[table_name] = int(result.scalar() or 0)
-        return dict(sorted(table_counts.items(), key=lambda item: item[1], reverse=True))
-    finally:
-        db.close()
+
+def _normalize_user_row(row: dict) -> dict:
+    granted_at = row.get("granted_at")
+    if isinstance(granted_at, (datetime.datetime, datetime.date)):
+        granted_at = granted_at.isoformat()
+    return {
+        "owner_id": row["owner_id"],
+        "character_count": int(row.get("character_count") or 0),
+        "is_admin": bool(row.get("is_admin")),
+        "is_site_owner": bool(row.get("is_site_owner")),
+        "granted_at": granted_at,
+    }
 
 
 def _user_list() -> list[dict]:
-    """Return every owner_id with character count and admin status."""
-
-    db = get_public_session()
-    try:
-        rows = db.query(User.owner_id).distinct().all()
-        owner_ids = [row.owner_id for row in rows]
-        result = []
-        for owner_id in owner_ids:
-            char_count = db.query(User).filter(User.owner_id == owner_id).count()
-            admin_row = db.get(SiteAdmin, owner_id)
-            result.append(
-                {
-                    "owner_id": owner_id,
-                    "character_count": char_count,
-                    "is_admin": admin_row is not None,
-                    "is_site_owner": bool(admin_row and admin_row.is_site_owner),
-                    "granted_at": (
-                        admin_row.granted_at.isoformat()
-                        if admin_row and admin_row.granted_at
-                        else None
-                    ),
-                }
-            )
-        return sorted(
-            result,
-            key=lambda row: (
-                not row["is_site_owner"],
-                not row["is_admin"],
-                row["owner_id"],
-            ),
-        )
-    finally:
-        db.close()
+    return [_normalize_user_row(row) for row in sde_store.list_public_users()]
 
 
 @admin_bp.route("/")
@@ -175,8 +133,6 @@ def index():
 @admin_bp.route("/stream")
 @require_admin
 def stream():
-    """SSE endpoint that streams live log lines to the admin console."""
-
     def _generate():
         cursor = 0
         initial = _AdminLogHandler.snapshot(limit=100)
@@ -208,91 +164,85 @@ def users():
 @admin_bp.route("/promote", methods=["POST"])
 @require_admin
 def promote():
-    """Promote an owner to site admin. Body: {"owner_id": <int>}"""
-
     data = request.get_json(force=True, silent=True) or {}
     target_id = data.get("owner_id")
     if not target_id:
         return jsonify({"error": "owner_id required"}), 400
 
     current_owner = session.get("owner_id")
-    db = get_public_session()
-    try:
-        existing = db.get(SiteAdmin, target_id)
-        if existing:
-            return jsonify({"ok": True, "note": "already admin"})
-        db.add(
-            SiteAdmin(
-                owner_id=target_id,
-                is_site_owner=False,
-                granted_by=current_owner,
-                granted_at=datetime.datetime.utcnow(),
-            )
-        )
-        db.commit()
-        logger.info("[Admin] Owner %s promoted to admin by %s.", target_id, current_owner)
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+    existing = sde_store.get_site_admin(int(target_id))
+    if existing:
+        return jsonify({"ok": True, "note": "already admin"})
+
+    sde_store.upsert_site_admin(
+        owner_id=int(target_id),
+        is_site_owner=False,
+        granted_by=current_owner,
+        granted_at=datetime.datetime.utcnow(),
+    )
+    logger.info("[Admin] Owner %s promoted to admin by %s.", target_id, current_owner)
+    return jsonify({"ok": True})
 
 
 @admin_bp.route("/demote", methods=["POST"])
 @require_admin
 def demote():
-    """Remove admin role. Body: {"owner_id": <int>}"""
-
     data = request.get_json(force=True, silent=True) or {}
     target_id = data.get("owner_id")
     if not target_id:
         return jsonify({"error": "owner_id required"}), 400
 
+    row = sde_store.get_site_admin(int(target_id))
+    if not row:
+        return jsonify({"ok": True, "note": "not an admin"})
+    if row.get("is_site_owner"):
+        return jsonify({"error": "Cannot demote the site owner."}), 403
+
     current_owner = session.get("owner_id")
-    db = get_public_session()
-    try:
-        row = db.get(SiteAdmin, target_id)
-        if not row:
-            return jsonify({"ok": True, "note": "not an admin"})
-        if row.is_site_owner:
-            return jsonify({"error": "Cannot demote the site owner."}), 403
-        db.delete(row)
-        db.commit()
-        logger.info("[Admin] Owner %s demoted by %s.", target_id, current_owner)
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+    sde_store.delete_site_admin(int(target_id))
+    logger.info("[Admin] Owner %s demoted by %s.", target_id, current_owner)
+    return jsonify({"ok": True})
 
 
 @admin_bp.route("/db_browser")
 @require_admin
 def db_browser():
-    inspector = inspect(initialize_public_database())
-    tables = {}
-    for table_name in inspector.get_table_names():
-        tables[table_name] = [column["name"] for column in inspector.get_columns(table_name)]
-    return render_template("db_browser.html", tables=tables, db_label="public.db")
+    target_owner_id = request.args.get("owner_id", type=int)
+    try:
+        if target_owner_id is not None:
+            tables = sde_store.list_private_browser_tables(target_owner_id)
+            db_label = f"owner {target_owner_id} private db"
+        else:
+            tables = sde_store.list_browser_tables()
+            db_label = "public.duckdb"
+    except FileNotFoundError:
+        abort(404)
+    return render_template(
+        "db_browser.html",
+        tables=tables,
+        db_label=db_label,
+        browser_owner_id=target_owner_id,
+    )
 
 
 @admin_bp.route("/db_browser/query", methods=["POST"])
 @require_admin
 def db_browser_query():
-    """Execute a read-only SQL query against the public DB."""
-
     data = request.get_json(force=True, silent=True) or {}
     raw_sql = (data.get("sql") or "").strip()
+    target_owner_id = data.get("owner_id")
     if not raw_sql:
         return jsonify({"error": "No SQL provided"}), 400
 
-    normalized = raw_sql.lstrip().upper()
-    if not normalized.startswith("SELECT") and not normalized.startswith("PRAGMA"):
-        return jsonify({"error": "Only SELECT and PRAGMA statements are allowed."}), 403
-
-    db = get_public_session()
     try:
-        result = db.execute(text(raw_sql))
-        keys = list(result.keys())
-        rows = [dict(zip(keys, row)) for row in result.fetchmany(500)]
-        return jsonify({"columns": keys, "rows": rows})
+        if target_owner_id is not None:
+            return jsonify(
+                sde_store.query_private_browser_sql(
+                    int(target_owner_id),
+                    raw_sql,
+                    row_limit=500,
+                )
+            )
+        return jsonify(sde_store.query_browser_sql(raw_sql, row_limit=500))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
-    finally:
-        db.close()

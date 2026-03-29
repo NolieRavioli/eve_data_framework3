@@ -1,6 +1,6 @@
 # EVE Data Framework 3
 
-EVE Data Framework 3 is a self-hosted operations hub that keeps a corporation's EVE Online data synchronized, warehoused, and explorable through a single Flask web UI. The codebase automates the entire lifecycle: it provisions local SQLite databases, manages authentication with the EVE SSO, schedules pulls from ESI and the Static Data Export (SDE), normalizes the responses, and renders dashboards plus manual refresh tools for pilots.
+EVE Data Framework 3 is a self-hosted operations hub that keeps a corporation's EVE Online data synchronized, warehoused, and explorable through a single Flask web UI. The codebase automates the entire lifecycle: it provisions a shared DuckDB warehouse plus per-owner private SQLite databases, manages authentication with the EVE SSO, schedules pulls from ESI and the Static Data Export (SDE), normalizes the responses, and renders dashboards plus manual refresh tools for pilots.
 
 This document walks through how the application behaves from the first `python main.py` run through recurring data refreshes. It assumes you are comfortable with Python, SQLAlchemy, and Flask, but have never seen this project before.
 
@@ -11,7 +11,7 @@ This document walks through how the application behaves from the first `python m
 1. **Runtime bootstrap (`main.py`)**
    - Loads `config.yaml`, surfaces runtime toggles (debug mode, auto-install, host/port), and configures logging via `util.utils.initialize_runtime_environment`.
    - Optionally auto-installs missing packages if `Runtime.auto_install` is enabled in the config.
-   - Ensures the public database exists (`db.database.initialize_public_database`).
+   - Ensures the shared DuckDB warehouse is ready for both SDE data and public operational tables.
    - Launches the Flask application created in `webUI.create_app`.
 
 2. **Web UI startup (`webUI/app.py`)**
@@ -25,7 +25,7 @@ This document walks through how the application behaves from the first `python m
    - **Analysis**: Modules under `analysis/` post-process raw tables (e.g., `analysis/job_slots.py`, `analysis/structures.py`) and expose summaries consumed by the dashboard.
 
 4. **Storage**
-   - Public data lives in `_publicData/public.db` and uses models defined in `db/models.py`’s `PublicBase`.
+   - Shared public and SDE data live in `_publicData/public.duckdb`.
    - Each account owner receives a dedicated SQLite database in `_privateData/<owner_id>/<owner_id>.db` driven by `PrivateBase` models. The separation prevents leakage between characters and reduces lock contention.
 
 5. **Long-running job UX**
@@ -59,23 +59,19 @@ You can safely pre-create a virtual environment, install dependencies manually, 
 
 ## 4. Database Architecture
 
-### 4.1 Public Operational Database (`_publicData/public.db`)
+### 4.1 Shared Warehouse (`_publicData/public.duckdb`)
 
-Created by `initialize_public_database`, this SQLite file holds shared live data:
+This DuckDB file holds both the shared public operational tables and the static SDE warehouse:
 
 - `users`: Character-to-owner mapping used when tokens are refreshed automatically.
 - `structures` & `market_structures`: Station metadata including solar system, region, ownership, and last-seen timestamps.
 - `market_orders` & `public_contracts`: Latest snapshots of public order books and contracts.
 
-### 4.2 SDE Warehouse (`_publicData/sde.duckdb`)
-
-This DuckDB file holds the read-heavy static export:
-
 - Raw coverage tables for every top-level `_sde/fsd/*.yaml` and `_sde/bsd/*.yaml` file.
 - Typed marts such as `dim_types`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, and dogma/material tables.
 - Manifest tables that record build timestamps, source hashes, and dataset row counts.
 
-### 4.3 Private Databases (`_privateData/<owner_id>.db`)
+### 4.2 Private Databases (`_privateData/<owner_id>.db`)
 
 When a character logs in or data is pulled for a new owner, `initialize_private_database` provisions a dedicated SQLite database. It stores sensitive information such as:
 
@@ -119,7 +115,7 @@ Triggering “Refresh SDE” in the UI, or calling the underlying helper directl
 1. Download the latest SDE ZIP from CCP.
 2. Extract YAML files into `_sde/` and prune multilingual fields to the configured supported languages.
 3. Rebuild cached lookup dictionaries, including solar system ⇄ region mappings.
-4. Rebuild `_publicData/sde.duckdb` and refresh the hot lookup caches exposed through `util.sde`.
+4. Rebuild `_publicData/public.duckdb` and refresh the hot lookup caches exposed through `util.sde`.
 
 During this process, log lines are captured by the console template so the operator can monitor progress.
 

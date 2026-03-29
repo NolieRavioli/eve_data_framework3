@@ -1,138 +1,122 @@
-# util/auth.py
-
-import os
 import json
 import logging
-import requests
+import os
 from typing import Tuple
-from cryptography.fernet import Fernet
 
+from cryptography.fernet import Fernet
 from sqlalchemy import text
-from db.database import (
-    initialize_private_database,
-    get_private_session,
-    initialize_public_database,
-    get_public_session,
-)
+
+from db.database import get_private_session, initialize_private_database
+from util import sde_store
 from util.esi_rate_limiter import esi_get
 
-# ─────── Globals ─────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 
 PUBLIC_DATA_FOLDER = os.getenv("PUBLIC_DATA_PATH", "_publicData")
-PUBLIC_DATABASE_FILENAME = os.getenv("EVE_PUBLIC_DATABASE_FILE", "public.db")
-PUBLIC_DATABASE_FILE = os.path.join(PUBLIC_DATA_FOLDER, PUBLIC_DATABASE_FILENAME)
-
 PRIVATE_DATA_FOLDER = os.getenv("EVE_PRIVATE_DATABASE_FOLDER", "_privateData")
 
 CONFIG_FILE_PATH = os.getenv("CONFIG_FILE", "config.yaml")
 CLIENT_CRED_FILE = os.path.join(PUBLIC_DATA_FOLDER, "client_cred")
 KEY_FILE = os.path.join(PUBLIC_DATA_FOLDER, "key")
 
-# Full scope set covering all personal and corp ESI endpoints used by this framework.
-REQUIRED_SCOPES = " ".join([
-    # ── existing ──
-    "esi-assets.read_assets.v1",
-    "esi-wallet.read_character_wallet.v1",
-    "esi-skills.read_skills.v1",
-    "esi-skills.read_skillqueue.v1",
-    "esi-industry.read_character_jobs.v1",
-    "esi-bookmarks.read_character_bookmarks.v1",
-    # ── new personal ──
-    "esi-clones.read_clones.v1",
-    "esi-clones.read_implants.v1",
-    "esi-characters.read_contacts.v1",
-    "esi-characters.read_standings.v1",
-    "esi-characters.read_loyalty.v1",
-    "esi-characters.read_notifications.v1",
-    "esi-characters.read_medals.v1",
-    "esi-characters.read_fatigue.v1",
-    "esi-characters.read_titles.v1",
-    "esi-characters.read_blueprints.v1",
-    "esi-characters.read_fw_stats.v1",
-    "esi-contracts.read_character_contracts.v1",
-    "esi-mail.read_mail.v1",
-    "esi-planets.manage_planets.v1",
-    "esi-fittings.read_fittings.v1",
-    "esi-location.read_location.v1",
-    "esi-location.read_online.v1",
-    "esi-location.read_ship_type.v1",
-    "esi-killmails.read_killmails.v1",
-    "esi-industry.read_character_mining.v1",
-    "esi-markets.read_character_orders.v1",
-    "esi-calendar.respond_calendar_events.v1",
-    # ── corp ──
-    "esi-corporations.read_corporation_membership.v1",
-    "esi-corporations.read_contacts.v1",
-    "esi-corporations.read_standings.v1",
-    "esi-corporations.read_blueprints.v1",
-    "esi-corporations.read_divisions.v1",
-    "esi-corporations.read_titles.v1",
-    "esi-corporations.read_structures.v1",
-    "esi-corporations.read_mining.v1",
-    "esi-corporations.read_fw_stats.v1",
-    "esi-corporations.track_members.v1",
-    "esi-wallet.read_corporation_wallets.v1",
-    "esi-assets.read_corporation_assets.v1",
-    "esi-contracts.read_corporation_contracts.v1",
-    "esi-industry.read_corporation_jobs.v1",
-    "esi-markets.read_corporation_orders.v1",
-    "esi-killmails.read_corporation_killmails.v1",
-])
+REQUIRED_SCOPES = " ".join(
+    [
+        "esi-assets.read_assets.v1",
+        "esi-wallet.read_character_wallet.v1",
+        "esi-skills.read_skills.v1",
+        "esi-skills.read_skillqueue.v1",
+        "esi-industry.read_character_jobs.v1",
+        "esi-bookmarks.read_character_bookmarks.v1",
+        "esi-clones.read_clones.v1",
+        "esi-clones.read_implants.v1",
+        "esi-characters.read_contacts.v1",
+        "esi-characters.read_standings.v1",
+        "esi-characters.read_loyalty.v1",
+        "esi-characters.read_notifications.v1",
+        "esi-characters.read_medals.v1",
+        "esi-characters.read_fatigue.v1",
+        "esi-characters.read_titles.v1",
+        "esi-characters.read_blueprints.v1",
+        "esi-characters.read_fw_stats.v1",
+        "esi-contracts.read_character_contracts.v1",
+        "esi-mail.read_mail.v1",
+        "esi-planets.manage_planets.v1",
+        "esi-fittings.read_fittings.v1",
+        "esi-location.read_location.v1",
+        "esi-location.read_online.v1",
+        "esi-location.read_ship_type.v1",
+        "esi-killmails.read_killmails.v1",
+        "esi-industry.read_character_mining.v1",
+        "esi-markets.read_character_orders.v1",
+        "esi-calendar.respond_calendar_events.v1",
+        "esi-corporations.read_corporation_membership.v1",
+        "esi-corporations.read_contacts.v1",
+        "esi-corporations.read_standings.v1",
+        "esi-corporations.read_blueprints.v1",
+        "esi-corporations.read_divisions.v1",
+        "esi-corporations.read_titles.v1",
+        "esi-corporations.read_structures.v1",
+        "esi-corporations.read_mining.v1",
+        "esi-corporations.read_fw_stats.v1",
+        "esi-corporations.track_members.v1",
+        "esi-wallet.read_corporation_wallets.v1",
+        "esi-assets.read_corporation_assets.v1",
+        "esi-contracts.read_corporation_contracts.v1",
+        "esi-industry.read_corporation_jobs.v1",
+        "esi-markets.read_corporation_orders.v1",
+        "esi-killmails.read_corporation_killmails.v1",
+    ]
+)
 
-# ────── Helpers ──────────────────────────────────────────────────────────────
 
-def ensure_folder(path: str):
+def ensure_folder(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def lookup_info(character_id: int):
-    """
-    Return [name, corporation_id, birthday, alliance_id] for a given EVE character.
-    alliance_id will be None if the corp isn’t in an alliance.
-    Raises HTTPError on any non-200 response.
-    """
-    char_url = (
-        f"https://esi.evetech.net/latest/characters/{character_id}/?datasource=tranquility"
-    )
-    resp = esi_get(char_url)
-    resp.raise_for_status()
-    char_data = resp.json()
+def lookup_info(character_id: int) -> list:
+    url = f"https://esi.evetech.net/latest/characters/{character_id}/?datasource=tranquility"
+    response = esi_get(url)
+    response.raise_for_status()
+    payload = response.json()
+    return [
+        payload["name"],
+        payload["corporation_id"],
+        payload["birthday"],
+        payload.get("security_status"),
+        payload.get("alliance_id"),
+    ]
 
-    name = char_data["name"]
-    corporation_id = char_data["corporation_id"]
-    birthday = char_data["birthday"]
-    security_status = char_data.get("security_status")
-    alliance_id = char_data.get("alliance_id")
 
-    return [name, corporation_id, birthday, security_status, alliance_id]
-
-# ─────── Classes ─────────────────────────────────────────────────────────────
 class CredentialManager:
-    """Handles loading and saving client credentials."""
-    logger = logging.getLogger('CredentialManager')
+    logger = logging.getLogger("CredentialManager")
 
     @staticmethod
     def load_credentials() -> Tuple[str, str, str, str]:
         ensure_folder(PUBLIC_DATA_FOLDER)
         if not os.path.exists(KEY_FILE):
-            with open(KEY_FILE, "wb") as f:
-                f.write(Fernet.generate_key())
+            with open(KEY_FILE, "wb") as handle:
+                handle.write(Fernet.generate_key())
 
-        with open(KEY_FILE, "rb") as f:
-            fernet = Fernet(f.read())
+        with open(KEY_FILE, "rb") as handle:
+            fernet = Fernet(handle.read())
 
         if not os.path.exists(CLIENT_CRED_FILE):
             logger.info("No credentials found. Setup required.")
             return CredentialManager.setup_credentials(fernet)
 
-        with open(CLIENT_CRED_FILE, "rb") as f:
-            creds = json.loads(fernet.decrypt(f.read()).decode())
-            return creds["client_id"], creds["client_secret"], creds["redirect_uri"], creds["scopes"]
+        with open(CLIENT_CRED_FILE, "rb") as handle:
+            creds = json.loads(fernet.decrypt(handle.read()).decode())
+        return (
+            creds["client_id"],
+            creds["client_secret"],
+            creds["redirect_uri"],
+            creds["scopes"],
+        )
 
     @staticmethod
     def setup_credentials(fernet: Fernet) -> Tuple[str, str, str, str]:
         import webbrowser
+
         webbrowser.open("https://developers.eveonline.com/applications")
         client_id = input("Client ID: ").strip()
         client_secret = input("Client Secret: ").strip()
@@ -142,80 +126,65 @@ class CredentialManager:
         try:
             scopes_list = json.loads(raw_scopes)
             scopes = " ".join(scopes_list)
-        except Exception:
-            raise ValueError("Scopes must be a valid JSON list!")
+        except Exception as exc:
+            raise ValueError("Scopes must be a valid JSON list!") from exc
 
         creds = {
             "client_id": client_id,
             "client_secret": client_secret,
             "redirect_uri": redirect_uri,
-            "scopes": scopes
+            "scopes": scopes,
         }
 
-        with open(CLIENT_CRED_FILE, "wb") as f:
-            f.write(fernet.encrypt(json.dumps(creds).encode()))
-        logger.info(f"Credentials saved at {CLIENT_CRED_FILE}")
-
+        with open(CLIENT_CRED_FILE, "wb") as handle:
+            handle.write(fernet.encrypt(json.dumps(creds).encode()))
+        logger.info("Credentials saved at %s", CLIENT_CRED_FILE)
         return client_id, client_secret, redirect_uri, scopes
 
+
 class TokenDBManager:
-    """Handles token storage and character linkage using SQLAlchemy sessions."""
-    logger = logging.getLogger('TokenDBManager')
+    logger = logging.getLogger("TokenDBManager")
 
     def __init__(self, owner_id: int):
         self.owner_id = owner_id
-        # ensure DBs initialized
-        initialize_public_database()
+        sde_store.ensure_public_database()
         initialize_private_database(owner_id)
 
-    def save_tokens(self,
-                    character_id: int,
-                    access_token: str,
-                    refresh_token: str,
-                    expires_at: float,
-                    scopes: str):
-        """
-        1) Link character → owner in the public DB (users table);
-        2) Lookup character info via ESI;
-        3) INSERT OR REPLACE into the owner’s private DB.
-        """
-        # ——— Public DB ———
-        session_pub = get_public_session()
-        session_pub.execute(
-            text(
-                "INSERT OR IGNORE INTO users (character_id, owner_id)"
-                " VALUES (:cid, :oid)"
-            ),
-            {"cid": character_id, "oid": self.owner_id}
-        )
-        session_pub.commit()
-        session_pub.close()
+    def save_tokens(
+        self,
+        character_id: int,
+        access_token: str,
+        refresh_token: str,
+        expires_at: float,
+        scopes: str,
+    ) -> None:
+        sde_store.link_public_user(self.owner_id, character_id)
 
-        # ——— ESI lookup ———
         name, corporation_id, birthday, security_status, alliance_id = lookup_info(character_id)
 
-        # ——— Private DB ———
         session_priv = get_private_session(self.owner_id)
-        session_priv.execute(
-            text(
-                "INSERT OR REPLACE INTO characters"
-                " (character_id, name, corporation_id, birthday,"
-                " security_status, alliance_id, access_token,"
-                " refresh_token, expires_at, scopes)"
-                " VALUES (:cid, :nm, :corp, :bday, :sec, :alli, :at, :rt, :exp, :sc)"
-            ),
-            {
-                "cid": character_id,
-                "nm": name,
-                "corp": corporation_id,
-                "bday": birthday,
-                "sec": security_status,
-                "alli": alliance_id,
-                "at": access_token,
-                "rt": refresh_token,
-                "exp": expires_at,
-                "sc": scopes
-            }
-        )
-        session_priv.commit()
-        session_priv.close()
+        try:
+            session_priv.execute(
+                text(
+                    "INSERT OR REPLACE INTO characters "
+                    "(character_id, name, corporation_id, birthday, "
+                    "security_status, alliance_id, access_token, "
+                    "refresh_token, expires_at, scopes) "
+                    "VALUES (:cid, :nm, :corp, :bday, :sec, :alli, :at, :rt, :exp, :sc)"
+                ),
+                {
+                    "cid": character_id,
+                    "nm": name,
+                    "corp": corporation_id,
+                    "bday": birthday,
+                    "sec": security_status,
+                    "alli": alliance_id,
+                    "at": access_token,
+                    "rt": refresh_token,
+                    "exp": expires_at,
+                    "sc": scopes,
+                },
+            )
+            session_priv.commit()
+        finally:
+            session_priv.close()

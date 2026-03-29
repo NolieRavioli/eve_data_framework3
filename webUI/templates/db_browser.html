@@ -222,6 +222,9 @@
 <header class="navbar">
     <h1>&#x1F5C4; DB Browser — {{ db_label }}</h1>
     <nav class="nav-actions">
+        {% if browser_owner_id %}
+        <a href="{{ url_for('admin.db_browser') }}">Public DB</a>
+        {% endif %}
         <a href="{{ url_for('admin.index') }}">&#x21A9; Admin</a>
         <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
     </nav>
@@ -246,8 +249,8 @@
     <!-- Main panel: Query editor + results -->
     <div class="main-panel">
         <div class="query-box">
-            <h2>SQL Query <span style="font-size:0.7rem;opacity:0.5;font-style:italic;text-transform:none;">(SELECT / PRAGMA only — max 500 rows)</span></h2>
-            <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM users LIMIT 50;"></textarea>
+            <h2>SQL Query <span style="font-size:0.7rem;opacity:0.5;font-style:italic;text-transform:none;">(SELECT / WITH / SHOW / DESCRIBE / PRAGMA only — max 500 rows)</span></h2>
+            <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM market_orders LIMIT 50;"></textarea>
             <div class="query-controls">
                 <button class="btn btn-primary" onclick="runQuery()">&#x25B6; Run</button>
                 <button class="btn btn-warn" onclick="clearQuery()">Clear</button>
@@ -270,6 +273,7 @@
 
 <script>
     let activeTableEl = null;
+    const BROWSER_OWNER_ID = {{ browser_owner_id | tojson }};
 
     function selectTable(name, el) {
         // Toggle columns
@@ -308,7 +312,7 @@
             const r = await fetch('/admin/db_browser/query', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sql}),
+                body: JSON.stringify({sql, owner_id: BROWSER_OWNER_ID}),
             });
             const j = await r.json();
             if (j.error) { setStatus('Error: ' + j.error, 'err'); return; }

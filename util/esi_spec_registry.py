@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,41 @@ def _extract_scopes(security: list[dict] | None) -> list[str]:
     return sorted(scopes)
 
 
+def _route_requires_auth(security: list[dict] | None) -> bool:
+    return bool(security)
+
+
+def _queue_channel_for_security(security: list[dict] | None) -> str:
+    return "private" if _route_requires_auth(security) else "public"
+
+
+def _collect_schema_refs(node: Any) -> set[str]:
+    refs: set[str] = set()
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            refs.add(ref.rsplit("/", 1)[-1])
+        for value in node.values():
+            refs.update(_collect_schema_refs(value))
+    elif isinstance(node, list):
+        for item in node:
+            refs.update(_collect_schema_refs(item))
+    return refs
+
+
+def _resolve_parameter(spec: dict, parameter: dict | None) -> dict:
+    if not isinstance(parameter, dict):
+        return {}
+    ref = parameter.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/components/parameters/"):
+        return parameter
+    name = ref.rsplit("/", 1)[-1]
+    resolved = (((spec.get("components") or {}).get("parameters") or {}).get(name) or {}).copy()
+    overlay = {key: value for key, value in parameter.items() if key != "$ref"}
+    resolved.update(overlay)
+    return resolved
+
+
 def _build_routes(spec: dict) -> list[dict]:
     routes: list[dict] = []
     for path, methods in sorted((spec.get("paths") or {}).items()):
@@ -70,7 +106,17 @@ def _build_routes(spec: dict) -> list[dict]:
         for method, operation in sorted(methods.items()):
             if method.lower() not in {"get", "post", "put", "delete", "patch", "head", "options"}:
                 continue
+            security = operation.get("security") or []
+            request_body_schema_refs = sorted(
+                _collect_schema_refs(((operation.get("requestBody") or {}).get("content") or {}))
+            )
+            response_schema_refs: dict[str, list[str]] = {}
+            for status_code, response in sorted((operation.get("responses") or {}).items()):
+                refs = sorted(_collect_schema_refs(((response or {}).get("content") or {})))
+                if refs:
+                    response_schema_refs[str(status_code)] = refs
             route = {
+                "route_key": f"{method.upper()} {path}",
                 "method": method.upper(),
                 "path": path,
                 "operation_id": operation.get("operationId"),
@@ -87,16 +133,22 @@ def _build_routes(spec: dict) -> list[dict]:
                 "required_roles": operation.get("x-required-roles") or [],
                 "rate_limit": operation.get("x-rate-limit"),
                 "scopes": _extract_scopes(operation.get("security")),
-                "security": operation.get("security") or [],
+                "security": security,
+                "requires_auth": _route_requires_auth(security),
+                "queue_channel": _queue_channel_for_security(security),
                 "parameters": [
                     {
-                        "name": (param or {}).get("name"),
-                        "in": (param or {}).get("in"),
-                        "required": (param or {}).get("required", False),
+                        "name": resolved.get("name"),
+                        "in": resolved.get("in"),
+                        "required": resolved.get("required", False),
+                        "schema": resolved.get("schema"),
                     }
                     for param in (operation.get("parameters") or [])
-                    if isinstance(param, dict)
+                    for resolved in [_resolve_parameter(spec, param)]
+                    if resolved
                 ],
+                "request_body_schema_refs": request_body_schema_refs,
+                "response_schema_refs": response_schema_refs,
             }
             routes.append(route)
     return routes
@@ -185,6 +237,173 @@ def _render_agents_md(compatibility_date: str, routes: list[dict], scopes: dict[
     return "\n".join(lines) + "\n"
 
 
+def get_registry_paths(compatibility_date: str | None = None) -> dict[str, Path]:
+    status = get_registry_status()
+    if not compatibility_date:
+        compatibility_date = status.get("compatibility_date")
+    if not compatibility_date:
+        raise FileNotFoundError("No active ESI registry is available.")
+
+    root = get_specs_root()
+    target_dir = root / compatibility_date
+    return {
+        "root": root,
+        "target_dir": target_dir,
+        "openapi_json": target_dir / "openapi.json",
+        "routes_json": target_dir / "routes.json",
+        "scopes_json": target_dir / "scopes.json",
+        "schemas_json": target_dir / "schemas.json",
+        "agents_md": target_dir / "AGENTS.md",
+        "latest_json": root / "latest.json",
+    }
+
+
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_routes(compatibility_date: str | None = None) -> list[dict]:
+    return _load_json(get_registry_paths(compatibility_date)["routes_json"])
+
+
+def load_scopes(compatibility_date: str | None = None) -> dict[str, list[dict]]:
+    return _load_json(get_registry_paths(compatibility_date)["scopes_json"])
+
+
+def load_schemas(compatibility_date: str | None = None) -> dict[str, dict]:
+    return _load_json(get_registry_paths(compatibility_date)["schemas_json"])
+
+
+def iter_routes(
+    *,
+    compatibility_date: str | None = None,
+    queue_channel: str | None = None,
+    tag: str | None = None,
+) -> list[dict]:
+    routes = load_routes(compatibility_date)
+    results: list[dict] = []
+    for route in routes:
+        if queue_channel and route.get("queue_channel") != queue_channel:
+            continue
+        if tag and tag not in (route.get("tags") or []):
+            continue
+        results.append(route)
+    return results
+
+
+def find_route(
+    *,
+    method: str | None = None,
+    path: str | None = None,
+    operation_id: str | None = None,
+    compatibility_date: str | None = None,
+) -> dict | None:
+    normalized_method = method.upper() if method else None
+    for route in load_routes(compatibility_date):
+        if operation_id and route.get("operation_id") == operation_id:
+            return route
+        if normalized_method and path and route.get("method") == normalized_method and route.get("path") == path:
+            return route
+    return None
+
+
+def route_requires_auth(route: dict) -> bool:
+    return bool(route.get("requires_auth"))
+
+
+def route_queue_channel(route: dict) -> str:
+    return route.get("queue_channel") or _queue_channel_for_security(route.get("security"))
+
+
+def get_schema(schema_name: str, compatibility_date: str | None = None) -> dict | None:
+    return load_schemas(compatibility_date).get(schema_name)
+
+
+def build_route_path(route: dict, path_params: dict[str, Any] | None = None) -> str:
+    values = path_params or {}
+    missing: list[str] = []
+
+    def _replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in values:
+            missing.append(key)
+            return match.group(0)
+        return str(values[key])
+
+    path = re.sub(r"\{([^{}]+)\}", _replace, route["path"])
+    if missing:
+        raise ValueError(f"Missing path parameters for route {route['route_key']}: {', '.join(sorted(missing))}")
+    return path
+
+
+def execute_route(
+    *,
+    method: str | None = None,
+    path: str | None = None,
+    operation_id: str | None = None,
+    route: dict | None = None,
+    path_params: dict[str, Any] | None = None,
+    query_params: dict[str, Any] | None = None,
+    json_body: Any | None = None,
+    token: str | None = None,
+    headers: dict[str, str] | None = None,
+    accept_language: str | None = None,
+    tenant: str = "tranquility",
+    compatibility_date: str | None = None,
+    timeout: int = 30,
+) -> dict:
+    from util.esi_rate_limiter import esi_request
+
+    selected_route = route or find_route(
+        method=method,
+        path=path,
+        operation_id=operation_id,
+        compatibility_date=compatibility_date,
+    )
+    if not selected_route:
+        raise LookupError("Unable to resolve the requested ESI route from the registry.")
+
+    request_headers = {"Accept": "application/json", **(headers or {})}
+    active_date = compatibility_date or get_registry_status().get("compatibility_date")
+    if active_date:
+        request_headers.setdefault("X-Compatibility-Date", active_date)
+    if accept_language:
+        request_headers.setdefault("Accept-Language", accept_language)
+    request_headers.setdefault("X-Tenant", tenant)
+
+    if token:
+        request_headers["Authorization"] = f"Bearer {token}"
+    elif route_requires_auth(selected_route):
+        raise PermissionError(f"{selected_route['route_key']} requires authentication and no token was provided.")
+
+    resolved_path = build_route_path(selected_route, path_params)
+    response = esi_request(
+        selected_route["method"],
+        f"{ESI_BASE_URL}{resolved_path}",
+        params=query_params,
+        json=json_body,
+        headers=request_headers,
+        timeout=timeout,
+    )
+    content_type = response.headers.get("Content-Type", "")
+    if "application/json" in content_type:
+        try:
+            body = response.json() if response.content else None
+        except ValueError:
+            body = response.text
+    else:
+        body = response.text
+
+    return {
+        "route": selected_route,
+        "queue_channel": route_queue_channel(selected_route),
+        "url": response.url,
+        "status_code": response.status_code,
+        "headers": dict(response.headers),
+        "body": body,
+    }
+
+
 def refresh_esi_spec_registry(compatibility_date: str | None = None) -> dict:
     active_date = compatibility_date or fetch_latest_compatibility_date()
     spec = fetch_openapi_spec(active_date)
@@ -223,6 +442,16 @@ def refresh_esi_spec_registry(compatibility_date: str | None = None) -> dict:
     }
     latest_path.parent.mkdir(parents=True, exist_ok=True)
     latest_path.write_text(json.dumps(latest_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    try:
+        from util import sde_store
+
+        sde_store.sync_esi_registry_to_warehouse(
+            compatibility_date=active_date,
+            registry_root=root,
+        )
+    except Exception as exc:
+        logger.warning("Failed to sync ESI registry into DuckDB warehouse: %s", exc)
 
     logger.info("ESI spec registry refreshed for compatibility date %s", active_date)
     return get_registry_status()

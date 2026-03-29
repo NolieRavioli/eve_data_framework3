@@ -1,47 +1,41 @@
-from db.database import get_public_session
-from db.models import MarketOrder, Structure, MarketStructure
 from datetime import datetime
 import logging
+
+from util import sde_store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def migrate_structures_to_market_structures():
-    with get_public_session() as db:
-        # Get all location_ids from MarketOrder that match a Structure
-        location_ids = (
-            db.query(MarketOrder.location_id)
-            .distinct()
-            .filter(MarketOrder.location_id.isnot(None))
-            .all()
-        )
-        location_ids = [loc[0] for loc in location_ids]
+    rows = sde_store.query_browser_sql(
+        """
+        SELECT DISTINCT s.structure_id, s.name, s.solar_system_id, s.region_id, s.owner_id, s.type_id, s.position_json
+        FROM structures AS s
+        INNER JOIN market_orders AS mo
+          ON mo.location_id = s.structure_id
+        LEFT JOIN market_structures AS ms
+          ON ms.structure_id = s.structure_id
+        WHERE ms.structure_id IS NULL
+        """
+    )["rows"]
 
-        existing = {
-            ms.structure_id for ms in db.query(MarketStructure.structure_id).all()
+    payload = [
+        {
+            "structure_id": row["structure_id"],
+            "name": row["name"],
+            "solar_system_id": row["solar_system_id"],
+            "region_id": row["region_id"],
+            "owner_id": row["owner_id"],
+            "type_id": row["type_id"],
+            "position_json": row["position_json"],
+            "last_seen": datetime.utcnow(),
         }
+        for row in rows
+    ]
+    inserted = sde_store.upsert_market_structures(payload)
+    logger.info("[Migration] Created %s MarketStructure entries from Structure.", inserted)
 
-        count = 0
-        for loc_id in location_ids:
-            if loc_id in existing:
-                continue
-
-            structure = db.query(Structure).filter_by(structure_id=loc_id).first()
-            if structure:
-                db.merge(MarketStructure(
-                    structure_id=structure.structure_id,
-                    name=structure.name,
-                    solar_system_id=structure.solar_system_id,
-                    region_id=structure.region_id,
-                    owner_id=structure.owner_id,
-                    type_id=structure.type_id,
-                    position=structure.position,
-                    last_seen=datetime.utcnow()
-                ))
-                count += 1
-
-        db.commit()
-        logger.info(f"[Migration] Created {count} MarketStructure entries from Structure.")
 
 if __name__ == "__main__":
     migrate_structures_to_market_structures()

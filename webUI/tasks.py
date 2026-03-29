@@ -6,7 +6,7 @@ import logging
 
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, session, url_for
 
-from esi.data_collector import PERSONAL_TASKS, CORP_TASKS
+from esi.data_collector import enqueue_full_collection
 from util import task_queue
 from util.esi_rate_limiter import get_esi_rate_limiter
 from webUI.context import base_ctx
@@ -143,14 +143,24 @@ def cancel_task(task_id: str):
 
 @tasks_bp.route("/collect_all", methods=["POST"])
 def collect_all():
-    """Enqueue all personal + corp tasks for the current user via task_queue."""
+    """Enqueue all personal + corp tasks for the current user."""
     if not _logged_in():
         abort(403)
     owner_id = session["owner_id"]
-    for label, fn in PERSONAL_TASKS:
-        task_queue.enqueue(f"personal/{label}", fn, owner_id, owner_id=owner_id, queue="private")
-    for label, fn in CORP_TASKS:
-        task_queue.enqueue(label, fn, owner_id, owner_id=owner_id, queue="private")
+    enqueue_full_collection(owner_id)
+    return redirect(url_for("tasks.task_list"))
+
+
+@tasks_bp.route("/collect_current", methods=["POST"])
+def collect_current():
+    """Enqueue personal + corp tasks scoped to the active character."""
+    if not _logged_in():
+        abort(403)
+    owner_id = session["owner_id"]
+    character_id = session.get("character_id")
+    if not character_id:
+        abort(400)
+    enqueue_full_collection(owner_id, character_id=character_id)
     return redirect(url_for("tasks.task_list"))
 
 

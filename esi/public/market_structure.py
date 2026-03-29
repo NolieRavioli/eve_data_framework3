@@ -1,16 +1,14 @@
-# esi/public/market_structure.py
-
 import logging
-import requests
-from datetime import datetime
 import time
+from datetime import datetime
 from typing import Optional
 
-from db.database import get_public_session
-from db.models import Structure, MarketStructure, MarketOrder
-from util.sde import region_id_from_system_id
-from util.utils import get_token
+import requests
+
+from util import sde_store
 from util.esi_rate_limiter import esi_get
+from util.sde import region_id_from_system_id
+from util.utils import PRIVATE_DATA_FOLDER, get_token
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +16,15 @@ ESI_BASE = "https://esi.evetech.net/latest"
 DATASOURCE = {"datasource": "tranquility"}
 
 _STRUCTURE_INFO_CACHE: dict[int, tuple[float, dict]] = {}
-_STRUCTURE_INFO_TTL = 24 * 3600  # cache metadata for a day
+_STRUCTURE_INFO_TTL = 24 * 3600
 
-def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries: int = 3) -> tuple[list, int]:
+
+def fetch_structure_orders(
+    structure_id: int,
+    token: str,
+    page: int = 1,
+    retries: int = 3,
+) -> tuple[list, int]:
     url = f"{ESI_BASE}/markets/structures/{structure_id}/"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
@@ -29,11 +33,16 @@ def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries
             resp = esi_get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
 
             if resp.status_code in (403, 404):
-                logger.warning(f"[MarketFetch] Skipping {structure_id} page {page}: HTTP {resp.status_code}")
+                logger.warning(
+                    "[MarketFetch] Skipping %s page %s: HTTP %s",
+                    structure_id,
+                    page,
+                    resp.status_code,
+                )
                 return [], 1
 
             if resp.status_code == 420:
-                logger.warning(f"[RateLimit] 420 returned for {structure_id}, sleeping 10s")
+                logger.warning("[RateLimit] 420 returned for %s, sleeping 10s", structure_id)
                 time.sleep(10)
                 continue
 
@@ -43,13 +52,20 @@ def fetch_structure_orders(structure_id: int, token: str, page: int = 1, retries
             return data, pages
 
         except requests.exceptions.Timeout:
-            logger.warning(f"[Timeout] Attempt {attempt}/{retries} for structure {structure_id} page {page}")
+            logger.warning("[Timeout] Attempt %s/%s for structure %s page %s", attempt, retries, structure_id, page)
             time.sleep(3 * attempt)
-        except Exception as e:
-            logger.warning(f"[RetryError] Attempt {attempt}/{retries} for structure {structure_id} page {page}: {e}")
+        except Exception as exc:
+            logger.warning(
+                "[RetryError] Attempt %s/%s for structure %s page %s: %s",
+                attempt,
+                retries,
+                structure_id,
+                page,
+                exc,
+            )
             time.sleep(2 * attempt)
 
-    logger.error(f"[MarketFetch] Failed after {retries} retries for structure {structure_id} page {page}")
+    logger.error("[MarketFetch] Failed after %s retries for structure %s page %s", retries, structure_id, page)
     return [], 1
 
 
@@ -65,172 +81,158 @@ def fetch_structure_details(structure_id: int, token: str) -> Optional[dict]:
     try:
         resp = esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
-        logger.warning(f"[StructMeta] Request failed for {structure_id}: {exc}")
+        logger.warning("[StructMeta] Request failed for %s: %s", structure_id, exc)
         return None
 
     if resp.status_code in (403, 404):
-        logger.debug(f"[StructMeta] Access denied for {structure_id}: HTTP {resp.status_code}")
+        logger.debug("[StructMeta] Access denied for %s: HTTP %s", structure_id, resp.status_code)
         return None
 
     try:
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        logger.warning(f"[StructMeta] Failed to parse metadata for {structure_id}: {exc}")
+        logger.warning("[StructMeta] Failed to parse metadata for %s: %s", structure_id, exc)
         return None
 
     _STRUCTURE_INFO_CACHE[structure_id] = (now + _STRUCTURE_INFO_TTL, data)
     return data
 
 
-def populate_structure_metadata(structure: Structure, token: str, db_session) -> None:
-    changed = False
+def _pick_token(owner_id: int) -> tuple[int, dict]:
+    tokens = get_token(owner_id)
+    char_id, token_data = sorted(tokens.items())[0]
+    if token_data.get("expires_at") and token_data["expires_at"] < time.time():
+        logger.info("[TokenRefresh] Token expired for %s, refreshing...", char_id)
+        tokens = get_token(owner_id)
+        char_id, token_data = sorted(tokens.items())[0]
+    return char_id, token_data
 
-    if not structure.solar_system_id or not structure.name or not structure.type_id or not structure.owner_id:
-        info = fetch_structure_details(structure.structure_id, token)
+
+def _resolve_default_owner_id() -> int | None:
+    import os
+    from os.path import isdir, join
+
+    if not os.path.isdir(PRIVATE_DATA_FOLDER):
+        return None
+
+    owner_ids = [
+        int(name)
+        for name in os.listdir(PRIVATE_DATA_FOLDER)
+        if name.isdigit() and isdir(join(PRIVATE_DATA_FOLDER, name))
+    ]
+    return min(owner_ids) if owner_ids else None
+
+
+def populate_structure_metadata(structure: dict, token: str) -> dict:
+    updated = dict(structure)
+    needs_lookup = not (
+        updated.get("solar_system_id")
+        and updated.get("name")
+        and updated.get("type_id")
+        and updated.get("owner_id")
+    )
+    if needs_lookup:
+        info = fetch_structure_details(updated["structure_id"], token)
         if info:
-            structure.name = info.get("name")
-            structure.solar_system_id = info.get("solar_system_id")
-            structure.owner_id = info.get("owner_id")
-            structure.type_id = info.get("type_id")
-            changed = True
+            updated["name"] = info.get("name")
+            updated["solar_system_id"] = info.get("solar_system_id")
+            updated["owner_id"] = info.get("owner_id")
+            updated["type_id"] = info.get("type_id")
 
-    if structure.solar_system_id and not structure.region_id:
-        structure.region_id = region_id_from_system_id(structure.solar_system_id)
-        changed = True
+    if updated.get("solar_system_id") and not updated.get("region_id"):
+        updated["region_id"] = region_id_from_system_id(updated["solar_system_id"])
 
-    if changed:
-        structure.last_seen = datetime.utcnow()
-        db_session.flush()
+    updated["last_seen"] = datetime.utcnow()
+    return updated
 
 
 def update_structure_market_orders() -> None:
-    from os import listdir
-    from os.path import isdir, join
-    from util.utils import PRIVATE_DATA_FOLDER
-
-    owner_ids = [
-        int(name) for name in listdir(PRIVATE_DATA_FOLDER)
-        if name.isdigit() and isdir(join(PRIVATE_DATA_FOLDER, name))
-    ]
-
-    if not owner_ids:
+    owner_id = _resolve_default_owner_id()
+    if owner_id is None:
         logger.error("[MarketUpdate] No private owner directories found.")
         return
 
-    owner_id = min(owner_ids)
-    tokens = get_token(owner_id)
-    char_id, token_data = sorted(tokens.items())[0]
+    _char_id, token_data = _pick_token(owner_id)
     token = token_data["access_token"]
+    structures = sde_store.list_public_structures()
+    logger.info("[MarketUpdate] Checking %s structures.", len(structures))
+    total = len(structures)
+    skipped = 0
+    orders_total = 0
+    t0 = time.time()
+    log_every = max(1, total // 20) if total else 1
 
-    with get_public_session() as db:
-        structures = db.query(Structure).all()
-        logger.info(f"[MarketUpdate] Checking {len(structures)} structures.")
-        total = len(structures)
-        count = 0
-        skipped = 0
-        orders_total = 0
-        t0 = time.time()
-        log_every = max(1, total // 20)  # ~5% intervals
-        for s in structures:
-            count += 1
-            num_orders = 0
-            try:
-                tokens = get_token(owner_id)
-                char_id, token_data = sorted(tokens.items())[0]
-                if token_data.get("expires_at") and token_data["expires_at"] < time.time():
-                    logger.info(f"[TokenRefresh] Token expired for {char_id}, refreshing...")
-                    tokens = get_token(owner_id)
-                    token_data = tokens.get(char_id)
-                token = token_data["access_token"]
+    for count, structure in enumerate(structures, start=1):
+        num_orders = 0
+        structure_id = structure["structure_id"]
+        try:
+            _char_id, token_data = _pick_token(owner_id)
+            token = token_data["access_token"]
 
-                populate_structure_metadata(s, token, db)
+            structure = populate_structure_metadata(structure, token)
+            sde_store.upsert_structures([structure])
+            sde_store.upsert_market_structures([structure])
 
-                db.merge(MarketStructure(
-                    structure_id=s.structure_id,
-                    solar_system_id=s.solar_system_id,
-                    region_id=s.region_id,
-                    owner_id=s.owner_id,
-                    name=s.name,
-                    type_id=s.type_id,
-                    position=s.position,
-                    last_seen=datetime.utcnow()
-                ))
-
-                orders, pages = fetch_structure_orders(s.structure_id, token, page=1)
-                if not orders:
-                    skipped += 1
-                    db.commit()
-                    if count % log_every == 0 or count == total:
-                        elapsed = time.time() - t0
-                        eta = (elapsed / count) * (total - count) if count else 0
-                        logger.info(f"[Progress] {count}/{total}  ({100*count/total:.1f}%)  ETA {eta:.0f}s  orders {orders_total:,}  skipped {skipped}")
-                    continue
-
-                for o in orders:
-                    num_orders += 1
-                    db.merge(MarketOrder(
-                        order_id=o["order_id"],
-                        region_id=s.region_id,
-                        type_id=o["type_id"],
-                        price=o["price"],
-                        volume_remain=o.get("volume_remain", 0),
-                        volume_total=o.get("volume_total", 0),
-                        min_volume=o.get("min_volume", 1),
-                        is_buy_order=o.get("is_buy_order", False),
-                        location_id=s.structure_id,
-                        duration=o.get("duration", 0),
-                        issued=datetime.strptime(o["issued"], "%Y-%m-%dT%H:%M:%SZ"),
-                        order_range=o.get("range", "region"),
-                        last_seen=datetime.utcnow()
-                    ))
-                
-                
-                for page in range(2, pages + 1):
-                    tokens = get_token(owner_id)
-                    char_id, token_data = sorted(tokens.items())[0]
-                    if token_data.get("expires_at") and token_data["expires_at"] < time.time():
-                        logger.info(f"[TokenRefresh] Token expired during paging for {char_id}, refreshing...")
-                        tokens = get_token(owner_id)
-                        token_data = tokens.get(char_id)
-                    token = token_data["access_token"]
-
-                    more, _ = fetch_structure_orders(s.structure_id, token, page=page)
-
-                    for o in more:
-                        num_orders += 1
-                        db.merge(MarketOrder(
-                            order_id=o["order_id"],
-                            region_id=s.region_id,
-                            type_id=o["type_id"],
-                            price=o["price"],
-                            volume_remain=o.get("volume_remain", 0),
-                            volume_total=o.get("volume_total", 0),
-                            min_volume=o.get("min_volume", 1),
-                            is_buy_order=o.get("is_buy_order", False),
-                            location_id=s.structure_id,
-                            duration=o.get("duration", 0),
-                            issued=datetime.strptime(o["issued"], "%Y-%m-%dT%H:%M:%SZ"),
-                            order_range=o.get("range", "region"),
-                            last_seen=datetime.utcnow()
-                        ))
-
-                db.commit()
-                orders_total += num_orders
-                logger.debug(f"[MarketUpdate] Synced {num_orders} orders for {s.structure_id}.")
+            orders, pages = fetch_structure_orders(structure_id, token, page=1)
+            if not orders:
+                skipped += 1
                 if count % log_every == 0 or count == total:
                     elapsed = time.time() - t0
                     eta = (elapsed / count) * (total - count) if count else 0
-                    logger.info(f"[Progress] {count}/{total}  ({100*count/total:.1f}%)  ETA {eta:.0f}s  orders {orders_total:,}  skipped {skipped}")
-            
-            except Exception:
-                logger.exception(f"[MarketUpdate] Failed for {s.structure_id}.")
-                db.rollback()
+                    logger.info(
+                        "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                        count,
+                        total,
+                        (100 * count / total) if total else 100.0,
+                        eta,
+                        f"{orders_total:,}",
+                        skipped,
+                    )
+                continue
+
+            region_id = structure.get("region_id")
+            all_rows = [{**order, "region_id": region_id, "location_id": structure_id} for order in orders]
+            num_orders += len(all_rows)
+
+            for page in range(2, pages + 1):
+                _char_id, token_data = _pick_token(owner_id)
+                token = token_data["access_token"]
+                more, _ = fetch_structure_orders(structure_id, token, page=page)
+                page_rows = [{**order, "region_id": region_id, "location_id": structure_id} for order in more]
+                all_rows.extend(page_rows)
+                num_orders += len(page_rows)
+
+            sde_store.upsert_market_orders(all_rows)
+            orders_total += num_orders
+            logger.debug("[MarketUpdate] Synced %s orders for %s.", num_orders, structure_id)
+
+            if count % log_every == 0 or count == total:
+                elapsed = time.time() - t0
+                eta = (elapsed / count) * (total - count) if count else 0
+                logger.info(
+                    "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                    count,
+                    total,
+                    (100 * count / total) if total else 100.0,
+                    eta,
+                    f"{orders_total:,}",
+                    skipped,
+                )
+        except Exception:
+            logger.exception("[MarketUpdate] Failed for %s.", structure_id)
+
 
 def update_structure_market(owner_id: int) -> None:
-    logger.warning("[Compat] update_structure_market(owner_id) is deprecated, using update_structure_market_orders().")
+    logger.warning(
+        "[Compat] update_structure_market(owner_id=%s) is deprecated, using update_structure_market_orders().",
+        owner_id,
+    )
     update_structure_market_orders()
 
+
 def fetch_all_structure_markets() -> None:
-    logger.warning("[Compat] fetch_all_structure_markets() is deprecated, using update_structure_market_orders().")
+    logger.warning(
+        "[Compat] fetch_all_structure_markets() is deprecated, using update_structure_market_orders()."
+    )
     update_structure_market_orders()

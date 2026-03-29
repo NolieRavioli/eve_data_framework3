@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -31,6 +32,21 @@ FIELDS_TO_CLEAN = [
     "operationNameID",
 ]
 
+_LAST_PROGRESS_LENGTH = 0
+
+
+def _progress_print(message: str, *, final: bool = False) -> None:
+    global _LAST_PROGRESS_LENGTH
+    text = str(message)
+    padding = " " * max(0, _LAST_PROGRESS_LENGTH - len(text))
+    sys.stdout.write(f"\r{text}{padding}")
+    if final:
+        sys.stdout.write("\n")
+        _LAST_PROGRESS_LENGTH = 0
+    else:
+        _LAST_PROGRESS_LENGTH = len(text)
+    sys.stdout.flush()
+
 
 def _supported_languages() -> list[str]:
     raw = os.getenv("SUPPORTED_LANGUAGES", "en")
@@ -43,12 +59,14 @@ def download_sde(url: str = SDE_URL, dest: Path = SDE_ZIP_PATH, retries: int = 3
     for attempt in range(1, retries + 1):
         try:
             logger.info("Downloading SDE (attempt %s)...", attempt)
+            _progress_print(f"[SDE] downloading archive (attempt {attempt})")
             response = requests.get(url, stream=True, timeout=60)
             response.raise_for_status()
             with dest.open("wb") as handle:
                 for chunk in response.iter_content(chunk_size=8192):
                     handle.write(chunk)
             logger.info("SDE download complete.")
+            _progress_print("[SDE] download complete", final=True)
             return {
                 "etag": response.headers.get("ETag"),
                 "last_modified": response.headers.get("Last-Modified"),
@@ -70,9 +88,11 @@ def unzip_sde(zip_path: Path = SDE_ZIP_PATH, extract_to: Path = SDE_PATH) -> Non
         shutil.rmtree(extract_to)
     extract_to.mkdir(parents=True, exist_ok=True)
     logger.info("Extracting %s to %s", zip_path, extract_to)
+    _progress_print(f"[SDE] extracting archive to {extract_to}")
     with zipfile.ZipFile(zip_path, "r") as archive:
         archive.extractall(extract_to)
     logger.info("SDE extraction complete.")
+    _progress_print("[SDE] extraction complete", final=True)
 
 
 def cleanup(zip_path: Path = SDE_ZIP_PATH) -> None:
@@ -101,9 +121,17 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
     if not fsd_dir.exists():
         logger.warning("No fsd folder found at %s, skipping language pruning.", fsd_dir)
         return
+    yaml_paths = sorted(fsd_dir.rglob("*.yaml"))
     logger.info("Pruning FSD language maps to supported languages: %s", ", ".join(_supported_languages()))
+    if not yaml_paths:
+        logger.info("No FSD YAML files found under %s; skipping language pruning.", fsd_dir)
+        _progress_print("[SDE] pruning language maps skipped (no yaml files)", final=True)
+        return
+    _progress_print(f"[SDE] pruning language maps 0/{len(yaml_paths)}")
     loader = getattr(yaml, "CLoader", yaml.SafeLoader)
-    for path in fsd_dir.rglob("*.yaml"):
+    for index, path in enumerate(yaml_paths, start=1):
+        relative_path = path.relative_to(fsd_dir).as_posix()
+        _progress_print(f"[SDE] pruning language maps {index}/{len(yaml_paths)} {relative_path}")
         try:
             with path.open("r", encoding="utf-8") as handle:
                 data = yaml.load(handle, Loader=loader)
@@ -113,11 +141,13 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
         except Exception as exc:
             logger.error("Error pruning %s: %s", path, exc)
     logger.info("SDE language pruning complete.")
+    _progress_print("[SDE] language pruning complete", final=True)
 
 
 def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
     source_meta = source_meta or {}
-    status = sde_store.build_sde_warehouse(
+    _progress_print(f"[SDE] rebuilding warehouse at {sde_store.get_database_path()}")
+    sde_store.build_sde_warehouse(
         source_root=SDE_PATH,
         supported_languages=_supported_languages(),
         source_hash=source_meta.get("sha256"),
@@ -125,8 +155,13 @@ def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
         source_etag=source_meta.get("etag"),
         source_last_modified=source_meta.get("last_modified"),
     )
+    try:
+        sde_store.sync_esi_registry_to_warehouse()
+    except FileNotFoundError:
+        logger.info("No ESI registry present yet; skipping DuckDB registry sync after SDE rebuild.")
     refresh_all_caches()
-    return status
+    _progress_print("[SDE] warehouse rebuild complete", final=True)
+    return sde_store.get_warehouse_status()
 
 
 def update_sde() -> dict:

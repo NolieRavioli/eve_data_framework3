@@ -451,7 +451,9 @@
             <tbody>
               {% for user in stats.users %}
               <tr data-owner="{{ user.owner_id }}" data-role="{% if user.is_site_owner %}site owner{% elif user.is_admin %}admin{% else %}user{% endif %}">
-                <td class="mono">{{ user.owner_id }}</td>
+                <td class="mono">
+                  <a href="{{ url_for('admin.db_browser', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
+                </td>
                 <td>{{ user.character_count }}</td>
                 <td>
                   {% if user.is_site_owner %}

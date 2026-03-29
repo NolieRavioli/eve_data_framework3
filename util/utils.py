@@ -16,6 +16,7 @@ import yaml
 from db.database import get_private_session
 from db.models import Character
 from util.auth import CredentialManager, TokenDBManager
+from util.collection_scope import get_character_scope
 from util.esi_rate_limiter import esi_get, esi_request
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,19 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         )
 
         log_level = (runtime_cfg.get("log_level") or os.getenv("EVE_LOG_LEVEL") or "INFO").upper()
-        logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
+
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        _console_handler = logging.StreamHandler(sys.stdout)
+        _console_handler.setLevel(logging.DEBUG)
+        _console_handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
+        if not any(
+            isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+            for h in root_logger.handlers
+        ):
+            root_logger.addHandler(_console_handler)
 
         if debug_mode:
             print(f"[Runtime] Debug mode enabled. Log level={log_level}")
@@ -178,18 +191,25 @@ def load_config(config_path: str = CONFIG_PATH) -> dict:
 
 # ──────── Token / Character Utilities ───────────────────────────────────────────
 
-def get_token(owner_id: int) -> dict:
+def get_token(owner_id: int, character_ids: Optional[Iterable[int]] = None) -> dict:
     """
     Return { character_id: TokenRow } dict for all characters linked to an owner.
     If any tokens are expired, refresh them automatically and SAVE them.
     """
     token_map = {}
+    selected_ids = (
+        {int(value) for value in character_ids}
+        if character_ids is not None
+        else get_character_scope()
+    )
     now = time.time()
     session = get_private_session(owner_id)
     token_db = TokenDBManager(owner_id)
     try:
         tokens = session.query(Character).all()
         for token in tokens:
+            if selected_ids is not None and token.character_id not in selected_ids:
+                continue
             if token.expires_at and token.expires_at < now:
                 logger.info(f"Token expired for {token.character_id}, refreshing...")
                 try:

@@ -1,6 +1,7 @@
 """Centralised ESI request buffering with floating window rate limiting support."""
 
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -185,23 +186,32 @@ class _TokenBucket:
         if delta == 0:
             return
 
+        if delta > 0:
+            # Record the extra cost immediately without blocking.  Calling
+            # acquire() here would block the response-handler thread for
+            # minutes whenever a run of error responses fills the bucket —
+            # the opposite of what we want.  The extra tokens are appended
+            # to the window deque so that *subsequent* acquire() calls
+            # account for them naturally.
+            with self._lock:
+                now = time.monotonic()
+                self._entries.append((now, delta))
+                self._total += delta
+            return
+
         with self._lock:
-            if delta > 0:
-                # Consume additional tokens immediately if available.
-                self.acquire(delta)
-            else:
-                # Return tokens by trimming from the newest entry.
-                to_return = -delta
-                while to_return and self._entries:
-                    ts, cost = self._entries.pop()
-                    remove = min(cost, to_return)
-                    remaining = cost - remove
-                    self._total -= remove
-                    to_return -= remove
-                    if remaining:
-                        self._entries.append((ts, remaining))
-                        self._total += remaining
-                        break
+            # Return tokens by trimming from the newest entry.
+            to_return = -delta
+            while to_return and self._entries:
+                ts, cost = self._entries.pop()
+                remove = min(cost, to_return)
+                remaining = cost - remove
+                self._total -= remove
+                to_return -= remove
+                if remaining:
+                    self._entries.append((ts, remaining))
+                    self._total += remaining
+                    break
 
     def get_stats(self) -> dict:
         """Return a snapshot of current token-bucket usage."""
@@ -227,10 +237,15 @@ class EsiRateLimiter:
         max_retries: int = 5,
         default_retry_after: int = 2,
     ) -> None:
-        self._bucket = _TokenBucket(limit=token_limit, window=window_seconds)
+        self._default_bucket = _TokenBucket(limit=token_limit, window=window_seconds)
         self._max_retries = max(1, max_retries)
         self._default_retry_after = max(1, default_retry_after)
         self._requests_total = 0
+        # Per-group rate-limit state (keyed by X-Ratelimit-Group header value)
+        self._groups_lock = threading.Lock()
+        self._group_buckets: Dict[str, _TokenBucket] = {}
+        self._url_to_group: Dict[str, str] = {}   # normalised URL path → group name
+        self._group_display: Dict[str, dict] = {}  # group → latest header snapshot
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Perform an HTTP request against ESI obeying rate limits and retries."""
@@ -256,22 +271,28 @@ class EsiRateLimiter:
             if lane:
                 _ALTERNATING_GATE.acquire(lane)
             try:
-                self._bucket.acquire(initial_cost)
+                # Resolve the group-specific bucket for this URL (or fall back to default).
+                norm = self._normalize_url_path(url)
+                with self._groups_lock:
+                    gname = self._url_to_group.get(norm)
+                    bucket = self._group_buckets.get(gname) if gname else self._default_bucket
+
+                bucket.acquire(initial_cost)
                 kwargs.setdefault("timeout", 30)
                 try:
                     response = requests.request(method, url, **kwargs)
                 except Exception:
                     # Return the reserved tokens since no response was obtained.
-                    self._bucket.adjust(-initial_cost)
+                    bucket.adjust(-initial_cost)
                     raise
 
                 # Adjust for the actual status cost if different from optimistic reservation.
                 actual_cost = _token_cost_for_status(response.status_code)
                 delta = actual_cost - initial_cost
                 if delta:
-                    self._bucket.adjust(delta)
+                    bucket.adjust(delta)
 
-                self._update_limits_from_headers(response.headers)
+                self._update_limits_from_headers(response.headers, url)
 
                 if ttl and cache_key and 200 <= response.status_code < 400:
                     _store_cached_response(cache_key, response, ttl, prepared)
@@ -311,23 +332,114 @@ class EsiRateLimiter:
             return self._default_retry_after
 
     def get_stats(self) -> dict:
-        """Return a snapshot of current rate-limiter usage."""
-        stats = self._bucket.get_stats()
-        stats["requests_total"] = self._requests_total
-        return stats
+        """Return per-group rate-limit stats plus a backward-compatible summary."""
+        with self._groups_lock:
+            groups: dict = {}
+            for gname, gbucket in self._group_buckets.items():
+                bs = gbucket.get_stats()
+                dsp = self._group_display.get(gname, {})
+                remaining = dsp.get("remaining")
+                limit = bs["tokens_limit"]
+                groups[gname] = {
+                    "group": gname,
+                    "tokens_limit": limit,
+                    "tokens_remaining": remaining if remaining is not None else bs["tokens_remaining"],
+                    "tokens_used": (limit - remaining) if remaining is not None else bs["tokens_used"],
+                    "window_seconds": bs["window_seconds"],
+                    "window_str": dsp.get("window_str", ""),
+                }
 
-    def _update_limits_from_headers(self, headers: Dict[str, str]) -> None:
-        """Refresh the bucket configuration based on ESI rate limit headers if present."""
+        # Include the default bucket as a synthetic group when it has recorded
+        # activity (i.e. endpoints that don't return X-Ratelimit-Group headers).
+        dbs = self._default_bucket.get_stats()
+        if dbs["tokens_used"] > 0:
+            groups["(ungrouped)"] = {
+                "group": "(ungrouped)",
+                "tokens_limit": dbs["tokens_limit"],
+                "tokens_remaining": dbs["tokens_remaining"],
+                "tokens_used": dbs["tokens_used"],
+                "window_seconds": dbs["window_seconds"],
+                "window_str": f"{dbs['window_seconds'] // 60}m" if dbs["window_seconds"] % 60 == 0 else f"{dbs['window_seconds']}s",
+            }
 
-        limit = self._extract_int(headers, "X-RateLimit-Limit")
+        # Backward-compat summary: most-depleted group (lowest remaining/limit ratio).
+        summary: dict = dbs
+        if groups:
+            worst = min(
+                groups.values(),
+                key=lambda g: (g["tokens_remaining"] / g["tokens_limit"]) if g["tokens_limit"] else 1.0,
+            )
+            summary = dict(worst)
+
+        summary["requests_total"] = self._requests_total
+        summary["groups"] = groups
+        return summary
+
+    @staticmethod
+    def _normalize_url_path(url: str) -> str:
+        """Return the URL path with numeric ID segments replaced by {id}."""
+        return re.sub(r"/\d+", "/{id}", urlparse(url).path)
+
+    @staticmethod
+    def _parse_limit_header(value: str) -> "tuple[Optional[int], Optional[int]]":
+        """Parse ESI's 'limit/window' header format, e.g. '150/15m' -> (150, 900)."""
+        try:
+            parts = value.strip().split("/", 1)
+            limit = int(float(parts[0]))
+            window_str = parts[1].strip() if len(parts) > 1 else ""
+            if not window_str:
+                return limit, DEFAULT_WINDOW_SECONDS
+            if window_str.endswith("m"):
+                return limit, int(window_str[:-1]) * 60
+            if window_str.endswith("h"):
+                return limit, int(window_str[:-1]) * 3600
+            if window_str.endswith("s"):
+                return limit, int(window_str[:-1])
+            return limit, int(window_str)
+        except (ValueError, IndexError):
+            return None, None
+
+    def _update_limits_from_headers(self, headers: Dict[str, str], url: Optional[str] = None) -> None:
+        """Update per-group bucket configuration from ESI rate-limit response headers."""
+
+        group = headers.get("X-Ratelimit-Group") or headers.get("X-Esi-Rate-Limit-Group")
+        limit_str = (
+            headers.get("X-Ratelimit-Limit")
+            or headers.get("X-Esi-Rate-Limit-Limit")
+        )
+        if not group or not limit_str:
+            return
+
+        limit, window_seconds = self._parse_limit_header(limit_str)
         if limit is None:
-            limit = self._extract_int(headers, "X-Esi-Rate-Limit-Limit")
-        window = self._extract_int(headers, "X-RateLimit-Window")
-        if window is None:
-            window = self._extract_int(headers, "X-Esi-Rate-Limit-Window")
+            return
 
-        if limit is not None or window is not None:
-            self._bucket.configure(limit=limit, window=window)
+        remaining = self._extract_int(headers, "X-Ratelimit-Remaining")
+        used = self._extract_int(headers, "X-Ratelimit-Used")
+        parts = limit_str.strip().split("/", 1)
+        window_str = parts[1].strip() if len(parts) > 1 else ""
+
+        with self._groups_lock:
+            if group in self._group_buckets:
+                self._group_buckets[group].configure(limit=limit, window=window_seconds)
+            else:
+                self._group_buckets[group] = _TokenBucket(limit=limit, window=window_seconds)
+                logger.debug(
+                    "[RateLimiter] New group: %s  limit=%s  window=%s",
+                    group, limit, window_str or f"{window_seconds}s",
+                )
+
+            self._group_display[group] = {
+                "remaining": remaining,
+                "used": used,
+                "window_str": window_str,
+            }
+
+            if url:
+                norm = self._normalize_url_path(url)
+                if self._url_to_group.get(norm) != group:
+                    self._url_to_group[norm] = group
+                    logger.debug("[RateLimiter] URL pattern %s -> group %s", norm, group)
 
     @staticmethod
     def _extract_int(headers: Dict[str, str], key: str) -> Optional[int]:
@@ -337,7 +449,9 @@ class EsiRateLimiter:
         try:
             # Some providers may supply comma-delimited values; use the first token.
             value = value.split(",")[0]
-            return int(float(value))
+            # ESI may include a window suffix like "600/15m"; strip it.
+            value = value.split("/")[0]
+            return int(float(value.strip()))
         except (ValueError, TypeError):
             logger.debug("[RateLimiter] Failed to parse header %s=%s", key, value)
             return None

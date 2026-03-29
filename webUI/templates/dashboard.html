@@ -26,6 +26,9 @@
     <div class="pg-sub">Owner {{ owner_id }} · live summary for the active pilot</div>
   </div>
   <div class="toolbar">
+    <form method="post" action="{{ url_for('tasks.collect_current') }}" style="display:inline">
+      <button type="submit" class="btn btn-g">Collect Active Toon</button>
+    </form>
     <form method="post" action="{{ url_for('tasks.collect_all') }}" style="display:inline">
       <button type="submit" class="btn btn-a">Collect All</button>
     </form>

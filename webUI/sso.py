@@ -1,5 +1,3 @@
-# webUI/sso.py
-
 import logging
 import os
 import secrets
@@ -13,13 +11,12 @@ from flask import Blueprint, redirect, request, session, url_for
 from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2Session
 
+from db.database import get_private_session
+from db.models import Character
+from esi.data_collector import enqueue_full_collection
+from util import sde_store
 from util.auth import CredentialManager, TokenDBManager
 from util.utils import RuntimeSettings, get_runtime_settings
-from esi.data_collector import enqueue_full_collection
-from db.database import get_private_session, get_public_session
-from db.models import Character, User, SiteAdmin
-
-# ─────── Globals ─────────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
@@ -30,8 +27,6 @@ AUTH_URL = "https://login.eveonline.com/v2/oauth/authorize"
 
 @dataclass
 class OAuthStateRecord:
-    """Track issued OAuth states so stateless callbacks still validate."""
-
     value: str
     is_add_toon: bool
     owner_id: Optional[int]
@@ -39,8 +34,6 @@ class OAuthStateRecord:
 
 
 class OAuthStateCache:
-    """Simple TTL cache for issued state tokens."""
-
     def __init__(self, ttl_seconds: int, debug: bool = False):
         self._ttl = ttl_seconds
         self._store: Dict[str, OAuthStateRecord] = {}
@@ -84,8 +77,6 @@ _state_cache = _build_state_cache(_settings)
 
 
 def _issue_state(eve_session: OAuth2Session, *, is_add_toon: bool) -> str:
-    """Generate a durable state token and remember it for stateless callbacks."""
-
     manual_state = secrets.token_urlsafe(32)
     auth_url, _ = eve_session.authorization_url(AUTH_URL, state=manual_state)
     session["oauth_state"] = manual_state
@@ -101,8 +92,6 @@ def _issue_state(eve_session: OAuth2Session, *, is_add_toon: bool) -> str:
 
 
 def _prepare_oauth_session(is_add_toon: bool) -> OAuth2Session:
-    """Helper that loads credentials and issues a state token."""
-
     client_id, _, redirect_uri, scopes = CredentialManager.load_credentials()
     eve = OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes.split())
     auth_url = _issue_state(eve, is_add_toon=is_add_toon)
@@ -113,13 +102,8 @@ def _prepare_oauth_session(is_add_toon: bool) -> OAuth2Session:
 
 @auth_bp.route("/login")
 def login():
-    """Kick off the primary SSO login flow."""
-
-    # NOTE: local testing only. On HTTPS deployments this should be removed.
     if _settings.debug_mode:
         print("[Auth] Login requested; permitting insecure transport for local dev.")
-    # Flask-OAuthlib requires this flag when running over HTTP locally.
-    # Safe because this code path is for our internal deployments.
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     auth_url = _prepare_oauth_session(is_add_toon=False)
     return redirect(auth_url)
@@ -127,8 +111,6 @@ def login():
 
 @auth_bp.route("/add_toon")
 def add_toon():
-    """Link an additional character to the logged-in owner."""
-
     if not session.get("owner_id"):
         return "Error: No owner session found for adding toon.", 400
 
@@ -139,8 +121,6 @@ def add_toon():
 
 @auth_bp.route("/switch_character/<int:character_id>")
 def switch_character(character_id: int):
-    """Set the active linked character for the current owner."""
-
     owner_id = session.get("owner_id")
     if not owner_id:
         return redirect(url_for("auth.login"))
@@ -188,8 +168,6 @@ def _validate_state(returned_state: Optional[str]):
 
 @auth_bp.route("/callback")
 def callback():
-    """Handle the OAuth2 callback from EVE SSO."""
-
     try:
         returned_state = request.args.get("state")
         is_add_toon, owner_hint, error = _validate_state(returned_state)
@@ -223,16 +201,14 @@ def callback():
             session["owner_id"] = owner_id
             session["character_id"] = character_id
 
-        # ── Check first-ever owner BEFORE save_tokens adds the User row ──────
-        pub_db = get_public_session()
-        existing_owner_count = pub_db.query(User.owner_id).distinct().count()
+        existing_owner_count = sde_store.count_public_owners()
         is_first_owner = (existing_owner_count == 0) and not is_add_toon
-        pub_db.close()
 
-        # Check if this is a brand-new character before saving (save_tokens upserts)
-        _db = get_private_session(owner_id)
-        is_new_character = _db.get(Character, character_id) is None
-        _db.close()
+        db = get_private_session(owner_id)
+        try:
+            is_new_character = db.get(Character, character_id) is None
+        finally:
+            db.close()
 
         mgr = TokenDBManager(owner_id)
         mgr.save_tokens(
@@ -246,34 +222,27 @@ def callback():
         session["access_token"] = token["access_token"]
         session["refresh_token"] = token["refresh_token"]
 
-        # ── Assign site owner role to the very first owner ────────────────────
         if is_first_owner:
-            pub_db2 = get_public_session()
-            try:
-                pub_db2.add(SiteAdmin(owner_id=owner_id, is_site_owner=True, granted_by=None))
-                pub_db2.commit()
-                logger.info(f"[Auth] Owner {owner_id} assigned as site owner (first login).")
-            finally:
-                pub_db2.close()
+            sde_store.upsert_site_admin(owner_id=owner_id, is_site_owner=True, granted_by=None)
+            logger.info("[Auth] Owner %s assigned as site owner (first login).", owner_id)
 
-        # ── Set is_admin in session for all logins ────────────────────────────
         if not is_add_toon:
-            pub_db3 = get_public_session()
-            try:
-                admin_row = pub_db3.get(SiteAdmin, owner_id)
-                session["is_admin"] = admin_row is not None
-            finally:
-                pub_db3.close()
+            session["is_admin"] = sde_store.get_site_admin(owner_id) is not None
 
         if is_new_character:
-            logger.info(f"[Auth] New character {character_id} — triggering full data collection.")
-            enqueue_full_collection(owner_id)
+            logger.info(
+                "[Auth] New character %s triggering scoped data collection for owner %s.",
+                character_id,
+                owner_id,
+            )
+            enqueue_full_collection(owner_id, character_id=character_id)
 
         if _settings.debug_mode:
             print(
                 f"[Auth] Session updated owner={owner_id} "
                 f"is_admin={session.get('is_admin')} "
-                f"characters={[session.get('character_id')]}")
+                f"characters={[session.get('character_id')]}"
+            )
 
         return redirect(url_for("dashboard.home"))
 
@@ -284,8 +253,6 @@ def callback():
 
 @auth_bp.route("/logout")
 def logout():
-    """Clear the user session."""
-
     session.clear()
     if _settings.debug_mode:
         print("[Auth] Session cleared via logout.")

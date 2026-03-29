@@ -2,12 +2,13 @@
 """
 Orchestrates full data collection for a character and their corporation.
 Called on first login (via SSO callback) and can also be triggered manually.
-Each ESI module is submitted as an independent CollectionTask so failures
+Each ESI module is submitted as an independent background task so failures
 are isolated and retried without re-running the whole pipeline.
 """
 import logging
 
-from util.data_collection_queue import CollectionTask, get_collection_queue
+from util import task_queue
+from util.collection_scope import run_with_character_scope
 
 # ── personal fetchers ─────────────────────────────────────────────────────────
 from esi.personal_assets       import fetch_all_assets
@@ -103,30 +104,50 @@ CORP_TASKS = [
 # ── public API ────────────────────────────────────────────────────────────────
 
 
-def enqueue_full_collection(owner_id: int):
+def _run_scoped_collection(fn, owner_id: int, character_id: int | None = None):
+    if character_id is None:
+        return fn(owner_id)
+    return run_with_character_scope(fn, {character_id}, owner_id)
+
+
+def enqueue_full_collection(owner_id: int, character_id: int | None = None) -> list[str]:
     """
-    Submit one CollectionTask per module to the background queue.
-    Non-blocking — returns immediately. Called after new character SSO login.
+    Submit one task per module to the shared private task queue.
+    When character_id is supplied, all token lookups are scoped to that toon.
     """
-    q = get_collection_queue()
+    task_ids = []
+    label_suffix = f"[char={character_id}]" if character_id is not None else ""
     for label, fn in PERSONAL_TASKS:
-        q.enqueue(CollectionTask(
-            owner_id=owner_id,
-            label=f"personal/{label}[owner={owner_id}]",
-            fn=fn,
-            args=(owner_id,),
-        ))
+        task_ids.append(
+            task_queue.enqueue(
+                f"personal/{label}{label_suffix}",
+                _run_scoped_collection,
+                fn,
+                owner_id,
+                character_id,
+                owner_id=owner_id,
+                queue="private",
+            )
+        )
     for label, fn in CORP_TASKS:
-        q.enqueue(CollectionTask(
-            owner_id=owner_id,
-            label=f"{label}[owner={owner_id}]",
-            fn=fn,
-            args=(owner_id,),
-        ))
+        task_ids.append(
+            task_queue.enqueue(
+                f"{label}{label_suffix}",
+                _run_scoped_collection,
+                fn,
+                owner_id,
+                character_id,
+                owner_id=owner_id,
+                queue="private",
+            )
+        )
     logger.info(
-        f"[data_collector] Enqueued {len(PERSONAL_TASKS)} personal + "
-        f"{len(CORP_TASKS)} corp tasks for owner {owner_id}. "
-        f"Queue depth: {q.queue_depth()}"
+        "[data_collector] Enqueued %s personal + %s corp tasks for owner %s%s",
+        len(PERSONAL_TASKS),
+        len(CORP_TASKS),
+        owner_id,
+        f" scoped to character {character_id}" if character_id is not None else "",
     )
+    return task_ids
 
 

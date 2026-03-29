@@ -1,6 +1,8 @@
 # esi/corp_wallet_full.py
 import logging
 
+import requests
+
 from db.database import get_private_session
 from db.models import CorpWalletJournal, CorpWalletTransaction
 from util.esi_rate_limiter import esi_get
@@ -77,13 +79,24 @@ def fetch_all_corp_wallet(owner_id: int):
         seen.add(corp_id)
         try:
             journal_by_div, txn_by_div = {}, {}
+            access_token = token_row["access_token"]
             for div in DIVISIONS:
                 try:
-                    journal_by_div[div] = fetch_division_journal(corp_id, div, token_row["access_token"])
+                    journal_by_div[div] = fetch_division_journal(corp_id, div, access_token)
+                except requests.exceptions.HTTPError as e:
+                    if e.response is not None and e.response.status_code in (403, 401):
+                        logger.info("[corp_wallet] corp %s: no wallet access (%s) — skipping remaining divisions", corp_id, e.response.status_code)
+                        break
+                    journal_by_div[div] = []
                 except Exception:
                     journal_by_div[div] = []
                 try:
-                    txn_by_div[div] = fetch_division_transactions(corp_id, div, token_row["access_token"])
+                    txn_by_div[div] = fetch_division_transactions(corp_id, div, access_token)
+                except requests.exceptions.HTTPError as e:
+                    if e.response is not None and e.response.status_code in (403, 401):
+                        logger.info("[corp_wallet] corp %s: no wallet access (%s) — skipping remaining divisions", corp_id, e.response.status_code)
+                        break
+                    txn_by_div[div] = []
                 except Exception:
                     txn_by_div[div] = []
             total_j = sum(len(v) for v in journal_by_div.values())

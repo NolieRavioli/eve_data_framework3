@@ -2,9 +2,7 @@
 
 from flask import Blueprint, jsonify, render_template, request
 
-from db.database import get_public_session
-from db.models import MarketOrder
-from util import sde
+from util import sde, sde_store
 from webUI.context import base_ctx
 
 market_bp = Blueprint("market_browser", __name__, url_prefix="/market")
@@ -30,30 +28,16 @@ def browser():
         type_ids = sde.resolve_type_ids(raw_query)
     has_type_filter = bool(group_id or raw_query)
 
-    db = get_public_session()
-    try:
-        query = db.query(MarketOrder)
-        if type_ids:
-            query = query.filter(MarketOrder.type_id.in_(type_ids))
-        elif has_type_filter:
-            query = query.filter(MarketOrder.type_id == -1)
-
-        if region_id:
-            query = query.filter(MarketOrder.region_id == region_id)
-        if location_id:
-            query = query.filter(MarketOrder.location_id == location_id)
-        if is_buy in (0, 1):
-            query = query.filter(MarketOrder.is_buy_order == bool(is_buy))
-
-        if sort_by == "volume":
-            query = query.order_by(MarketOrder.volume_remain.desc())
-        else:
-            query = query.order_by(MarketOrder.price.asc())
-
-        total = query.count()
-        results = query.offset((page - 1) * page_size).limit(page_size).all()
-    finally:
-        db.close()
+    total, results = sde_store.search_market_orders(
+        type_ids=type_ids,
+        has_type_filter=has_type_filter,
+        region_id=region_id,
+        location_id=location_id,
+        is_buy=is_buy,
+        sort_by=sort_by,
+        page=page,
+        page_size=page_size,
+    )
 
     return render_template(
         "market_browser.html",

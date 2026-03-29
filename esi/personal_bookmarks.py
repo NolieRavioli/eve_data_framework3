@@ -1,51 +1,80 @@
 # fetchers/private/personal_bookmarks.py
 
 import logging
-
 from datetime import datetime
-from util.utils import get_token
+
 from db.database import get_private_session
 from db.models import PersonalBookmark
 from util.esi_rate_limiter import esi_get
+from util.utils import get_token
 
 logger = logging.getLogger(__name__)
 
 ESI = "https://esi.evetech.net/latest"
+INSERT_BATCH_SIZE = 500
 
-# ──────── Fetching ─────────────────────────────────────────────────────────────
 
 def fetch_bookmarks(char_id: int, access_token: str) -> list:
     """Fetch personal bookmarks for a character."""
     url = f"{ESI}/characters/{char_id}/bookmarks/"
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = esi_get(url, headers=headers)
+    resp = esi_get(url, headers=headers, timeout=30)
+    if resp.status_code == 404:
+        logger.info("[fetch_bookmarks] character %s has no bookmarks (404)", char_id)
+        return []
     resp.raise_for_status()
-    return resp.json()
+    bookmarks = resp.json()
+    logger.info(
+        "[fetch_bookmarks] character %s received %s bookmarks",
+        char_id,
+        f"{len(bookmarks):,}",
+    )
+    return bookmarks
 
-# ──────── Storage ───────────────────────────────────────────────────────────────
 
-def store_bookmarks(owner_id: int, char_id: int, bookmarks: list):
+def store_bookmarks(owner_id: int, char_id: int, bookmarks: list) -> None:
     """Store personal bookmarks for a character into their owner's private DB."""
     db = get_private_session(owner_id)
+    try:
+        logger.info(
+            "[store_bookmarks] Replacing bookmarks for character %s with %s row(s)",
+            char_id,
+            f"{len(bookmarks):,}",
+        )
+        db.query(PersonalBookmark).filter_by(character_id=char_id).delete()
 
-    for bm in bookmarks:
-        db.merge(PersonalBookmark(
-            bookmark_id     = bm["bookmark_id"],
-            character_id    = char_id,
-            created         = datetime.fromisoformat(bm["created"].replace("Z", "+00:00")),
-            creator_id      = bm["creator_id"],
-            label           = bm.get("label", ""),
-            location_id     = bm["location_id"],
-            notes           = bm.get("notes", ""),
-            x               = bm.get("coordinates", {}).get("x"),
-            y               = bm.get("coordinates", {}).get("y"),
-            z               = bm.get("coordinates", {}).get("z"),
-        ))
+        rows = [
+            {
+                "bookmark_id": bm["bookmark_id"],
+                "character_id": char_id,
+                "folder_id": bm.get("folder_id"),
+                "location_id": bm.get("location_id"),
+                "item_id": bm.get("item_id"),
+                "label": bm.get("label", ""),
+                "created": datetime.fromisoformat(bm["created"].replace("Z", "+00:00")),
+                "coordinates": bm.get("coordinates"),
+                "notes": bm.get("notes", ""),
+            }
+            for bm in bookmarks
+        ]
 
-    db.commit()
-    db.close()
+        inserted = 0
+        for start in range(0, len(rows), INSERT_BATCH_SIZE):
+            batch = rows[start:start + INSERT_BATCH_SIZE]
+            db.bulk_insert_mappings(PersonalBookmark, batch)
+            inserted += len(batch)
+            logger.info(
+                "[store_bookmarks] character %s inserted %s/%s bookmarks",
+                char_id,
+                f"{inserted:,}",
+                f"{len(rows):,}",
+            )
 
-# ──────── Orchestrator ───────────────────────────────────────────────────────────
+        db.commit()
+        logger.info("[store_bookmarks] Commit complete for character %s", char_id)
+    finally:
+        db.close()
+
 
 def update_personal_bookmarks(owner_id: int) -> None:
     """Fetch and store bookmarks for all characters owned by the given owner."""
@@ -53,9 +82,13 @@ def update_personal_bookmarks(owner_id: int) -> None:
 
     for char_id, token_row in tokens.items():
         try:
-            logger.info(f"[update_personal_bookmarks] Fetching bookmarks for character {char_id}")
+            logger.info("[update_personal_bookmarks] Fetching bookmarks for character %s", char_id)
             bookmarks = fetch_bookmarks(char_id, token_row["access_token"])
             store_bookmarks(owner_id, char_id, bookmarks)
-            logger.info(f"[update_personal_bookmarks] Stored {len(bookmarks)} bookmarks for {char_id}")
-        except Exception as e:
-            logger.error(f"[update_personal_bookmarks] Error updating bookmarks for {char_id}: {e}")
+            logger.info(
+                "[update_personal_bookmarks] Stored %s bookmarks for %s",
+                len(bookmarks),
+                char_id,
+            )
+        except Exception as exc:
+            logger.error("[update_personal_bookmarks] Error updating bookmarks for %s: %s", char_id, exc)
