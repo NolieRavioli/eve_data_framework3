@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-import requests
 
 from db.database import get_public_session
 from db.models import PublicContract

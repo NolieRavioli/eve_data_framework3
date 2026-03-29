@@ -1,7 +1,6 @@
 # fetchers/private/personal_bookmarks.py
 
 import logging
-import requests
 
 from datetime import datetime
 from util.utils import get_token

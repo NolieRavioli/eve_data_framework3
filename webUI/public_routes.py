@@ -9,7 +9,7 @@ from esi.public.market_structure import fetch_all_structure_markets
 from analysis.structures         import discover_all_structures
 from esi.public.market_contracts import fetch_all_public_contracts
 from esi.public.market_station   import fetch_all_market_data
-from esi.public.static_data      import update_sde
+from esi.public.static_data      import update_esi_spec, update_sde
 
 logger = logging.getLogger(__name__)
 update_public_bp = Blueprint('update_public', __name__, url_prefix="/update_public")
@@ -56,3 +56,10 @@ def update_public_sde():
     o = _get_owner()
     if not o: return "Unauthorized", 401
     return _enqueue_and_go("SDE Refresh", update_sde, o)
+
+
+@update_public_bp.route("/esi_spec")
+def update_public_esi_spec():
+    o = _get_owner()
+    if not o: return "Unauthorized", 401
+    return _enqueue_and_go("ESI Spec Refresh", update_esi_spec, o)

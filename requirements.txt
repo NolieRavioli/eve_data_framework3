@@ -6,3 +6,4 @@ requests-oauthlib
 pyjwt
 pyyaml
 ruamel.yaml
+duckdb

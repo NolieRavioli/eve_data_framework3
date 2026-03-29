@@ -20,8 +20,8 @@ def main() -> None:
     logger.info("Initializing databases...")
     initialize_public_database()
 
-    # Load SDE data into memory with console progress output.
-    # config.yaml -> SDE section controls which datasets are loaded.
+    # Initialize the DuckDB-backed SDE facade and optionally warm the hot caches.
+    # config.yaml -> SDE section controls warm-cache behavior, not warehouse contents.
     cfg = load_config(CONFIG_PATH)
     startup_load_sde(cfg.get("SDE", {}))
 

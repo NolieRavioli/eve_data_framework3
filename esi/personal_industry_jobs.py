@@ -1,11 +1,9 @@
 # fetchers/private/personal_industry_jobs.py
 
 import logging
-import requests
 from datetime import datetime
 
 from util.utils import get_token
-from util.auth import TokenDBManager
 from db.database import get_private_session
 from db.models import IndustryJob
 from util.esi_rate_limiter import esi_get

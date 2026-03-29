@@ -1,7 +1,6 @@
 # esi/personal_location.py
 """Snapshot of current character location / online status / ship — point-in-time only."""
 import logging
-from datetime import datetime
 
 from db.database import get_private_session
 from db.models import HomeLocation
@@ -17,13 +16,6 @@ ESI = "https://esi.evetech.net/latest"
 
 def fetch_location(char_id: int, access_token: str) -> dict:
     resp = esi_get(f"{ESI}/characters/{char_id}/location/",
-                   headers={"Authorization": f"Bearer {access_token}"})
-    resp.raise_for_status()
-    return resp.json()
-
-
-def fetch_ship(char_id: int, access_token: str) -> dict:
-    resp = esi_get(f"{ESI}/characters/{char_id}/ship/",
                    headers={"Authorization": f"Bearer {access_token}"})
     resp.raise_for_status()
     return resp.json()

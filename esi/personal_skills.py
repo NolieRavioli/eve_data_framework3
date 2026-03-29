@@ -7,7 +7,6 @@ from datetime import datetime
 from db.database import get_private_session
 from db.models import Skill, SkillQueue
 from util.utils import get_token
-from util.auth import TokenDBManager
 from util.esi_rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)

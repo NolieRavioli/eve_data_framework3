@@ -1,733 +1,460 @@
-# util/sde.py
-"""EVE SDE (Static Data Export) loader.
+"""DuckDB-backed SDE facade with YAML fallback.
 
-All data structures are loaded once at process startup via startup_load_sde().
-Each section can be individually enabled/disabled in config.yaml under the
-'SDE' key.  Lookup helpers return sensible defaults when a section was not
-loaded so the rest of the app degrades gracefully instead of crashing.
-
-Progress is printed to stdout using \\r line-overwrite with space-padding so
-shorter status messages fully erase longer previous ones.
+The public helper surface stays stable for the rest of the app, but the primary
+backend is the persisted `_publicData/sde.duckdb` warehouse. When that file is
+missing, helpers fall back to direct YAML reads from `_sde`.
 """
 
-import os
-import re
-import time
+import json
 import logging
-import threading
+import os
+from pathlib import Path
+from typing import Any
+
 import yaml
 
-from db.database import get_public_session
-from db.models import SolarSystem, Stargate
+from util import sde_store
 
 logger = logging.getLogger(__name__)
 
-# -- Paths --------------------------------------------------------------------
-BASE_SDE_PATH        = os.getenv("SDE_PATH", "_sde")
-TYPES_YAML_PATH      = os.path.join(BASE_SDE_PATH, "fsd", "types.yaml")
-MARKET_GROUPS_PATH   = os.path.join(BASE_SDE_PATH, "fsd", "marketGroups.yaml")
-GROUPS_YAML_PATH     = os.path.join(BASE_SDE_PATH, "fsd", "groups.yaml")
-CATEGORIES_YAML_PATH = os.path.join(BASE_SDE_PATH, "fsd", "categories.yaml")
-BLUEPRINTS_YAML_PATH = os.path.join(BASE_SDE_PATH, "fsd", "blueprints.yaml")
-TYPE_MATERIALS_PATH  = os.path.join(BASE_SDE_PATH, "fsd", "typeMaterials.yaml")
-TYPE_DOGMA_PATH      = os.path.join(BASE_SDE_PATH, "fsd", "typeDogma.yaml")
-UNIVERSE_PATH        = os.path.join(BASE_SDE_PATH, "universe")
+_SECTION_DEFAULTS: dict[str, bool] = {
+    "types": True,
+    "groups": True,
+    "categories": True,
+    "market_groups": True,
+    "universe": True,
+    "blueprints": False,
+    "type_materials": False,
+    "type_dogma": False,
+}
 
-# -- Console ------------------------------------------------------------------
-_COL = 90   # total line width; shorter lines are right-padded with spaces
+_startup_cfg: dict[str, bool] = dict(_SECTION_DEFAULTS)
+_database_path: Path | None = None
 
-# -- Disabled-section registry ------------------------------------------------
-# Populated by startup_load_sde() so lazy-load helpers know to skip them.
-_disabled_sections: set[str] = set()
+_type_id_to_name: dict[int, str] | None = None
+_name_to_type_id: dict[str, int] | None = None
+_type_to_group: dict[int, int | None] | None = None
+_type_to_market_group: dict[int, int | None] | None = None
 
-# -- Caches -------------------------------------------------------------------
-_type_id_to_name:      dict | None = None   # typeID  -> "Name"
-_name_to_type_id:      dict | None = None   # "name lower" -> typeID
-_type_to_group:        dict | None = None   # typeID  -> groupID
-_type_to_market_group: dict | None = None   # typeID  -> marketGroupID
+_groups: dict[int, dict] | None = None
+_categories: dict[int, str] | None = None
 
-_groups:     dict | None = None             # groupID -> {name, categoryID, published}
-_categories: dict | None = None             # categoryID -> name
+_market_flat: dict[int, dict] = {}
+_market_tree: list[dict] | None = None
 
-_market_flat: dict       = {}               # marketGroupID -> node dict
-_market_tree: list | None = None            # top-level nodes
+_system_id_to_region: dict[int, int | None] | None = None
+_system_id_to_name: dict[int, str] | None = None
+_system_id_to_security: dict[int, float | None] | None = None
+_region_id_to_name: dict[int, str] | None = None
 
-_system_id_to_region:   dict | None = None  # solarSystemID -> regionID
-_system_id_to_name:     dict | None = None  # solarSystemID -> "Name"
-_system_id_to_security: dict | None = None  # solarSystemID -> float
-_region_id_to_name:     dict | None = None  # regionID -> "Name"
-
-_blueprints:     dict | None = None         # blueprintTypeID -> {materials, products, time}
-_type_materials: dict | None = None         # typeID -> [{materialTypeID, quantity}]
-_type_dogma:     dict | None = None         # typeID -> {dogmaAttributes, dogmaEffects}
+_blueprints: dict[int, dict] | None = None
+_type_materials: dict[int, list[dict]] | None = None
+_type_dogma: dict[int, dict] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Progress printer
-# ---------------------------------------------------------------------------
-
-def _pp(label: str, current: int, total: int, t0: float, final: bool = False) -> None:
-    """Write a single \\r-overwriting progress line.
-
-    final=True ends with \\n so the completed line stays visible.
-    Pads each line to _COL characters so shorter lines fully erase longer ones.
-    """
-    elapsed = time.time() - t0
-    pct = current / total * 100.0 if total > 0 else 0.0
-    rate = current / elapsed if elapsed > 0 else 0.0
-
-    if final:
-        time_s = f"done {elapsed:5.1f}s"
-    elif current > 0 and total > 0:
-        remaining = elapsed * (total - current) / current
-        time_s = f"ETA  {remaining:5.1f}s"
-    else:
-        time_s = "ETA      --"
-
-    msg = (
-        f"  {label:<24}"
-        f"  {current:>7,}/{total:<7,}"
-        f"  {pct:5.1f}%"
-        f"  {time_s}"
-        f"  {rate:>10,.0f}/s"
-    )
-    end = "\n" if final else ""
-    print(f"\r{msg:<{_COL}}", end=end, flush=True)
+def _yaml_loader():
+    return getattr(yaml, "CLoader", yaml.SafeLoader)
 
 
-def _divider() -> None:
-    print("  " + "-" * (_COL - 2))
+def _sde_root() -> Path:
+    return Path(os.getenv("SDE_PATH", "_sde"))
 
 
-def _file_read(label: str, path: str) -> None:
-    """Print a one-line 'reading file' status (overwritten by first progress tick)."""
-    msg = f"  {label:<24}  reading {os.path.basename(path)} ..."
-    print(f"\r{msg:<{_COL}}", end="", flush=True)
+def _warehouse_path() -> Path:
+    return _database_path or sde_store.get_database_path()
 
 
-def _pp_parse(label: str, pos: int, total: int, t0: float) -> None:
-    """\\r progress line during YAML parse phase — shows MB read vs total MB."""
-    elapsed = time.time() - t0
-    pct = pos / total * 100.0 if total > 0 else 0.0
-    pos_mb = pos / 1_048_576
-    tot_mb = total / 1_048_576
-    rate = (pos / elapsed / 1_048_576) if elapsed > 0 else 0.0
-    if pos > 0 and total > 0:
-        remaining = elapsed * (total - pos) / pos
-        time_s = f"ETA  {remaining:5.1f}s"
-    else:
-        time_s = "ETA      --"
-    msg = (
-        f"  {label:<24}"
-        f"  {pos_mb:5.1f}/{tot_mb:<5.1f} MB"
-        f"  {pct:5.1f}%"
-        f"  {time_s}"
-        f"  {rate:7.2f} MB/s"
-    )
-    print(f"\r{msg:<{_COL}}", end="", flush=True)
+def _warehouse_ready() -> bool:
+    return sde_store.warehouse_exists(_warehouse_path())
 
 
-def _yaml_load_tracked(label: str, path: str, t0: float, verbose: bool) -> dict:
-    """Load a YAML file with a background thread showing byte-read progress.
+def _connect_ro():
+    return sde_store.connect(_warehouse_path(), read_only=True)
 
-    PyYAML reads the stream in 4096-byte chunks via stream.read().  A thin
-    file wrapper tracks tell() after each read so the monitor thread can
-    display MB-level progress every 150 ms.  The caller's t0 is shared so
-    the final _pp() call shows wall-clock time spanning both parse + iterate.
-    """
-    size = os.path.getsize(path)
-    _pos = [0]
-    _done = [False]
 
-    class _TF:
-        """Thin file wrapper that updates _pos after every read."""
-        def __init__(self, fh):
-            self._fh = fh
-        def read(self, n=-1):
-            data = self._fh.read(n)
-            _pos[0] = self._fh.tell()
-            return data
-        def readline(self):
-            line = self._fh.readline()
-            _pos[0] = self._fh.tell()
-            return line
-        def __iter__(self):
-            return self
-        def __next__(self):
-            line = self._fh.readline()
-            if not line:
-                raise StopIteration
-            _pos[0] = self._fh.tell()
-            return line
-
-    def _monitor():
-        while not _done[0]:
-            _pp_parse(label, _pos[0], size, t0)
-            time.sleep(0.15)
-
-    mon = None
-    if verbose:
-        _pp_parse(label, 0, size, t0)
-        mon = threading.Thread(target=_monitor, daemon=True)
-        mon.start()
-
+def _query_rows(sql: str, params: list[Any] | None = None) -> list[dict]:
+    con = _connect_ro()
     try:
-        with open(path, "rb") as fh:
-            data = yaml.safe_load(_TF(fh)) or {}
+        result = con.execute(sql, params or [])
+        columns = [desc[0] for desc in result.description]
+        return [dict(zip(columns, row)) for row in result.fetchall()]
     finally:
-        _done[0] = True
-        if mon is not None:
-            mon.join(timeout=0.5)
-
-    return data
+        con.close()
 
 
-# ---------------------------------------------------------------------------
-# Section loaders  (internal; called with verbose=True from startup_load_sde)
-# ---------------------------------------------------------------------------
+def _query_one(sql: str, params: list[Any] | None = None) -> dict | None:
+    rows = _query_rows(sql, params)
+    return rows[0] if rows else None
 
-def _load_types(verbose: bool = True) -> None:
+
+def _load_yaml(rel_path: str) -> Any:
+    path = _sde_root() / rel_path
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as handle:
+        return yaml.load(handle, Loader=_yaml_loader())
+
+
+def _warm_types() -> None:
     global _type_id_to_name, _name_to_type_id, _type_to_group, _type_to_market_group
     if _type_id_to_name is not None:
         return
-
     _type_id_to_name = {}
     _name_to_type_id = {}
     _type_to_group = {}
     _type_to_market_group = {}
-
-    if not os.path.exists(TYPES_YAML_PATH):
-        logger.error("types.yaml not found at %s", TYPES_YAML_PATH)
+    if _warehouse_ready():
+        rows = _query_rows(
+            "SELECT type_id, name_en, group_id, market_group_id FROM dim_types WHERE type_id IS NOT NULL"
+        )
+        for row in rows:
+            type_id = int(row["type_id"])
+            name = row.get("name_en")
+            if name:
+                _type_id_to_name[type_id] = name
+                _name_to_type_id[name.lower()] = type_id
+            _type_to_group[type_id] = row.get("group_id")
+            _type_to_market_group[type_id] = row.get("market_group_id")
         return
 
-    t0 = time.time()
-    data = _yaml_load_tracked("types", TYPES_YAML_PATH, t0, verbose)
-    total = len(data)
-    t0_iter = time.time()
-    for i, (tid_str, props) in enumerate(data.items()):
-        if verbose and i % 2000 == 0:
-            _pp("types", i, total, t0_iter)
-        try:
-            tid = int(tid_str)
-        except ValueError:
-            continue
-        name = props.get("name", {}).get("en")
+    data = _load_yaml("fsd/types.yaml") or {}
+    for type_id, props in data.items():
+        tid = int(type_id)
+        name = ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else None)
         if name:
             _type_id_to_name[tid] = name
             _name_to_type_id[name.lower()] = tid
-        gid = props.get("groupID")
-        if gid is not None:
-            _type_to_group[tid] = int(gid)
-        mgid = props.get("marketGroupID")
-        if mgid is not None:
-            _type_to_market_group[tid] = int(mgid)
-
-    if verbose:
-        _pp("types", total, total, t0, final=True)
+        _type_to_group[tid] = props.get("groupID")
+        _type_to_market_group[tid] = props.get("marketGroupID")
 
 
-def _load_groups(verbose: bool = True) -> None:
+def _warm_groups() -> None:
     global _groups
     if _groups is not None:
         return
-
     _groups = {}
-    if not os.path.exists(GROUPS_YAML_PATH):
-        logger.warning("groups.yaml not found at %s", GROUPS_YAML_PATH)
+    if _warehouse_ready():
+        rows = _query_rows("SELECT group_id, category_id, published, name_en FROM dim_groups")
+        for row in rows:
+            _groups[int(row["group_id"])] = {
+                "name": row.get("name_en") or f"Group {row['group_id']}",
+                "categoryID": row.get("category_id"),
+                "published": row.get("published"),
+            }
         return
-
-    t0 = time.time()
-    if verbose:
-        _file_read("groups", GROUPS_YAML_PATH)
-    with open(GROUPS_YAML_PATH, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    total = len(data)
-    for i, (gid_str, props) in enumerate(data.items()):
-        if verbose and i % 200 == 0:
-            _pp("groups", i, total, t0)
-        try:
-            gid = int(gid_str)
-        except ValueError:
-            continue
+    data = _load_yaml("fsd/groups.yaml") or {}
+    for group_id, props in data.items():
+        gid = int(group_id)
         _groups[gid] = {
-            "name":       props.get("name", {}).get("en", f"Group {gid}"),
+            "name": ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else f"Group {gid}"),
             "categoryID": props.get("categoryID"),
-            "published":  props.get("published", False),
+            "published": props.get("published", False),
         }
 
-    if verbose:
-        _pp("groups", total, total, t0, final=True)
 
-
-def _load_categories(verbose: bool = True) -> None:
+def _warm_categories() -> None:
     global _categories
     if _categories is not None:
         return
-
     _categories = {}
-    if not os.path.exists(CATEGORIES_YAML_PATH):
-        logger.warning("categories.yaml not found at %s", CATEGORIES_YAML_PATH)
+    if _warehouse_ready():
+        rows = _query_rows("SELECT category_id, name_en FROM dim_categories")
+        for row in rows:
+            _categories[int(row["category_id"])] = row.get("name_en") or f"Category {row['category_id']}"
         return
-
-    t0 = time.time()
-    if verbose:
-        _file_read("categories", CATEGORIES_YAML_PATH)
-    with open(CATEGORIES_YAML_PATH, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    total = len(data)
-    for i, (cid_str, props) in enumerate(data.items()):
-        if verbose and i % 20 == 0:
-            _pp("categories", i, total, t0)
-        try:
-            cid = int(cid_str)
-        except ValueError:
-            continue
-        _categories[cid] = props.get("name", {}).get("en", f"Category {cid}")
-
-    if verbose:
-        _pp("categories", total, total, t0, final=True)
+    data = _load_yaml("fsd/categories.yaml") or {}
+    for category_id, props in data.items():
+        cid = int(category_id)
+        _categories[cid] = ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else f"Category {cid}")
 
 
-def _load_market_groups(verbose: bool = True) -> None:
+def _warm_market_tree() -> None:
     global _market_flat, _market_tree
     if _market_tree is not None:
         return
-
     _market_flat = {}
-    if not os.path.exists(MARKET_GROUPS_PATH):
-        logger.error("marketGroups.yaml not found at %s", MARKET_GROUPS_PATH)
-        _market_tree = []
-        return
-
-    t0 = time.time()
-    if verbose:
-        _file_read("market_groups", MARKET_GROUPS_PATH)
-    with open(MARKET_GROUPS_PATH, "r", encoding="utf-8") as f:
-        raw_groups = yaml.safe_load(f) or {}
-    total_steps = len(raw_groups) * 2   # pass-1 + pass-3 estimate
-
-    # Pass 1: build flat map
-    for i, (gid_str, info) in enumerate(raw_groups.items()):
-        if verbose and i % 150 == 0:
-            _pp("market_groups", i, total_steps, t0)
-        try:
-            gid = int(gid_str)
-        except ValueError:
-            continue
-        _market_flat[gid] = {
-            "id":          gid,
-            "name":        info.get("nameID", {}).get("en", f"Unknown {gid}"),
-            "description": info.get("descriptionID", {}).get("en", ""),
-            "parent":      info.get("parentGroupID"),
-            "children":    [],
-            "types":       [],
-        }
-
-    # Pass 2: attach types (reuse already-loaded _type_to_market_group when available)
-    if _type_to_market_group is not None:
-        for tid, mgid in _type_to_market_group.items():
-            node = _market_flat.get(mgid)
+    if _warehouse_ready():
+        rows = _query_rows(
+            """
+            SELECT market_group_id, parent_group_id, name_en, description_en
+            FROM dim_market_groups
+            ORDER BY market_group_id
+            """
+        )
+        for row in rows:
+            gid = int(row["market_group_id"])
+            _market_flat[gid] = {
+                "id": gid,
+                "name": row.get("name_en") or f"Group {gid}",
+                "description": row.get("description_en") or "",
+                "parent": row.get("parent_group_id"),
+                "children": [],
+                "types": [],
+            }
+        type_rows = _query_rows("SELECT type_id, market_group_id FROM dim_types WHERE market_group_id IS NOT NULL")
+        for row in type_rows:
+            node = _market_flat.get(int(row["market_group_id"]))
             if node is not None:
-                node["types"].append(tid)
-    elif os.path.exists(TYPES_YAML_PATH):
-        if verbose:
-            msg = f"  {'market_groups':<24}  scanning types for marketGroupID ..."
-            print(f"\r{msg:<{_COL}}", end="", flush=True)
-        with open(TYPES_YAML_PATH, "r", encoding="utf-8") as f:
-            all_types = yaml.safe_load(f) or {}
-        for tid_str, props in all_types.items():
-            try:
-                tid = int(tid_str)
-            except ValueError:
-                continue
-            mgid = props.get("marketGroupID")
-            if mgid:
-                node = _market_flat.get(int(mgid))
-                if node is not None:
-                    node["types"].append(tid)
+                node["types"].append(int(row["type_id"]))
+    else:
+        data = _load_yaml("fsd/marketGroups.yaml") or {}
+        for group_id, props in data.items():
+            gid = int(group_id)
+            _market_flat[gid] = {
+                "id": gid,
+                "name": ((props.get("nameID") or {}).get("en") if isinstance(props.get("nameID"), dict) else f"Unknown {gid}"),
+                "description": ((props.get("descriptionID") or {}).get("en") if isinstance(props.get("descriptionID"), dict) else ""),
+                "parent": props.get("parentGroupID"),
+                "children": [],
+                "types": [],
+            }
+        _warm_types()
+        for type_id, market_group_id in (_type_to_market_group or {}).items():
+            if market_group_id in _market_flat:
+                _market_flat[market_group_id]["types"].append(type_id)
 
-    # Pass 3: wire children
-    n = len(raw_groups)
-    for i, grp in enumerate(_market_flat.values()):
-        if verbose and i % 150 == 0:
-            _pp("market_groups", n + i, total_steps, t0)
-        parent = grp["parent"]
-        if parent is not None:
-            parent_node = _market_flat.get(parent)
-            if parent_node is not None:
-                parent_node["children"].append(grp)
-
-    _market_tree = [g for g in _market_flat.values() if g["parent"] is None]
-
-    if verbose:
-        _pp("market_groups", total_steps, total_steps, t0, final=True)
+    for node in list(_market_flat.values()):
+        parent = node.get("parent")
+        if parent in _market_flat:
+            _market_flat[parent]["children"].append(node)
+    _market_tree = [node for node in _market_flat.values() if node.get("parent") not in _market_flat]
 
 
-# Regex patterns for fast universe file scanning (avoids full YAML parse)
-_RE_REGION_ID = re.compile(r"^regionID:\s+(\d+)", re.MULTILINE)
-_RE_SYS_ID    = re.compile(r"^solarSystemID:\s+(\d+)", re.MULTILINE)
-_RE_SECURITY  = re.compile(r"^security:\s+([-\d.eE+]+)", re.MULTILINE)
-
-
-def _load_universe(verbose: bool = True) -> None:
+def _warm_universe() -> None:
     global _system_id_to_region, _system_id_to_name, _system_id_to_security, _region_id_to_name
     if _system_id_to_region is not None:
         return
-
-    _system_id_to_region   = {}
-    _system_id_to_name     = {}
+    _system_id_to_region = {}
+    _system_id_to_name = {}
     _system_id_to_security = {}
-    _region_id_to_name     = {}
-
-    if not os.path.exists(UNIVERSE_PATH):
-        logger.warning("Universe path not found: %s", UNIVERSE_PATH)
+    _region_id_to_name = {}
+    if _warehouse_ready():
+        rows = _query_rows("SELECT system_id, region_id, system_name, security FROM dim_systems")
+        for row in rows:
+            system_id = int(row["system_id"])
+            _system_id_to_region[system_id] = row.get("region_id")
+            _system_id_to_name[system_id] = row.get("system_name") or f"SystemID {system_id}"
+            _system_id_to_security[system_id] = row.get("security")
+        region_rows = _query_rows("SELECT region_id, region_name FROM dim_regions")
+        for row in region_rows:
+            _region_id_to_name[int(row["region_id"])] = row.get("region_name") or f"RegionID {row['region_id']}"
         return
 
-    if verbose:
-        msg = f"  {'universe':<24}  scanning directory tree ..."
-        print(f"\r{msg:<{_COL}}", end="", flush=True)
-
-    # Single os.walk to collect region.yaml and solarsystem.yaml paths
-    region_files: list[tuple[str, str]] = []   # (dir, path)
-    ss_files:     list[tuple[str, str]] = []   # (dir, path)
-
-    for root, _dirs, files in os.walk(UNIVERSE_PATH):
-        if "region.yaml" in files:
-            region_files.append((root, os.path.join(root, "region.yaml")))
-        if "solarsystem.yaml" in files:
-            ss_files.append((root, os.path.join(root, "solarsystem.yaml")))
-
-    # Phase 1: build region-dir -> regionID map (few hundred files, fast)
-    region_dir_to_id: dict[str, int] = {}
-    for rdir, rpath in region_files:
-        try:
-            txt = open(rpath, "r", encoding="utf-8").read()
-            m = _RE_REGION_ID.search(txt)
-            if m:
-                rid = int(m.group(1))
-                region_dir_to_id[os.path.normpath(rdir)] = rid
-                _region_id_to_name[rid] = os.path.basename(rdir)
-        except Exception:
-            pass
-
-    # Phase 2: read each solarsystem.yaml with live progress
-    total = len(ss_files)
-    t0 = time.time()
-
-    for done, (sdir, sspath) in enumerate(ss_files):
-        if verbose and done % 100 == 0:
-            _pp("universe", done, total, t0)
-        try:
-            txt = open(sspath, "r", encoding="utf-8").read()
-            m_id = _RE_SYS_ID.search(txt)
-            if not m_id:
-                continue
-            sid = int(m_id.group(1))
-            _system_id_to_name[sid] = os.path.basename(sdir)
-            m_sec = _RE_SECURITY.search(txt)
-            if m_sec:
-                _system_id_to_security[sid] = float(m_sec.group(1))
-            # Region is 2 levels up: system_dir -> constellation_dir -> region_dir
-            region_dir = os.path.normpath(os.path.dirname(sdir))
-            rid = region_dir_to_id.get(region_dir)
-            if rid is not None:
-                _system_id_to_region[sid] = rid
-        except Exception as exc:
-            logger.debug("Error reading %s: %s", sspath, exc)
-
-    if verbose:
-        _pp("universe", total, total, t0, final=True)
+    for system_path in _sde_root().rglob("solarsystem.yaml"):
+        with system_path.open("r", encoding="utf-8") as handle:
+            data = yaml.load(handle, Loader=_yaml_loader()) or {}
+        system_id = int(data.get("solarSystemID"))
+        _system_id_to_name[system_id] = system_path.parent.name
+        _system_id_to_security[system_id] = data.get("security")
+        region_path = system_path.parent.parent.parent / "region.yaml"
+        if region_path.exists():
+            with region_path.open("r", encoding="utf-8") as handle:
+                region = yaml.load(handle, Loader=_yaml_loader()) or {}
+            region_id = region.get("regionID")
+            _system_id_to_region[system_id] = region_id
+            if region_id is not None:
+                _region_id_to_name[int(region_id)] = region_path.parent.name
 
 
-def _load_blueprints(verbose: bool = True) -> None:
+def _warm_blueprints() -> None:
     global _blueprints
     if _blueprints is not None:
         return
-
     _blueprints = {}
-    if not os.path.exists(BLUEPRINTS_YAML_PATH):
-        logger.warning("blueprints.yaml not found at %s", BLUEPRINTS_YAML_PATH)
+    if _warehouse_ready():
+        rows = _query_rows("SELECT blueprint_type_id, max_production_limit, manufacturing_time, other_activities_json FROM fact_blueprints")
+        for row in rows:
+            _blueprints[int(row["blueprint_type_id"])] = {
+                "blueprintTypeID": int(row["blueprint_type_id"]),
+                "maxProductionLimit": row.get("max_production_limit"),
+                "materials": [],
+                "products": [],
+                "time": row.get("manufacturing_time"),
+                "activities": json.loads(row.get("other_activities_json") or "{}"),
+            }
+        for row in _query_rows("SELECT blueprint_type_id, activity, material_type_id, quantity FROM fact_blueprint_materials"):
+            bp = _blueprints.setdefault(int(row["blueprint_type_id"]), {"materials": [], "products": [], "activities": {}})
+            if row.get("activity") == "manufacturing":
+                bp.setdefault("materials", []).append({"typeID": row.get("material_type_id"), "quantity": row.get("quantity")})
+        for row in _query_rows("SELECT blueprint_type_id, activity, product_type_id, quantity, probability FROM fact_blueprint_products"):
+            bp = _blueprints.setdefault(int(row["blueprint_type_id"]), {"materials": [], "products": [], "activities": {}})
+            if row.get("activity") == "manufacturing":
+                entry = {"typeID": row.get("product_type_id"), "quantity": row.get("quantity")}
+                if row.get("probability") is not None:
+                    entry["probability"] = row.get("probability")
+                bp.setdefault("products", []).append(entry)
         return
 
-    t0 = time.time()
-    data = _yaml_load_tracked("blueprints", BLUEPRINTS_YAML_PATH, t0, verbose)
-    total = len(data)
-    t0_iter = time.time()
-    for i, (bp_id_str, bp) in enumerate(data.items()):
-        if verbose and i % 200 == 0:
-            _pp("blueprints", i, total, t0_iter)
-        try:
-            bp_id = int(bp_id_str)
-        except ValueError:
-            continue
-        acts = bp.get("activities", {})
-        mfg  = acts.get("manufacturing", {})
-        _blueprints[bp_id] = {
-            "blueprintTypeID":    bp_id,
-            "maxProductionLimit": bp.get("maxProductionLimit"),
-            "materials":          mfg.get("materials", []),
-            "products":           mfg.get("products", []),
-            "time":               mfg.get("time"),
-            "activities":         {k: v for k, v in acts.items() if k != "manufacturing"},
+    data = _load_yaml("fsd/blueprints.yaml") or {}
+    for blueprint_type_id, props in data.items():
+        activities = props.get("activities") or {}
+        manufacturing = activities.get("manufacturing") or {}
+        _blueprints[int(blueprint_type_id)] = {
+            "blueprintTypeID": int(blueprint_type_id),
+            "maxProductionLimit": props.get("maxProductionLimit"),
+            "materials": manufacturing.get("materials", []),
+            "products": manufacturing.get("products", []),
+            "time": manufacturing.get("time"),
+            "activities": {key: value for key, value in activities.items() if key != "manufacturing"},
         }
 
-    if verbose:
-        _pp("blueprints", total, total, t0, final=True)
 
-
-def _load_type_materials(verbose: bool = True) -> None:
+def _warm_type_materials() -> None:
     global _type_materials
     if _type_materials is not None:
         return
-
     _type_materials = {}
-    if not os.path.exists(TYPE_MATERIALS_PATH):
-        logger.warning("typeMaterials.yaml not found at %s", TYPE_MATERIALS_PATH)
+    if _warehouse_ready():
+        rows = _query_rows("SELECT type_id, material_type_id, quantity FROM fact_type_materials")
+        for row in rows:
+            _type_materials.setdefault(int(row["type_id"]), []).append(
+                {"materialTypeID": row.get("material_type_id"), "quantity": row.get("quantity")}
+            )
         return
-
-    t0 = time.time()
-    data = _yaml_load_tracked("type_materials", TYPE_MATERIALS_PATH, t0, verbose)
-    total = len(data)
-    t0_iter = time.time()
-    for i, (tid_str, entry) in enumerate(data.items()):
-        if verbose and i % 500 == 0:
-            _pp("type_materials", i, total, t0_iter)
-        try:
-            tid = int(tid_str)
-        except ValueError:
-            continue
-        _type_materials[tid] = entry.get("materials", [])
-
-    if verbose:
-        _pp("type_materials", total, total, t0, final=True)
+    data = _load_yaml("fsd/typeMaterials.yaml") or {}
+    for type_id, props in data.items():
+        _type_materials[int(type_id)] = props.get("materials", [])
 
 
-def _load_type_dogma(verbose: bool = True) -> None:
+def _warm_type_dogma() -> None:
     global _type_dogma
     if _type_dogma is not None:
         return
-
     _type_dogma = {}
-    if not os.path.exists(TYPE_DOGMA_PATH):
-        logger.warning("typeDogma.yaml not found at %s", TYPE_DOGMA_PATH)
+    if _warehouse_ready():
+        attr_rows = _query_rows("SELECT type_id, attribute_id, value FROM fact_type_dogma_attributes")
+        for row in attr_rows:
+            entry = _type_dogma.setdefault(int(row["type_id"]), {"dogmaAttributes": {}, "dogmaEffects": []})
+            entry["dogmaAttributes"][str(int(row["attribute_id"]))] = row.get("value")
+        effect_rows = _query_rows("SELECT type_id, effect_id FROM fact_type_dogma_effects")
+        for row in effect_rows:
+            entry = _type_dogma.setdefault(int(row["type_id"]), {"dogmaAttributes": {}, "dogmaEffects": []})
+            entry["dogmaEffects"].append(int(row["effect_id"]))
         return
-
-    t0 = time.time()
-    data = _yaml_load_tracked("type_dogma", TYPE_DOGMA_PATH, t0, verbose)
-    total = len(data)
-    t0_iter = time.time()
-    for i, (tid_str, entry) in enumerate(data.items()):
-        if verbose and i % 1000 == 0:
-            _pp("type_dogma", i, total, t0_iter)
-        try:
-            tid = int(tid_str)
-        except ValueError:
-            continue
-        _type_dogma[tid] = {
-            "dogmaAttributes": {
-                str(a["attributeID"]): a.get("value")
-                for a in entry.get("dogmaAttributes", [])
-            },
-            "dogmaEffects": [
-                e["effectID"] for e in entry.get("dogmaEffects", [])
-            ],
+    data = _load_yaml("fsd/typeDogma.yaml") or {}
+    for type_id, props in data.items():
+        _type_dogma[int(type_id)] = {
+            "dogmaAttributes": {str(item["attributeID"]): item.get("value") for item in props.get("dogmaAttributes", [])},
+            "dogmaEffects": [item["effectID"] for item in props.get("dogmaEffects", [])],
         }
-
-    if verbose:
-        _pp("type_dogma", total, total, t0, final=True)
-
-
-# ---------------------------------------------------------------------------
-# Master startup loader
-# ---------------------------------------------------------------------------
-
-# Map of section key -> (loader_fn, description)
-_SECTION_LOADERS: dict[str, tuple] = {
-    "types":          (_load_types,          "type ID <-> name maps"),
-    "groups":         (_load_groups,         "item group hierarchy"),
-    "categories":     (_load_categories,     "item categories"),
-    "market_groups":  (_load_market_groups,  "market group tree"),
-    "universe":       (_load_universe,       "solar-system -> region map"),
-    "blueprints":     (_load_blueprints,     "manufacturing blueprints"),
-    "type_materials": (_load_type_materials, "reprocessing materials"),
-    "type_dogma":     (_load_type_dogma,     "item dogma attributes"),
-}
-
-# Default on/off for each section (overridden in config.yaml -> SDE)
-_SECTION_DEFAULTS: dict[str, bool] = {
-    "types":          True,
-    "groups":         True,
-    "categories":     True,
-    "market_groups":  True,
-    "universe":       True,
-    "blueprints":     False,
-    "type_materials": False,
-    "type_dogma":     False,
-}
 
 
 def startup_load_sde(cfg: dict | None = None) -> None:
-    """Load all enabled SDE sections at process startup with live console progress.
-
-    cfg is the dict from config.yaml under the \'SDE\' key (may be None / empty).
-    Call this once from main.py before starting Flask.
-    """
-    global _disabled_sections
+    global _startup_cfg, _database_path
     cfg = cfg or {}
-
-    # Resolve per-section enabled/disabled
-    sections: dict[str, bool] = {
+    _database_path = sde_store.get_database_path(cfg)
+    _startup_cfg = {
         key: bool(cfg.get(f"load_{key}", default))
         for key, default in _SECTION_DEFAULTS.items()
     }
 
-    enabled  = [k for k, v in sections.items() if v]
-    disabled = [k for k, v in sections.items() if not v]
-    _disabled_sections = set(disabled)
-
-    # Header
+    backend = "DuckDB warehouse" if _warehouse_ready() else "YAML fallback"
     print()
-    _divider()
-    print(f"  EVE SDE Startup Load  --  path: {os.path.abspath(BASE_SDE_PATH)}")
-    print(f"  Enabled  : {', '.join(enabled) if enabled else '(none)'}")
-    if disabled:
-        print(f"  Disabled : {', '.join(disabled)}  (edit SDE section in config.yaml to change)")
-    _divider()
-    print(
-        f"  {'Section':<24}  {'files':>17}  {'  pct':>7}"
-        f"  {'time':>11}  {'rate':>12}"
-    )
-    _divider()
+    print(f"[SDE] backend={backend} path={_warehouse_path()}")
+    warm = [key for key, enabled in _startup_cfg.items() if enabled]
+    if warm:
+        print(f"[SDE] warming: {', '.join(warm)}")
+    for key in warm:
+        {
+            "types": _warm_types,
+            "groups": _warm_groups,
+            "categories": _warm_categories,
+            "market_groups": _warm_market_tree,
+            "universe": _warm_universe,
+            "blueprints": _warm_blueprints,
+            "type_materials": _warm_type_materials,
+            "type_dogma": _warm_type_dogma,
+        }[key]()
 
-    if not enabled:
-        print("  (no sections enabled -- SDE data will lazy-load on first use)")
-        _divider()
-        print()
-        return
-
-    master_t0 = time.time()
-    loaded_counts: dict[str, int] = {}
-
-    for key in _SECTION_LOADERS:
-        if key not in enabled:
-            continue
-        loader_fn, _ = _SECTION_LOADERS[key]
-        loader_fn(verbose=True)
-        loaded_counts[key] = _count_cache(key)
-
-    # Footer
-    total_elapsed = time.time() - master_t0
-    _divider()
-    print(f"  SDE load complete -- {len(enabled)} section(s) -- {total_elapsed:.1f}s total")
-    summary_parts = [f"{count:,} {key.replace('_', ' ')}" for key, count in loaded_counts.items() if count]
-    if summary_parts:
-        line = "  Loaded: "
-        for part in summary_parts:
-            candidate = line + part + ", "
-            if len(candidate) > _COL - 2:
-                print(line.rstrip(", "))
-                line = "    " + part + ", "
-            else:
-                line = candidate
-        print(line.rstrip(", "))
-    _divider()
-    print()
-
-
-def _count_cache(key: str) -> int:
-    """Return the number of items in a named cache."""
-    m = {
-        "types":          _type_id_to_name,
-        "groups":         _groups,
-        "categories":     _categories,
-        "market_groups":  _market_flat,
-        "universe":       _system_id_to_region,
-        "blueprints":     _blueprints,
-        "type_materials": _type_materials,
-        "type_dogma":     _type_dogma,
-    }
-    cache = m.get(key)
-    return len(cache) if cache else 0
-
-
-# ---------------------------------------------------------------------------
-# Cache management
-# ---------------------------------------------------------------------------
 
 def clear_caches() -> None:
-    """Reset all in-memory SDE caches."""
     global _type_id_to_name, _name_to_type_id, _type_to_group, _type_to_market_group
-    global _groups, _categories
-    global _market_flat, _market_tree
+    global _groups, _categories, _market_flat, _market_tree
     global _system_id_to_region, _system_id_to_name, _system_id_to_security, _region_id_to_name
     global _blueprints, _type_materials, _type_dogma
-    _type_id_to_name = _name_to_type_id = _type_to_group = _type_to_market_group = None
-    _groups = _categories = None
+    _type_id_to_name = None
+    _name_to_type_id = None
+    _type_to_group = None
+    _type_to_market_group = None
+    _groups = None
+    _categories = None
     _market_flat = {}
     _market_tree = None
-    _system_id_to_region = _system_id_to_name = _system_id_to_security = _region_id_to_name = None
-    _blueprints = _type_materials = _type_dogma = None
-    logger.info("SDE caches cleared.")
+    _system_id_to_region = None
+    _system_id_to_name = None
+    _system_id_to_security = None
+    _region_id_to_name = None
+    _blueprints = None
+    _type_materials = None
+    _type_dogma = None
 
 
 def refresh_all_caches() -> None:
-    """Force a full reload of all previously-enabled SDE sections."""
-    prev_disabled = set(_disabled_sections)
     clear_caches()
-    enabled = [k for k in _SECTION_DEFAULTS if k not in prev_disabled]
-    cfg = {f"load_{k}": (k in enabled) for k in _SECTION_DEFAULTS}
-    startup_load_sde(cfg)
+    startup_load_sde({f"load_{key}": value for key, value in _startup_cfg.items()})
 
-
-# ---------------------------------------------------------------------------
-# Public lookup helpers -- all fail-safe when a section is disabled
-# ---------------------------------------------------------------------------
-
-def _lazy(section: str, loader_fn) -> bool:
-    """Return True if the section is available (loading lazily when needed).
-
-    If the section was explicitly disabled in startup_load_sde(), returns False
-    immediately without touching disk.
-    """
-    if section in _disabled_sections:
-        return False
-    loader_fn(verbose=False)
-    return True
-
-
-# Types
 
 def name_from_type_id(type_id: int) -> str:
-    if not _lazy("types", _load_types):
-        return f"TypeID {type_id}"
-    return _type_id_to_name.get(type_id, f"Unknown TypeID {type_id}")
+    if _type_id_to_name is not None:
+        return _type_id_to_name.get(type_id, f"Unknown TypeID {type_id}")
+    if _warehouse_ready():
+        row = _query_one("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id])
+        return (row or {}).get("name_en") or f"Unknown TypeID {type_id}"
+    _warm_types()
+    return (_type_id_to_name or {}).get(type_id, f"Unknown TypeID {type_id}")
 
 
 def type_id_from_name(name: str) -> int | None:
-    if not _lazy("types", _load_types):
-        return None
-    return _name_to_type_id.get(name.lower())
+    normalized = name.lower()
+    if _name_to_type_id is not None:
+        return _name_to_type_id.get(normalized)
+    if _warehouse_ready():
+        row = _query_one("SELECT type_id FROM dim_types WHERE lower(name_en) = ?", [normalized])
+        return int(row["type_id"]) if row and row.get("type_id") is not None else None
+    _warm_types()
+    return (_name_to_type_id or {}).get(normalized)
+
+
+def suggest_type_names(prefix: str, limit: int = 10) -> list[str]:
+    normalized = prefix.strip().lower()
+    if not normalized:
+        return []
+    if _name_to_type_id is not None:
+        matches = [name for name in _name_to_type_id if name.startswith(normalized)]
+        return [(_type_id_to_name or {}).get(_name_to_type_id[name], name) for name in matches[:limit]]
+    if _warehouse_ready():
+        rows = _query_rows(
+            "SELECT name_en FROM dim_types WHERE lower(name_en) LIKE ? ORDER BY name_en LIMIT ?",
+            [normalized + "%", limit],
+        )
+        return [row["name_en"] for row in rows if row.get("name_en")]
+    _warm_types()
+    return suggest_type_names(prefix, limit=limit)
 
 
 def group_id_from_type_id(type_id: int) -> int | None:
-    if not _lazy("types", _load_types):
-        return None
-    return _type_to_group.get(type_id)
+    if _type_to_group is not None:
+        return _type_to_group.get(type_id)
+    if _warehouse_ready():
+        row = _query_one("SELECT group_id FROM dim_types WHERE type_id = ?", [type_id])
+        return row.get("group_id") if row else None
+    _warm_types()
+    return (_type_to_group or {}).get(type_id)
 
 
 def market_group_from_type_id(type_id: int) -> int | None:
-    if not _lazy("types", _load_types):
-        return None
-    return _type_to_market_group.get(type_id)
+    if _type_to_market_group is not None:
+        return _type_to_market_group.get(type_id)
+    if _warehouse_ready():
+        row = _query_one("SELECT market_group_id FROM dim_types WHERE type_id = ?", [type_id])
+        return row.get("market_group_id") if row else None
+    _warm_types()
+    return (_type_to_market_group or {}).get(type_id)
 
-
-# Groups
 
 def group_info(group_id: int) -> dict | None:
-    """Return {name, categoryID, published} for a groupID, or None."""
-    if not _lazy("groups", _load_groups):
-        return None
-    return _groups.get(group_id)
+    _warm_groups()
+    return (_groups or {}).get(group_id)
 
 
 def group_name(group_id: int) -> str:
@@ -741,229 +468,130 @@ def category_id_from_group(group_id: int) -> int | None:
 
 
 def category_id_from_type(type_id: int) -> int | None:
-    gid = group_id_from_type_id(type_id)
-    if gid is None:
-        return None
-    return category_id_from_group(gid)
+    group_id = group_id_from_type_id(type_id)
+    return category_id_from_group(group_id) if group_id is not None else None
 
-
-# Categories
 
 def category_name(category_id: int) -> str:
-    if not _lazy("categories", _load_categories):
-        return f"CategoryID {category_id}"
-    return _categories.get(category_id, f"CategoryID {category_id}")
+    _warm_categories()
+    return (_categories or {}).get(category_id, f"CategoryID {category_id}")
 
-
-# Market groups
 
 def load_market_tree() -> list:
-    """Return (and lazily load) the market-group tree.  Back-compat entry point."""
-    if not _lazy("market_groups", _load_market_groups):
-        return []
+    _warm_market_tree()
     return _market_tree or []
 
 
 def get_flat_market_map() -> dict[int, str]:
-    """Return {marketGroupID: name} flat dict."""
-    if not _lazy("market_groups", _load_market_groups):
-        return {}
-    return {gid: grp["name"] for gid, grp in _market_flat.items()}
+    _warm_market_tree()
+    return {group_id: node["name"] for group_id, node in _market_flat.items()}
 
 
 def get_types_in_group(group_id: int) -> list[int]:
-    """Return all typeIDs in a market-group (recursive through children)."""
-    if not _lazy("market_groups", _load_market_groups):
-        return []
-    result: list[int] = []
-
-    def _recurse(gid: int) -> None:
-        grp = _market_flat.get(gid)
-        if not grp:
+    _warm_market_tree()
+    results: list[int] = []
+    def _walk(node_id: int) -> None:
+        node = _market_flat.get(node_id)
+        if not node:
             return
-        result.extend(grp["types"])
-        for child in grp["children"]:
-            _recurse(child["id"])
-
-    _recurse(group_id)
-    return result
+        results.extend(node.get("types", []))
+        for child in node.get("children", []):
+            _walk(child["id"])
+    _walk(group_id)
+    return results
 
 
 def resolve_type_ids(raw_query: str) -> set[int]:
-    """Parse a comma-separated string of names/IDs into a set of typeIDs."""
-    if not _lazy("types", _load_types):
-        return set()
-    ids: set[int] = set()
+    values: set[int] = set()
     for token in raw_query.split(","):
-        tok = token.strip()
-        if not tok:
+        value = token.strip()
+        if not value:
             continue
-        if tok.isdigit():
-            ids.add(int(tok))
-        else:
-            tid = _name_to_type_id.get(tok.lower())
-            if tid:
-                ids.add(tid)
-    return ids
+        if value.isdigit():
+            values.add(int(value))
+            continue
+        type_id = type_id_from_name(value)
+        if type_id is not None:
+            values.add(type_id)
+    return values
 
-
-# Universe
 
 def region_id_from_system_id(system_id: int) -> int | None:
-    if not _lazy("universe", _load_universe):
-        return None
-    return _system_id_to_region.get(system_id)
+    _warm_universe()
+    return (_system_id_to_region or {}).get(system_id)
 
 
 def system_name_from_id(system_id: int) -> str:
-    if not _lazy("universe", _load_universe):
-        return f"SystemID {system_id}"
-    return _system_id_to_name.get(system_id, f"SystemID {system_id}")
+    _warm_universe()
+    return (_system_id_to_name or {}).get(system_id, f"SystemID {system_id}")
 
 
 def security_from_system_id(system_id: int) -> float | None:
-    if not _lazy("universe", _load_universe):
-        return None
-    return _system_id_to_security.get(system_id)
+    _warm_universe()
+    return (_system_id_to_security or {}).get(system_id)
 
 
 def region_name_from_id(region_id: int) -> str:
-    if not _lazy("universe", _load_universe):
-        return f"RegionID {region_id}"
-    return _region_id_to_name.get(region_id, f"RegionID {region_id}")
+    _warm_universe()
+    return (_region_id_to_name or {}).get(region_id, f"RegionID {region_id}")
 
-
-# Blueprints
 
 def blueprint_for_type(blueprint_type_id: int) -> dict | None:
-    """Return manufacturing data for a blueprintTypeID, or None."""
-    if not _lazy("blueprints", _load_blueprints):
-        return None
-    return _blueprints.get(blueprint_type_id)
+    if _blueprints is not None:
+        return _blueprints.get(blueprint_type_id)
+    if _warehouse_ready():
+        _warm_blueprints()
+        return (_blueprints or {}).get(blueprint_type_id)
+    _warm_blueprints()
+    return (_blueprints or {}).get(blueprint_type_id)
 
-
-# Type materials
 
 def reprocess_materials(type_id: int) -> list[dict]:
-    """Return [{materialTypeID, quantity}] for the given typeID."""
-    if not _lazy("type_materials", _load_type_materials):
-        return []
-    return _type_materials.get(type_id, [])
+    if _type_materials is not None:
+        return _type_materials.get(type_id, [])
+    if _warehouse_ready():
+        rows = _query_rows(
+            "SELECT material_type_id, quantity FROM fact_type_materials WHERE type_id = ? ORDER BY material_type_id",
+            [type_id],
+        )
+        return [{"materialTypeID": row["material_type_id"], "quantity": row["quantity"]} for row in rows]
+    _warm_type_materials()
+    return (_type_materials or {}).get(type_id, [])
 
-
-# Type dogma
 
 def dogma_attributes(type_id: int) -> dict[str, float]:
-    """Return {attributeID: value} dict for typeID."""
-    if not _lazy("type_dogma", _load_type_dogma):
-        return {}
-    entry = _type_dogma.get(type_id, {})
-    return entry.get("dogmaAttributes", {})
+    if _type_dogma is not None:
+        return (_type_dogma.get(type_id) or {}).get("dogmaAttributes", {})
+    if _warehouse_ready():
+        rows = _query_rows(
+            "SELECT attribute_id, value FROM fact_type_dogma_attributes WHERE type_id = ? ORDER BY attribute_id",
+            [type_id],
+        )
+        return {str(int(row["attribute_id"])): row["value"] for row in rows if row.get("attribute_id") is not None}
+    _warm_type_dogma()
+    return (_type_dogma.get(type_id) or {}).get("dogmaAttributes", {})
 
 
 def dogma_effects(type_id: int) -> list[int]:
-    """Return list of effectIDs for typeID."""
-    if not _lazy("type_dogma", _load_type_dogma):
-        return []
-    entry = _type_dogma.get(type_id, {})
-    return entry.get("dogmaEffects", [])
+    if _type_dogma is not None:
+        return (_type_dogma.get(type_id) or {}).get("dogmaEffects", [])
+    if _warehouse_ready():
+        rows = _query_rows(
+            "SELECT effect_id FROM fact_type_dogma_effects WHERE type_id = ? ORDER BY effect_id",
+            [type_id],
+        )
+        return [int(row["effect_id"]) for row in rows if row.get("effect_id") is not None]
+    _warm_type_dogma()
+    return (_type_dogma.get(type_id) or {}).get("dogmaEffects", [])
 
-
-# ---------------------------------------------------------------------------
-# Back-compat shims
-# ---------------------------------------------------------------------------
 
 def load_types_data() -> None:
-    """Backward-compatible entry point kept for older callers."""
-    if "types" not in _disabled_sections:
-        _load_types(verbose=False)
+    _warm_types()
 
 
 def _load_system_to_region_map() -> None:
-    """Backward-compatible internal call -- delegates to _load_universe()."""
-    _load_universe(verbose=False)
+    _warm_universe()
 
-
-# ---------------------------------------------------------------------------
-# Universe DB table builder  (separate from the in-memory cache)
-# ---------------------------------------------------------------------------
 
 def build_universe_table() -> None:
-    """Walk the SDE universe folder and upsert SolarSystem + Stargate DB rows.
-
-    Uses the in-memory universe cache if already loaded.
-    Note: current SDE uses solarsystem.yaml (not solarsystem.staticdata.yaml).
-    """
-    session = get_public_session()
-    logger.info("Starting build_universe_table()")
-
-    _load_universe(verbose=False)   # ensure cache is live
-
-    stargate_map: dict[int, tuple[int, int]] = {}
-
-    for root, _dirs, files in os.walk(UNIVERSE_PATH):
-        if "solarsystem.yaml" not in files:
-            continue
-        path = os.path.join(root, "solarsystem.yaml")
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        except Exception:
-            continue
-
-        sid = data.get("solarSystemID")
-        if sid is None:
-            continue
-        sid = int(sid)
-
-        name     = _system_id_to_name.get(sid, os.path.basename(root))
-        rid      = _system_id_to_region.get(sid)
-        security = data.get("security", 0.0)
-        planets  = data.get("planets", [])
-        if isinstance(planets, list):
-            n_planets = len(planets)
-            n_moons   = sum(len(p.get("moons", [])) for p in planets if isinstance(p, dict))
-        else:
-            n_planets = 0
-            n_moons   = 0
-        gates = data.get("stargates", {}) or {}
-
-        session.merge(SolarSystem(
-            system_id        = sid,
-            system_name      = name,
-            constellation_id = data.get("constellationID"),
-            region_id        = rid,
-            planets          = n_planets,
-            moons            = n_moons,
-            stargates        = len(gates),
-            security         = security,
-        ))
-
-        for gstr, ginfo in (gates.items() if isinstance(gates, dict) else []):
-            gid  = int(gstr)
-            dest = int(ginfo.get("destination", 0))
-            pos  = ginfo.get("position", [0.0, 0.0, 0.0])
-            typ  = ginfo.get("typeID")
-            gate = Stargate(
-                stargate_id           = gid,
-                system_id             = sid,
-                destination_gate_id   = dest,
-                destination_system_id = None,
-                type_id               = typ,
-                position              = pos,
-            )
-            session.merge(gate)
-            stargate_map[gid] = (sid, dest)
-
-            if dest in stargate_map:
-                other_sid, _ = stargate_map[dest]
-                existing = session.get(Stargate, dest)
-                if existing:
-                    existing.destination_system_id = sid
-                    session.merge(existing)
-                gate.destination_system_id = other_sid
-                session.merge(gate)
-
-    session.commit()
-    session.close()
-    logger.info("build_universe_table() complete")
+    logger.info("build_universe_table() is deprecated; universe data now lives in the DuckDB SDE warehouse.")

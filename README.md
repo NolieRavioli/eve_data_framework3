@@ -59,16 +59,23 @@ You can safely pre-create a virtual environment, install dependencies manually, 
 
 ## 4. Database Architecture
 
-### 4.1 Public Database (`_publicData/public.db`)
+### 4.1 Public Operational Database (`_publicData/public.db`)
 
-Created by `initialize_public_database`, this SQLite file holds data that is safe to share across all owners:
+Created by `initialize_public_database`, this SQLite file holds shared live data:
 
 - `users`: Character-to-owner mapping used when tokens are refreshed automatically.
-- `systems` & `stargates`: Derived from the SDE to provide navigation, region lookups, and topology.
 - `structures` & `market_structures`: Station metadata including solar system, region, ownership, and last-seen timestamps.
 - `market_orders` & `public_contracts`: Latest snapshots of public order books and contracts.
 
-### 4.2 Private Databases (`_privateData/<owner_id>.db`)
+### 4.2 SDE Warehouse (`_publicData/sde.duckdb`)
+
+This DuckDB file holds the read-heavy static export:
+
+- Raw coverage tables for every top-level `_sde/fsd/*.yaml` and `_sde/bsd/*.yaml` file.
+- Typed marts such as `dim_types`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, and dogma/material tables.
+- Manifest tables that record build timestamps, source hashes, and dataset row counts.
+
+### 4.3 Private Databases (`_privateData/<owner_id>.db`)
 
 When a character logs in or data is pulled for a new owner, `initialize_private_database` provisions a dedicated SQLite database. It stores sensitive information such as:
 
@@ -110,9 +117,9 @@ All fetcher modules import `esi_get`, `esi_post`, or `esi_request` from this hel
 Triggering “Refresh SDE” in the UI, or calling the underlying helper directly, performs the following steps (`esi/public/static_data.py` and `util/sde.py`):
 
 1. Download the latest SDE ZIP from CCP.
-2. Extract YAML files into `_sde_tmp`, filter to supported languages, and move the curated data into `_sde/`.
+2. Extract YAML files into `_sde/` and prune multilingual fields to the configured supported languages.
 3. Rebuild cached lookup dictionaries, including solar system ⇄ region mappings.
-4. Regenerate the `systems` and `stargates` tables using `util.sde.build_universe_table` so the relational data mirrors the fresh export.
+4. Rebuild `_publicData/sde.duckdb` and refresh the hot lookup caches exposed through `util.sde`.
 
 During this process, log lines are captured by the console template so the operator can monitor progress.
 

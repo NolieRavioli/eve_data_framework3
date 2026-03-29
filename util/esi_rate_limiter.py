@@ -1,13 +1,11 @@
 """Centralised ESI request buffering with floating window rate limiting support."""
 
-from __future__ import annotations
-
 import logging
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Optional, Tuple
+from typing import Callable, Deque, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -429,12 +427,4 @@ def esi_get(url: str, **kwargs) -> requests.Response:
 
 def esi_post(url: str, **kwargs) -> requests.Response:
     return esi_request("POST", url, **kwargs)
-
-
-def esi_put(url: str, **kwargs) -> requests.Response:
-    return esi_request("PUT", url, **kwargs)
-
-
-def esi_delete(url: str, **kwargs) -> requests.Response:
-    return esi_request("DELETE", url, **kwargs)
 

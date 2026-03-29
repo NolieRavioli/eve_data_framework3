@@ -11,6 +11,7 @@ Environment Variables:
 # Disabled sections will lazy-load on first use (or return defaults if they're
 # expensive enough that you never want them).
 SDE:
+  database_file: "_publicData/sde.duckdb"
   load_types: true           # type ID <-> name maps          (~26 MB, ~4s)
   load_groups: true          # item group hierarchy            (~0.3 MB, fast)
   load_categories: true      # item categories                 (~0.1 MB, fast)

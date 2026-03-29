@@ -6,8 +6,8 @@ from datetime import datetime
 import time
 from typing import Optional
 
-from db.database import get_public_session, get_private_session
-from db.models import Character, Structure, MarketStructure, MarketOrder
+from db.database import get_public_session
+from db.models import Structure, MarketStructure, MarketOrder
 from util.sde import region_id_from_system_id
 from util.utils import get_token
 from util.esi_rate_limiter import esi_get

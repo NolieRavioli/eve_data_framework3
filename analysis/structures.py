@@ -3,7 +3,6 @@
 import logging
 import os
 import time
-from flask import session
 from typing import Optional
 from datetime import datetime
 import requests
@@ -12,7 +11,7 @@ from util.utils import get_token, batched
 from util.sde import region_id_from_system_id
 from util.esi_rate_limiter import esi_request
 from db.database import get_private_session, get_public_session
-from db.models import Structure, Asset, IndustryJob, Character
+from db.models import Structure, Asset, IndustryJob
 
 logger = logging.getLogger(__name__)
 

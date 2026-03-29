@@ -16,7 +16,7 @@ import yaml
 from db.database import get_private_session
 from db.models import Character
 from util.auth import CredentialManager, TokenDBManager
-from util.esi_rate_limiter import esi_get, esi_post, esi_request
+from util.esi_rate_limiter import esi_get, esi_request
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ REQUIRED_MODULES = (
     "requests_oauthlib",
     "jwt",
     "yaml",
+    "duckdb",
 )
 
 DEFAULT_SECRET = "nolieravioli"
@@ -289,26 +290,4 @@ def get_all_region_ids():
     resp = esi_get(url, headers=HEADERS, params=DATASOURCE)
     resp.raise_for_status()
     return resp.json()
-
-def is_structure(structure_id: int) -> bool:
-    """Check if a given ID is a structure via ESI."""
-    url = f"{ESI_BASE}/universe/structures/{structure_id}/"
-    r = esi_get(url, headers=HEADERS, params=DATASOURCE)
-    return r
-
-def resolve_names_to_ids(names: list[str]) -> dict:
-    """Bulk convert system or structure names to IDs using ESI."""
-    if not names:
-        return {}
-
-    response = esi_post(
-        f"{ESI_BASE}/universe/ids/",
-        headers=HEADERS,
-        params={"datasource": "tranquility", "language": os.getenv("LANGUAGE", "en")},
-        json=names,
-    )
-    response.raise_for_status()
-
-    systems = response.json().get("systems", [])
-    return {entry["name"]: entry["id"] for entry in systems}
 

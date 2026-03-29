@@ -130,14 +130,3 @@ def enqueue_full_collection(owner_id: int):
     )
 
 
-def collect_all_now(owner_id: int):
-    """
-    Synchronous (blocking) full collection — used by manual triggers that want
-    to stream results to the console page via stdout capture.
-    """
-    for label, fn in PERSONAL_TASKS + CORP_TASKS:
-        try:
-            logger.info(f"[data_collector] Starting {label} for owner {owner_id}")
-            fn(owner_id)
-        except Exception as e:
-            logger.error(f"[data_collector] {label} failed: {e}")

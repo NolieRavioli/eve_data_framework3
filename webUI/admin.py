@@ -7,8 +7,6 @@ Admin panel blueprint.
 - SQL database browser (read-only)
 """
 
-from __future__ import annotations
-
 import collections
 import datetime
 import json
@@ -31,6 +29,8 @@ from sqlalchemy import inspect, text
 
 from db.database import get_public_session, initialize_public_database
 from db.models import SiteAdmin, User
+from util import sde_store
+from util.esi_spec_registry import get_registry_status
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -150,6 +150,8 @@ def index():
     queue = get_collection_queue()
     users = _user_list()
     table_counts = _db_stats()
+    sde_status = sde_store.get_warehouse_status()
+    esi_status = get_registry_status()
     stats = {
         "queue_depth": queue.queue_depth(),
         "table_counts": table_counts,
@@ -159,6 +161,8 @@ def index():
         "total_owners": len(users),
         "admin_count": sum(1 for row in users if row["is_admin"]),
         "log_lines": [line for _, line in _AdminLogHandler.snapshot(limit=100)],
+        "sde_status": sde_status,
+        "esi_status": esi_status,
     }
     return render_template(
         "admin.html",

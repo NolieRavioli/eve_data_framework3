@@ -142,6 +142,7 @@ def _sync_sections():
     ]
     public = [
         ("Refresh SDE", "update_public.update_public_sde"),
+        ("Refresh ESI Spec", "update_public.update_public_esi_spec"),
         ("Discover Structures", "update_public.update_public_structures"),
         ("Structure Markets", "update_public.update_public_structure_markets"),
         ("Station Market Orders", "update_public.update_public_market"),

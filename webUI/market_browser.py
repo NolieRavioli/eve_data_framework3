@@ -77,14 +77,5 @@ def browser():
 def autocomplete():
     """Return up to 10 item-name suggestions matching the q prefix."""
 
-    prefix = request.args.get("q", "").strip().lower()
-    suggestions = []
-    if prefix:
-        sde.load_types_data()
-        for name, type_id in (sde._name_to_type_id or {}).items():
-            if name.startswith(prefix):
-                suggestions.append((sde._type_id_to_name or {}).get(type_id))
-                if len(suggestions) >= 10:
-                    break
-
-    return jsonify([name for name in suggestions if name])
+    prefix = request.args.get("q", "").strip()
+    return jsonify(sde.suggest_type_names(prefix, limit=10))
