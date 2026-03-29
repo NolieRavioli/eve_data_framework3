@@ -5,18 +5,9 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from db.models import (
-    Asset,
-    Blueprint,
     Character,
-    IndustryJob,
-    PersonalBookmark,
     PrivateBase,
     PublicBase,
-    Skill,
-    SkillQueue,
-    WalletBalance,
-    WalletJournal,
-    WalletTransaction,
 )
 from util import sde_store
 

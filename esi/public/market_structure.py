@@ -8,7 +8,7 @@ import requests
 from util import sde_store
 from util.esi_rate_limiter import esi_get
 from util.sde import region_id_from_system_id
-from util.utils import PRIVATE_DATA_FOLDER, get_token
+from util.utils import CONFIG_PATH, PRIVATE_DATA_FOLDER, get_token, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,26 @@ DATASOURCE = {"datasource": "tranquility"}
 
 _STRUCTURE_INFO_CACHE: dict[int, tuple[float, dict]] = {}
 _STRUCTURE_INFO_TTL = 24 * 3600
+
+_MARKET_403 = object()  # sentinel: 403 on /markets/structures/{id}/
+
+
+def _get_market_unauthorized_cooldown() -> int:
+    try:
+        cfg = load_config(CONFIG_PATH)
+        days = int(cfg.get("Structures", {}).get("market_unauthorized_cooldown_days", 7))
+    except Exception:
+        days = 7
+    return days * 24 * 3600
+
+
+def _get_market_forbidden_cooldown() -> int:
+    try:
+        cfg = load_config(CONFIG_PATH)
+        days = int(cfg.get("Structures", {}).get("market_forbidden_cooldown_days", 21))
+    except Exception:
+        days = 21
+    return days * 24 * 3600
 
 
 def fetch_structure_orders(
@@ -32,12 +52,19 @@ def fetch_structure_orders(
         try:
             resp = esi_get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
 
-            if resp.status_code in (403, 404):
+            if resp.status_code == 403:
                 logger.warning(
-                    "[MarketFetch] Skipping %s page %s: HTTP %s",
+                    "[MarketFetch] Skipping %s page %s: HTTP 403",
                     structure_id,
                     page,
-                    resp.status_code,
+                )
+                return _MARKET_403, 1
+
+            if resp.status_code == 404:
+                logger.warning(
+                    "[MarketFetch] Skipping %s page %s: HTTP 404",
+                    structure_id,
+                    page,
                 )
                 return [], 1
 
@@ -109,6 +136,14 @@ def _pick_token(owner_id: int) -> tuple[int, dict]:
     return char_id, token_data
 
 
+def _get_fresh_token(owner_id: int, char_id: int, token_data: dict) -> tuple[int, dict]:
+    """Return current token if still valid; only call _pick_token (DB query) if expired."""
+    expires_at = token_data.get("expires_at")
+    if expires_at is not None and expires_at > time.time() + 30:
+        return char_id, token_data
+    return _pick_token(owner_id)
+
+
 def _resolve_default_owner_id() -> int | None:
     import os
     from os.path import isdir, join
@@ -155,10 +190,11 @@ def update_structure_market_orders() -> None:
 
     _char_id, token_data = _pick_token(owner_id)
     token = token_data["access_token"]
-    structures = sde_store.list_public_structures()
+    structures = sde_store.list_public_structures(skip_market_forbidden=True)
     logger.info("[MarketUpdate] Checking %s structures.", len(structures))
     total = len(structures)
     skipped = 0
+    unauthorized_ids: list[int] = []   # 403 on market endpoint
     orders_total = 0
     t0 = time.time()
     log_every = max(1, total // 20) if total else 1
@@ -167,7 +203,7 @@ def update_structure_market_orders() -> None:
         num_orders = 0
         structure_id = structure["structure_id"]
         try:
-            _char_id, token_data = _pick_token(owner_id)
+            _char_id, token_data = _get_fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             structure = populate_structure_metadata(structure, token)
@@ -175,6 +211,18 @@ def update_structure_market_orders() -> None:
             sde_store.upsert_market_structures([structure])
 
             orders, pages = fetch_structure_orders(structure_id, token, page=1)
+            if orders is _MARKET_403:
+                unauthorized_ids.append(structure_id)
+                skipped += 1
+                if count % log_every == 0 or count == total:
+                    elapsed = time.time() - t0
+                    eta = (elapsed / count) * (total - count) if count else 0
+                    logger.info(
+                        "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                        count, total, (100 * count / total) if total else 100.0,
+                        eta, f"{orders_total:,}", skipped,
+                    )
+                continue
             if not orders:
                 skipped += 1
                 if count % log_every == 0 or count == total:
@@ -196,7 +244,7 @@ def update_structure_market_orders() -> None:
             num_orders += len(all_rows)
 
             for page in range(2, pages + 1):
-                _char_id, token_data = _pick_token(owner_id)
+                _char_id, token_data = _get_fresh_token(owner_id, _char_id, token_data)
                 token = token_data["access_token"]
                 more, _ = fetch_structure_orders(structure_id, token, page=page)
                 page_rows = [{**order, "region_id": region_id, "location_id": structure_id} for order in more]
@@ -204,6 +252,7 @@ def update_structure_market_orders() -> None:
                 num_orders += len(page_rows)
 
             sde_store.upsert_market_orders(all_rows)
+            sde_store.mark_structures_market_refreshed([structure_id])
             orders_total += num_orders
             logger.debug("[MarketUpdate] Synced %s orders for %s.", num_orders, structure_id)
 
@@ -221,6 +270,15 @@ def update_structure_market_orders() -> None:
                 )
         except Exception:
             logger.exception("[MarketUpdate] Failed for %s.", structure_id)
+
+    if unauthorized_ids:
+        cooldown = _get_market_unauthorized_cooldown()
+        sde_store.mark_market_structures_forbidden(unauthorized_ids, cooldown)
+        logger.info(
+            "[MarketUpdate] Marked %s structure(s) as 403-inaccessible on market; will skip for %s days.",
+            len(unauthorized_ids),
+            cooldown // 86400,
+        )
 
 
 def update_structure_market(owner_id: int) -> None:

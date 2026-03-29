@@ -13,7 +13,6 @@ from requests_oauthlib import OAuth2Session
 
 from db.database import get_private_session
 from db.models import Character
-from esi.data_collector import enqueue_full_collection
 from util import sde_store
 from util.auth import CredentialManager, TokenDBManager
 from util.utils import RuntimeSettings, get_runtime_settings
@@ -228,14 +227,6 @@ def callback():
 
         if not is_add_toon:
             session["is_admin"] = sde_store.get_site_admin(owner_id) is not None
-
-        if is_new_character:
-            logger.info(
-                "[Auth] New character %s triggering scoped data collection for owner %s.",
-                character_id,
-                owner_id,
-            )
-            enqueue_full_collection(owner_id, character_id=character_id)
 
         if _settings.debug_mode:
             print(

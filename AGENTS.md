@@ -7,27 +7,27 @@ Read this before modifying any file.
 
 ## Repository Overview
 
-**EVE Data Framework** is a self-hosted Flask web application that pulls EVE Online corporation and character data from the ESI REST API, stores it locally, and presents it through a live dashboard.
+**EVE Data Framework** is a self-hosted Flask web application that interfaces with the EVE Online ESI REST API. It provides a web dashboard, EVE SSO authentication, a DuckDB public warehouse (SDE + market/structure data), per-character private SQLite databases, and a background task queue with live SSE log streaming. The data **collection layer** (corp/personal ESI collectors and analysis modules) is not yet implemented; the current codebase is the infrastructure foundation on which collectors will be built.
 
 | Layer | Purpose |
 |---|---|
-| `main.py` | Entry point — loads SDE, starts Flask server |
+| `main.py` | Entry point — initialises SDE, starts Flask server |
 | `config.yaml` | Environment variables + SDE toggle flags |
-| `esi/` | One module per ESI endpoint group (corp_*, personal_*) |
-| `analysis/` | Derived calculations on collected data (structures, job slots) |
+| `esi/generated/` | Auto-generated ESI client package (208 operations from OpenAPI spec) |
+| `esi/public/` | Unauthenticated market collectors (`market_station.py`, `market_structure.py`) |
 | `db/` | SQLAlchemy models + session factories |
-| `util/` | Shared infrastructure (rate limiter, auth, SDE, task queue) |
+| `util/` | Shared infrastructure (rate limiter, auth, SDE, task queue, codegen) |
 | `webUI/` | Flask blueprints, SSE streaming, Jinja2 templates |
 | `_sde/` | Local copy of the EVE Static Data Export (YAML) |
-| `_publicData/` | DuckDB public database (`public.duckdb`), OAuth credentials |
+| `_publicData/` | DuckDB public database (`public.duckdb`), OAuth credentials, ESI spec cache |
 | `_privateData/<owner_id>/` | Per-owner SQLite databases |
 
 ### Tech Stack
 
 - **Python 3.12+** — all async-free; threading via `ThreadPoolExecutor`
 - **Flask** — web server, thread-safe, `threaded=True`
-- **SQLAlchemy** — ORM; SQLite per character, DuckDB for public/SDE data
-- **DuckDB** — public database (market orders, structures, SDE types, etc.)
+- **SQLAlchemy** — ORM; SQLite per character; `PublicBase` models exist but DuckDB writes bypass the ORM
+- **DuckDB** — the single shared public store (SDE types/groups/universe, market orders, structures, ESI spec metadata)
 - **requests** — all HTTP; wrapped by `util/esi_rate_limiter.py`
 - **`config.yaml`** — runtime configuration; loaded once at startup
 
@@ -35,53 +35,82 @@ Read this before modifying any file.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PUBLIC_DATA_FOLDER` | `_publicData` | DuckDB + OAuth credential files |
+| `PUBLIC_DATA_FOLDER` | `_publicData` | DuckDB file + OAuth credential files |
 | `EVE_PRIVATE_DATABASE_FOLDER` | `_privateData/` | Per-owner SQLite root |
 | `SDE_PATH` | `_sde/` | Local SDE YAML files |
+| `LANGUAGE` | `en` | Primary language for SDE text fields |
+| `SUPPORTED_LANGUAGES` | `en` | Comma-separated list; SDE pruner keeps only these |
 
 ---
 
 ## Directory Map
 
 ```
-main.py                  # startup
+main.py                  # startup: load SDE, ensure public DB, start Flask
 config.yaml              # configuration toggles
-requirements.txt         # pip dependencies: flask, sqlalchemy, requests, duckdb, pyjwt, cryptography …
+requirements.txt         # pip dependencies
 
 util/
-  esi_rate_limiter.py    # ALL HTTP to ESI goes through esi_request() / esi_get() / esi_post()
-  auth.py                # OAuth token storage, refresh, REQUIRED_SCOPES list
-  task_queue.py          # background Task runner with SSE log streaming
-  sde.py                 # SDE YAML loaders
-  sde_store.py           # SDE in-memory store + DuckDB public schema bootstrap
-  utils.py               # config loader, RuntimeSettings, dependency checks
+  esi_rate_limiter.py    # ALL HTTP to ESI goes through esi_request()/esi_get()/esi_post()
+  auth.py                # OAuth token storage (Fernet-encrypted), refresh helpers
+  task_queue.py          # background Task runner — enqueue() / get_task() / cancel_task()
+  sde.py                 # startup_load_sde() + DuckDB-backed lookup facade (get_type_name, etc.)
+  sde_store.py           # connect() + ensure_public_database() + all DuckDB DDL/DML
+  sde_bootstrap.py       # download_sde() / extract_sde() / run_full_bootstrap() — SDE pipeline
+  esi_spec_registry.py   # fetch_openapi_spec() / refresh_esi_spec_registry() / get_registry_status()
+  esi_codegen.py         # generate() — reads spec snapshot, writes esi/generated/ package
+  utils.py               # load_config(), RuntimeSettings, ensure_dependencies(), get_token()
 
 db/
-  models.py              # SQLAlchemy ORM: PublicBase (DuckDB) + PrivateBase (SQLite)
-  database.py            # session factories: get_private_session(owner_id), DuckDB connection
+  models.py              # SQLAlchemy ORM: PublicBase (User, SiteAdmin, Structure, MarketOrder,
+                         #   MarketStructure) + PrivateBase (Character)
+  database.py            # initialize_private_database(owner_id), get_private_session(owner_id)
+                         # NOTE: get_public_session() raises RuntimeError — public SQLite retired
 
 esi/
-  data_collector.py      # orchestrates full collection runs
-  corp_*.py              # corporate endpoint collectors
-  personal_*.py          # character endpoint collectors
-  public/                # unauthenticated endpoint collectors
-
-analysis/
-  structures.py          # discovers + enriches player-owned structures
-  job_slots.py           # industry job slot analysis
+  generated/             # AUTO-GENERATED — do not edit by hand
+    __init__.py          # package marker + version/compatibility check
+    manifest.py          # OPERATIONS dict (208 ops), ALL_SCOPES, COMPATIBILITY_DATE
+    client.py            # execute_operation() + batch helpers
+    operations.py        # per-operation typed wrappers
+    schemas.py           # TypedDict stubs from OpenAPI schemas
+  public/
+    market_station.py    # NPC station market order collector
+    market_structure.py  # player-structure market order collector
 
 webUI/
-  __init__.py            # Flask app factory (create_app)
-  app.py                 # starts Flask (start_webUI)
-  tasks.py               # SSE /stream/<task_id> endpoint, esi_rate hook
-  corp_routes.py         # /corp/* blueprint
-  personal_routes.py     # /personal/* blueprint
-  public_routes.py       # /public/* blueprint
-  dashboard.py           # / dashboard blueprint
-  sso.py                 # SSO login/callback/logout
-  context.py             # Jinja2 context processors
-  templates/             # Jinja2 HTML templates
+  __init__.py            # Flask app factory (create_app) — registers 4 blueprints
+  app.py                 # start_webUI(settings)
+  dashboard.py           # / — character info, ESI spec status, granted scopes
+  sso.py                 # /login /callback /logout — EVE SSO OAuth2 flow
+  admin.py               # /admin/* — live log console (SSE), DB browser, user management
+  tasks.py               # /tasks/* + /stream/<task_id> SSE endpoint
+  context.py             # Jinja2 context processors (base_ctx helper)
+  templates/
+    base.html
+    dashboard.html
+    admin.html
+    admin_esi.html
+    db_browser.html
+    task_list.html
+    task_progress.html
+
+tests/
+  test_generated.py      # smoke tests for esi/generated/ package
+
+_publicData/
+  public.duckdb          # DuckDB warehouse (SDE + public operational tables + ESI spec metadata)
+  client_cred            # Fernet-encrypted OAuth client_id/client_secret  [NEVER COMMIT]
+  key                    # Fernet symmetric key                              [NEVER COMMIT]
+  esi_specs/             # cached ESI OpenAPI spec JSON per compatibility date
+    latest.json
+    <date>/
+
+_privateData/<owner_id>/
+  <owner_id>.db          # per-character SQLite database                    [NEVER COMMIT]
 ```
+
+> **Not yet implemented:** `esi/corp_*.py`, `esi/personal_*.py`, `esi/data_collector.py`, `analysis/` module, and the corresponding web routes (`/corp/*`, `/personal/*`, `/update_public/*`). These are the next layer to build on top of the existing infrastructure.
 
 ---
 
@@ -100,6 +129,13 @@ resp = esi_request("GET", url, headers={"Authorization": f"Bearer {token}"}, par
 
 # POST
 resp = esi_post(url, json=payload, headers={"Authorization": f"Bearer {token}"})
+```
+
+Alternatively, use the auto-generated client from `esi/generated/client.py` which wraps `esi_request` with typed parameters derived from the OpenAPI spec:
+
+```python
+from esi.generated.client import execute_operation
+result = execute_operation("GetCharactersCharacterId", character_id=12345, token=access_token)
 ```
 
 ### Response Handling Pattern
@@ -138,7 +174,7 @@ for page in range(2, total_pages + 1):
 
 - **Base URL**: `https://esi.evetech.net/latest/`
 - **Datasource param**: always pass `{"datasource": "tranquility"}` (or use the `DATASOURCE` constant where defined)
-- **Versioning**: send `X-Compatibility-Date: YYYY-MM-DD` header (or `compatibility_date` query param) to pin API behaviour. Date rolls at 11:00 UTC.
+- **Versioning**: send `X-Compatibility-Date: YYYY-MM-DD` header (or `compatibility_date` query param) to pin API behaviour. Date rolls at 11:00 UTC. The generated client is pinned to the date in `manifest.COMPATIBILITY_DATE`.
 - **Explorer / spec**: `https://esi.evetech.net/ui/`
 
 #### Rate Limiting — Floating Window
@@ -163,6 +199,8 @@ Rate-limit response headers:
 | `Retry-After` | Seconds to wait (only on 429) |
 
 **Error rate limit** (separate, older system): at most 100 non-2XX/3XX responses per minute. On breach, ESI returns 420 on all routes until the minute resets. Headers: `X-ESI-Error-Limit-Remain`, `X-ESI-Error-Limit-Reset`.
+
+**Task queue lane assignment**: `enqueue(..., queue="public")` requests use the public lane; `queue="private"` (default) requests use the private lane. An alternating gate in the rate limiter (`_ALTERNATING_GATE`) ensures one-for-one HTTP interleaving when both lanes are active simultaneously.
 
 **Best practices:**
 - Do not operate at the limit; back off when `X-Ratelimit-Remaining` approaches zero.
@@ -193,28 +231,55 @@ EVE uses OAuth 2.0 Authorization Code flow.
 Well-known endpoint for current URLs: `https://login.eveonline.com/.well-known/oauth-authorization-server`
 
 **Security rules:**
-- Always verify the `state` parameter on callback (CSRF protection).
+- Always verify the `state` parameter on callback (CSRF protection). `webUI/sso.py` uses a time-limited `OAuthStateCache` to consume each state token exactly once.
 - Never log or expose `refresh_token` — it grants indefinite re-auth.
 - `client_secret` stays server-side only.
 
-Token handling in this repo lives in `util/auth.py`. Tokens are encrypted at rest using Fernet (`_publicData/key`) and stored per-character in `_privateData/<owner_id>/`.
+Token handling lives in `util/auth.py`. Tokens are Fernet-encrypted at rest (`_publicData/key`) and stored per-character in `_privateData/<owner_id>/`.
 
 ### Static Data Export (SDE)
 
 The SDE contains static game data (types, groups, blueprints, universe geometry). It only changes on game patches.
 
-- Local copy: `_sde/` (YAML format)
-- In-memory store: `util/sde_store.py` — access via `sde_store.get_type_name(type_id)`, etc.
-- DuckDB tables are bootstrapped from SDE at startup via `sde_store.ensure_public_database()`
-- Startup toggles in `config.yaml` under `SDE:` — set `false` to skip expensive datasets
+- Local copy: `_sde/` (YAML format; multilingual fields pruned to `SUPPORTED_LANGUAGES` by `sde_bootstrap.py`)
+- In-memory store: `util/sde_store.py` — lookup helpers (`get_type_name`, `get_system_region`, etc.) backed by DuckDB
+- DuckDB tables bootstrapped from SDE at startup via `sde_store.ensure_public_database()`
+- Full re-download pipeline: `util/sde_bootstrap.py` — `run_full_bootstrap()` downloads the SDE ZIP, extracts, prunes, then rebuilds the warehouse
+- Startup toggles under `SDE:` in `config.yaml` — set `false` to skip expensive datasets; they lazy-load on first use
 
-SDE YAML integer-keyed maps use plain integer keys. Large files (`mapMoons`, etc.) should be read as JSON Lines when possible.
+SDE YAML integer-keyed maps use plain integer keys. Large files should be read as JSON Lines when possible.
 
-Celestial name derivation (no `name` field in SDE for most):
+Celestial name derivation (no `name` field in SDE for most celestials):
 - Stars → `<solarSystemName>`
 - Planets → `<orbitName> <celestialIndex>` (Roman numerals)
 - Moons → `<orbitName> - Moon <orbitIndex>`
 - Stargates → `Stargate (<destinationSystemName>)`
+
+### ESI Spec Registry & Codegen
+
+`util/esi_spec_registry.py` maintains a local cache of the ESI OpenAPI spec:
+
+```python
+from util.esi_spec_registry import refresh_esi_spec_registry, get_registry_status
+
+# Fetch and store the latest compatibility date's spec
+refresh_esi_spec_registry()
+
+# Get current status (date, route/schema/scope counts, last update, etc.)
+status = get_registry_status()
+```
+
+Spec snapshots are stored under `_publicData/esi_specs/<date>/` as `routes.json`, `schemas.json`, `scopes.json`. `latest.json` records the most recently fetched date and counts.
+
+`util/esi_codegen.py` reads the spec snapshot and regenerates the `esi/generated/` package:
+
+```powershell
+python -m util.esi_codegen                   # regenerate from latest snapshot
+python -m util.esi_codegen --date 2025-12-16 # pin to a specific date
+python -m util.esi_codegen --force           # overwrite even if date matches
+```
+
+**Do not hand-edit `esi/generated/`** — all changes will be overwritten on the next codegen run.
 
 ---
 
@@ -222,44 +287,84 @@ Celestial name derivation (no `name` field in SDE for most):
 
 ### Public — DuckDB (`_publicData/public.duckdb`)
 
-Used for: SDE type/group/system data, market orders, public contracts, sovereignty, structures.
+Used for: SDE type/group/universe data, market orders, structures, site admin records, ESI spec metadata.
 
-Access: `util/sde_store.py` — `get_duckdb_connection()` returns a `duckdb.DuckDBPyConnection`.
+Access: `util/sde_store.py` — `connect()` returns a fresh `duckdb.DuckDBPyConnection`. Get a new connection per thread; DuckDB connections are not thread-safe.
+
+```python
+from util import sde_store
+
+con = sde_store.connect()
+try:
+    rows = con.execute("SELECT type_id, name FROM dim_types WHERE type_id = ?", [34]).fetchall()
+finally:
+    con.close()
+```
+
+> **Note:** `get_public_session()` in `db/database.py` raises `RuntimeError`. The `PublicBase` SQLAlchemy models (`User`, `SiteAdmin`, `Structure`, etc.) exist as ORM definitions but DuckDB writes go through `sde_store` helpers, not SQLAlchemy sessions.
 
 ### Private — SQLite (per owner, `_privateData/<owner_id>/<owner_id>.db`)
 
-Used for: character/corp assets, wallet, industry jobs, skills, bookmarks, etc.
+Used for: character identity, OAuth tokens, and all future per-character data (assets, wallet, jobs, etc.).
 
-Access: `db/database.py` — `get_private_session(owner_id)` returns a SQLAlchemy session.
+Access: `db/database.py` — `get_private_session(owner_id)` returns a SQLAlchemy session. Call `session.close()` when done (or use as a context manager if wrapped).
 
 ```python
 from db.database import get_private_session
-with get_private_session(owner_id) as session:
-    jobs = session.query(IndustryJob).filter_by(owner_id=owner_id).all()
+session = get_private_session(owner_id)
+try:
+    char = session.query(Character).filter_by(character_id=owner_id).first()
+finally:
+    session.close()
 ```
 
-### Models
+SQLite WAL mode, `synchronous=NORMAL`, `busy_timeout=30000`, and `foreign_keys=ON` are set automatically on each connection.
 
-Defined in `db/models.py`, split into two declarative bases:
-- `PublicBase` — DuckDB-backed models
-- `PrivateBase` — SQLite-backed models (per owner)
+### Models (`db/models.py`)
+
+| Base | Model | Storage |
+|---|---|---|
+| `PublicBase` | `User`, `SiteAdmin`, `Structure`, `MarketOrder`, `MarketStructure` | DuckDB (via `sde_store`) |
+| `PrivateBase` | `Character` | SQLite per owner |
+
+New private models: add to `PrivateBase` in `db/models.py`. `PrivateBase.metadata.create_all(engine)` is called inside `initialize_private_database` — no migration tool needed.
+
+New public tables: add DDL directly inside `sde_store.ensure_public_database()`.
 
 ---
 
 ## Background Tasks & SSE
 
-Long-running work (data collection, structure discovery) runs in `util/task_queue.py` via a `ThreadPoolExecutor`.
+Long-running work runs in `util/task_queue.py` via two single-threaded `ThreadPoolExecutor` queues (public + private). Each queue is strictly FIFO; public and private tasks run concurrently with each other.
 
 ```python
-from util.task_queue import submit_task
+from util.task_queue import enqueue
 
-task_id = submit_task("My Task Name", my_worker_function, arg1, arg2)
+# queue="private" (default) — character/corp tasks
+task_id = enqueue("My Task Name", my_worker_function, arg1, arg2, owner_id=owner_id)
+
+# queue="public" — market/SDE/structure tasks
+task_id = enqueue("Refresh Market", market_worker, owner_id=0, queue="public")
 ```
 
 - `logging` calls and `print()` inside worker threads are automatically captured and streamed to the browser via SSE (`/stream/<task_id>`).
 - The live task view is rendered by `webUI/templates/task_progress.html`.
-- After each ESI request, `util/esi_rate_limiter.py` fires an `esi_rate` SSE event so the rate card updates in real time.
+- After each ESI request, `util/esi_rate_limiter.py` fires an `esi_rate` SSE event so the rate card in the task view updates in real time.
 - `get_stats()` returns the most-depleted bucket as the summary, plus a `groups` dict (includes `"(ungrouped)"` when the default bucket has activity).
+- Additional helpers: `get_task(task_id)`, `get_tasks_for_owner(owner_id)`, `get_all_tasks()`, `cancel_task(task_id)`, `clear_tasks(owner_id)`.
+
+---
+
+## Admin Panel (`webUI/admin.py`)
+
+The admin blueprint (`/admin/*`) provides:
+
+- **Live log console** (`/admin/stream`) — SSE stream of all `logging` output captured by `_AdminLogHandler` (last 500 lines, ring buffer).
+- **DB browser** (`/admin/db_browser`) — read-only DuckDB workspace browser + private SQLite browser. Renders `db_browser.html`.
+- **User management** (`/admin/promote`, `/admin/demote`) — promote/demote site admins stored in the `site_admins` DuckDB table.
+- **ESI registry status** — exposed via `get_registry_status()` from `util/esi_spec_registry.py`.
+
+Only users with `session["is_admin"] == True` can access these routes (enforced by the `require_admin` decorator).
 
 ---
 
@@ -267,24 +372,35 @@ task_id = submit_task("My Task Name", my_worker_function, arg1, arg2)
 
 ### Add a new ESI endpoint collector
 
-1. Create `esi/corp_<name>_full.py` (or `personal_<name>_full.py`).
+1. Create `esi/corp_<name>.py` or `esi/personal_<name>.py`.
 2. Implement a `collect_<name>(owner_id, access_token)` function.
-3. Use `esi_get` / `esi_request` for all HTTP — never raw `requests`.
+3. Use `esi_get` / `esi_request` / `execute_operation` for all HTTP — never raw `requests`.
 4. Handle pagination with `X-Pages` (see pattern above).
-5. Upsert results to `_privateData` via `get_private_session(owner_id)`.
-6. Register the collector in `esi/data_collector.py`.
+5. Upsert results to the owner's private DB via `get_private_session(owner_id)`.
+6. Submit as a background task via `enqueue("Collect …", collect_fn, owner_id=owner_id)`.
+7. Expose a trigger route in a new blueprint and register it in `webUI/__init__.py`.
 
 ### Add a new DB model
 
-1. Add a class to `db/models.py` inheriting `PrivateBase` or `PublicBase`.
-2. Call `PrivateBase.metadata.create_all(engine)` (happens in `initialize_private_database`) — no migration needed for new tables.
-3. For DuckDB/public tables, add DDL in `util/sde_store.py`'s `ensure_public_database()`.
+1. Add a class to `db/models.py` inheriting `PrivateBase`.
+2. `PrivateBase.metadata.create_all(engine)` runs automatically in `initialize_private_database` — no migration needed.
+3. For new DuckDB/public tables, add DDL in `sde_store.ensure_public_database()`.
 
 ### Add a new web route
 
-1. Add route function to the appropriate blueprint file (`corp_routes.py`, `personal_routes.py`, `public_routes.py`, or create a new blueprint).
+1. Add the route to an existing blueprint or create a new one.
 2. Register new blueprints in `webUI/__init__.py` (`create_app`).
-3. Add Jinja2 template under `webUI/templates/`.
+3. Add Jinja2 template under `webUI/templates/`, extending `base.html`.
+
+### Regenerate the ESI client
+
+```powershell
+# 1. Refresh the spec snapshot from ESI
+python -c "from util.esi_spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"
+
+# 2. Regenerate esi/generated/
+python -m util.esi_codegen --force
+```
 
 ### Run the application
 
@@ -292,7 +408,7 @@ task_id = submit_task("My Task Name", my_worker_function, arg1, arg2)
 python main.py
 ```
 
-Default: `http://127.0.0.1:5000`. Debug mode and port are controlled by `RuntimeSettings` (see `util/utils.py`).
+Default: `http://127.0.0.1:5000`. Debug mode and port are controlled by `RuntimeSettings` (see `util/utils.py`). Override without editing config by setting env vars: `EVE_DEBUG=1`, `EVE_WEB_PORT=8080`, etc.
 
 ### Check for errors
 
@@ -312,12 +428,13 @@ pip install -r requirements.txt
 ## Code Conventions
 
 - **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** (never raw `requests`).
-- **Never call `requests` directly** anywhere outside `util/esi_rate_limiter.py`.
-- **Logging**: use module-level `logger = logging.getLogger(__name__)`; `logger.warning`, `logger.info`, `logger.debug` — not `print()` in production code (though `print()` is captured by the task queue in workers).
-- **Token handling**: always check for 401 separately from 403/404. A 401 means the access token is expired; remove it from rotation. A 403 means no permission — not an error to retry.
-- **Thread safety**: all shared mutable state must use `threading.Lock()`. DuckDB connections are not thread-safe; get a fresh connection per thread or use the lock in `sde_store`.
-- **No raw SQL strings with user input** — always use SQLAlchemy ORM or parameterised DuckDB queries.
+- **Never call `requests` directly** anywhere outside `util/esi_rate_limiter.py` and `util/esi_spec_registry.py` / `util/sde_bootstrap.py` (which make non-ESI HTTP calls for spec/SDE download).
+- **Logging**: use module-level `logger = logging.getLogger(__name__)`; `logger.warning`, `logger.info`, `logger.debug` — not bare `print()` in production code (though `print()` is captured by the task queue in workers).
+- **Token handling**: always check for 401 separately from 403/404. A 401 means the access token is expired; stop using it. A 403 means no permission — not an error to retry.
+- **Thread safety**: all shared mutable state must use `threading.Lock()`. Get a fresh `sde_store.connect()` connection per thread — do not share DuckDB connections across threads.
+- **No raw SQL with user input** — always use parameterised DuckDB queries (`con.execute("… WHERE id = ?", [val])`) or SQLAlchemy ORM.
 - **Config values**: read from `config.yaml` via `load_config(CONFIG_PATH)` at startup; don't re-read config files inside request handlers.
+- **Do not edit `esi/generated/`** — regenerate via `util/esi_codegen.py` instead.
 
 ---
 
@@ -327,5 +444,5 @@ pip install -r requirements.txt
 - `_publicData/client_cred` — encrypted OAuth `client_id`/`client_secret`. **Never commit.**
 - `_privateData/` — per-user SQLite databases. **Never commit.**
 - All three paths are in `.gitignore`.
-- CSRF: the SSO callback (`webUI/sso.py`) validates the `state` parameter on every callback.
+- CSRF: the SSO callback (`webUI/sso.py`) validates the `state` parameter on every callback using a time-limited `OAuthStateCache` that consumes each token exactly once.
 - No user-supplied strings should be interpolated into SQL; use ORM or DuckDB parameterised queries.

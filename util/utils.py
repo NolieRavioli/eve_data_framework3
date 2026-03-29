@@ -16,7 +16,6 @@ import yaml
 from db.database import get_private_session
 from db.models import Character
 from util.auth import CredentialManager, TokenDBManager
-from util.collection_scope import get_character_scope
 from util.esi_rate_limiter import esi_get, esi_request
 
 logger = logging.getLogger(__name__)
@@ -99,13 +98,18 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
 
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
-        _console_handler = logging.StreamHandler(sys.stdout)
+        # Use the real stdout so the StreamHandler bypasses _ThreadRoutedWriter.
+        # This prevents log records from being double-captured in the task log
+        # (once by _TaskLogHandler and again via StreamHandler->_ThreadRoutedWriter).
+        _real_stdout = getattr(sys.stdout, "_original", sys.stdout)
+        _console_handler = logging.StreamHandler(_real_stdout)
         _console_handler.setLevel(logging.DEBUG)
         _console_handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         )
         if not any(
-            isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+            isinstance(h, logging.StreamHandler)
+            and getattr(h, "stream", None) in (sys.stdout, _real_stdout)
             for h in root_logger.handlers
         ):
             root_logger.addHandler(_console_handler)
@@ -200,7 +204,7 @@ def get_token(owner_id: int, character_ids: Optional[Iterable[int]] = None) -> d
     selected_ids = (
         {int(value) for value in character_ids}
         if character_ids is not None
-        else get_character_scope()
+        else None
     )
     now = time.time()
     session = get_private_session(owner_id)

@@ -5,7 +5,6 @@ import requests
 
 from util import sde_store
 from util.esi_rate_limiter import esi_get
-from util.utils import get_all_region_ids
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +60,11 @@ def save_orders_to_db(region_id: int, orders: list[dict]) -> None:
 
 
 def fetch_all_market_data() -> None:
-    region_ids = get_all_region_ids()
-    logger.info("Found %s regions to process", len(region_ids))
+    region_ids = sde_store.list_market_region_ids(skip_recently_refreshed=True)
+    if not region_ids:
+        logger.info("All regions refreshed recently — nothing to do.")
+        return
+    logger.info("Found %s regions to process (skipping recently refreshed)", len(region_ids))
 
     for region_id in region_ids:
         logger.info("=== Fetching region %s ===", region_id)
@@ -73,6 +75,7 @@ def fetch_all_market_data() -> None:
                 continue
 
             save_orders_to_db(region_id, first_page)
+            sde_store.mark_region_market_refreshed(region_id)
 
             for page in range(2, total_pages + 1):
                 page_data, _ = fetch_market_orders(region_id, page)

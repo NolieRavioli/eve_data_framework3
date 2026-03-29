@@ -226,6 +226,15 @@ class _TokenBucket:
             }
 
 
+# ESI endpoints that never return an X-Ratelimit-Group header are statically
+# mapped here so they appear under a named group in get_stats() rather than
+# being lumped into the catch-all "(ungrouped)" default bucket.
+_STATIC_URL_GROUPS: tuple[tuple[str, str], ...] = (
+    ("/latest/markets/structures/{id}/",  "esi-markets.structure_markets.v1"),
+    ("/latest/universe/structures/{id}/", "esi-universe.read_structures.v1"),
+)
+
+
 class EsiRateLimiter:
     """Serialize ESI requests through a single floating-window token bucket."""
 
@@ -246,6 +255,11 @@ class EsiRateLimiter:
         self._group_buckets: Dict[str, _TokenBucket] = {}
         self._url_to_group: Dict[str, str] = {}   # normalised URL path → group name
         self._group_display: Dict[str, dict] = {}  # group → latest header snapshot
+
+        # Pre-populate synthetic groups for endpoints without X-Ratelimit-Group headers.
+        for norm_path, group_name in _STATIC_URL_GROUPS:
+            self._url_to_group[norm_path] = group_name
+            self._group_buckets[group_name] = _TokenBucket(limit=token_limit, window=window_seconds)
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Perform an HTTP request against ESI obeying rate limits and retries."""

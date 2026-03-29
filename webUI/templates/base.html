@@ -895,11 +895,11 @@
     </div>
 
     {% if base_logged_in %}
-    <a class="sidebar-profile" href="{{ url_for('dashboard.character') }}">
+    <a class="sidebar-profile" href="{{ url_for('dashboard.home') }}">
       <img src="https://images.evetech.net/characters/{{ base_char_id }}/portrait?tenant=tranquility&size=64" alt="portrait">
       <div style="min-width:0">
         <div class="name">{{ base_char_name }}</div>
-        <div class="meta">{{ '{:,.0f}'.format(base_wallet or 0) }} ISK</div>
+        <div class="meta">Owner {{ base_char_id }}</div>
       </div>
     </a>
     {% endif %}
@@ -907,46 +907,46 @@
     <nav class="sidebar-nav">
       <div class="nav-group">
         <div class="nav-label">Overview</div>
-        <a href="{{ url_for('dashboard.home') }}" class="nav-link {{ 'active' if active_page == 'overview' else '' }}">
+        <a href="{{ url_for('dashboard.home') }}" class="nav-link {{ 'active' if active_page == 'dashboard' else '' }}">
           <span class="nav-ic">[]</span><span>Dashboard</span>
-        </a>
-        <a href="{{ url_for('market_browser.browser') }}" class="nav-link {{ 'active' if active_page == 'market' else '' }}">
-          <span class="nav-ic">></span><span>Market</span>
         </a>
       </div>
 
       {% if base_logged_in %}
       <div class="nav-group">
-        <div class="nav-label">Personal</div>
-        <a href="{{ url_for('dashboard.wallet') }}" class="nav-link {{ 'active' if active_page == 'wallet' else '' }}">
-          <span class="nav-ic">$</span><span>Wallet</span>
+        <div class="nav-label">Tools</div>
+        {% if base_is_admin %}
+        <a href="{{ url_for('admin.esi_catalog') }}" class="nav-link {{ 'active' if active_page == 'esi_explorer' else '' }}">
+          <span class="nav-ic">⚡</span><span>ESI Explorer</span>
         </a>
-        <a href="{{ url_for('dashboard.assets') }}" class="nav-link {{ 'active' if active_page == 'assets' else '' }}">
-          <span class="nav-ic">#</span><span>Assets</span>
-        </a>
-        <a href="{{ url_for('dashboard.industry') }}" class="nav-link {{ 'active' if active_page == 'industry' else '' }}">
-          <span class="nav-ic">*</span><span>Industry</span>
-        </a>
-        <a href="{{ url_for('dashboard.character') }}" class="nav-link {{ 'active' if active_page == 'character' else '' }}">
-          <span class="nav-ic">@</span><span>Characters</span>
-        </a>
-      </div>
-
-      <div class="nav-group">
-        <div class="nav-label">Operations</div>
-        <a href="{{ url_for('dashboard.sync') }}" class="nav-link {{ 'active' if active_page == 'sync' else '' }}">
-          <span class="nav-ic">~</span><span>Data Sync</span>
-        </a>
+        {% endif %}
         <a href="{{ url_for('tasks.task_list') }}" class="nav-link {{ 'active' if active_page == 'tasks' else '' }}">
           <span class="nav-ic">=</span><span>Task Queue</span>
         </a>
       </div>
+
+      {% if tool_nav %}
+      <div class="nav-group">
+        <div class="nav-label">Apps</div>
+        {% for tool in tool_nav %}
+        {% set ok = tool_scope_ok[tool.id] %}
+        <a href="{{ tool.url_prefix }}/"
+           class="nav-link {{ 'active' if active_page == tool.id else '' }}{{ ' nav-link-disabled' if not ok else '' }}"
+           {% if not ok %}title="Grant the required ESI scopes to enable this tool"
+           style="opacity:0.5;pointer-events:none"{% endif %}>
+          <span class="nav-ic">{{ tool.icon }}</span>
+          <span>{{ tool.name }}</span>
+          {% if not ok %}<span class="bdg bdg-warn" style="margin-left:auto;font-size:0.58rem">Scopes</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% endif %}
     </nav>
 
     <div class="sidebar-foot">
       {% if base_logged_in and base_is_admin %}
-      <a href="{{ url_for('admin.index') }}" target="_blank" class="nav-link">
+      <a href="{{ url_for('admin.index') }}" class="nav-link">
         <span class="nav-ic">!</span><span>Admin Panel</span>
       </a>
       {% endif %}
@@ -970,7 +970,7 @@
       <button class="nav-toggle" type="button" data-nav-toggle>Menu</button>
       <div class="brand">EVE Data</div>
       {% if base_logged_in %}
-      <a class="mobile-chip" href="{{ url_for('dashboard.wallet') }}">{{ '{:,.0f}'.format(base_wallet or 0) }} ISK</a>
+      <a class="mobile-chip" href="{{ url_for('dashboard.home') }}">{{ base_char_name }}</a>
       {% else %}
       <div style="width:2.5rem"></div>
       {% endif %}

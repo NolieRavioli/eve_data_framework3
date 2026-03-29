@@ -22,229 +22,88 @@
 {% else %}
 <div class="pg-hd">
   <div>
-    <h1>{{ current_name or 'Overview' }}</h1>
-    <div class="pg-sub">Owner {{ owner_id }} · live summary for the active pilot</div>
+    <h1>{{ base_char_name or 'Overview' }}</h1>
+    <div class="pg-sub">Owner {{ owner_id }} · character {{ character_id }}</div>
   </div>
   <div class="toolbar">
-    <form method="post" action="{{ url_for('tasks.collect_current') }}" style="display:inline">
-      <button type="submit" class="btn btn-g">Collect Active Toon</button>
-    </form>
-    <form method="post" action="{{ url_for('tasks.collect_all') }}" style="display:inline">
-      <button type="submit" class="btn btn-a">Collect All</button>
-    </form>
-    <a href="{{ url_for('dashboard.sync') }}" class="btn btn-g">Sync</a>
     <a href="{{ url_for('tasks.task_list') }}" class="btn btn-g">Tasks</a>
+    <a href="{{ url_for('admin.esi_catalog') }}" class="btn btn-a">ESI Explorer</a>
   </div>
 </div>
 
 <div class="pg-body">
-  {% if runtime and runtime.debug_mode %}
-  <div class="notice">Debug mode is enabled. Diagnostic payloads may be printed to the server console.</div>
-  {% endif %}
 
   <div class="stat-row">
     <div class="stat">
-      <span class="v isk">{{ '{:,.0f}'.format(wallet_balance or 0) }}</span>
-      <span class="l">Wallet Balance</span>
+      <span class="v ok">{{ granted_scope_count }}</span>
+      <span class="l">Granted Scopes</span>
     </div>
     <div class="stat">
-      <span class="v {{ 'ok' if (wallet_summary.net_transactions or 0) >= 0 else '' }}">{{ '{:,.0f}'.format(wallet_summary.net_transactions or 0) }}</span>
-      <span class="l">Recent Trade Net</span>
+      <span class="v">{{ esi_status.operation_count or '—' }}</span>
+      <span class="l">ESI Operations</span>
     </div>
     <div class="stat">
-      <span class="v">{{ asset_meta.total_items }}</span>
-      <span class="l">Tracked Items</span>
-    </div>
-    <div class="stat">
-      <span class="v">{{ asset_meta.unique_types }}</span>
-      <span class="l">Unique Types</span>
-    </div>
-    <div class="stat">
-      <span class="v ok">{{ toon_cards|length }}</span>
-      <span class="l">Linked Characters</span>
+      <span class="v">{{ esi_status.compatibility_date or '—' }}</span>
+      <span class="l">Spec Date</span>
     </div>
   </div>
 
   <div class="g2">
     <div class="card stack">
       <div class="section-head">
-        <div class="ct" style="margin:0">Active Character</div>
-        <a href="{{ url_for('dashboard.character') }}" class="lnk">Manage roster</a>
+        <div class="ct" style="margin:0">ESI Spec Status</div>
       </div>
-      <div class="split" style="align-items:flex-start">
-        <div style="display:flex;gap:0.9rem;align-items:center;min-width:0">
-          {% if portrait %}
-          <img src="{{ portrait.px256x256 or portrait.px128x128 }}" alt="Portrait" style="width:84px;height:84px;border-radius:1rem;border:1px solid var(--border-strong);object-fit:cover">
-          {% endif %}
-          <div style="min-width:0">
-            <div style="font-size:1.15rem;font-weight:800;color:var(--text-strong)">{{ current_name }}</div>
-            <div class="pg-sub" style="margin-top:0.1rem">Character {{ char_id }}</div>
-            <div class="pill-row" style="margin-top:0.75rem">
-              {% if wallet_summary.last_transaction_at %}
-              <span class="pill">Txn {{ wallet_summary.last_transaction_at }}</span>
-              {% endif %}
-              {% if wallet_summary.last_journal_at %}
-              <span class="pill">Journal {{ wallet_summary.last_journal_at }}</span>
-              {% endif %}
-            </div>
-          </div>
+      {% if esi_status %}
+      <div class="stack">
+        <div class="pill-row">
+          <span class="pill">{{ esi_status.compatibility_date or 'unknown' }}</span>
+          <span class="pill">{{ esi_status.operation_count or 0 }} operations</span>
+          {% if esi_status.source_etag %}<span class="pill mono">{{ esi_status.source_etag[:16] }}…</span>{% endif %}
         </div>
+        {% if esi_status.source_last_modified %}
+        <div class="pg-sub">Last modified: {{ esi_status.source_last_modified }}</div>
+        {% endif %}
       </div>
-
-      {% if toon_cards %}
-      <div class="toon-grid">
-        {% for toon in toon_cards %}
-        <div class="toon-card" style="{% if toon.is_active %}border-color:rgba(105,210,255,0.28);background:rgba(105,210,255,0.08);{% endif %}">
-          <img src="{{ toon.portrait_url }}" alt="{{ toon.name }}">
-          <div class="tn">{{ toon.name }}</div>
-          <div class="ti">{{ toon.id }}</div>
-          {% if toon.is_active %}
-          <span class="bdg bdg-blue">Active</span>
-          {% else %}
-          <a href="{{ toon.switch_url }}" class="btn btn-g" style="padding:0.32rem 0.65rem;font-size:0.72rem">Switch</a>
-          {% endif %}
-        </div>
-        {% endfor %}
+      {% else %}
+      <div class="empty">
+        <div class="ei">~</div>
+        <p>ESI spec not loaded yet.</p>
       </div>
       {% endif %}
     </div>
 
     <div class="card stack">
       <div class="section-head">
-        <div class="ct" style="margin:0">Industry Status</div>
-        <a href="{{ url_for('dashboard.industry') }}" class="lnk">Open jobs</a>
+        <div class="ct" style="margin:0">Granted Scopes</div>
+        <span class="pill">{{ granted_scope_count }} active</span>
       </div>
-      {% if slot_status %}
-      <div class="stack">
-        {% for msg in slot_status %}
-        <div class="pill" style="width:100%;justify-content:flex-start;border-radius:0.9rem;padding:0.65rem 0.8rem">{{ msg }}</div>
+      {% if granted_scopes %}
+      <div class="pill-row" style="flex-wrap:wrap;gap:0.35rem">
+        {% for scope in granted_scopes %}
+        <span class="pill" style="font-size:0.7rem">{{ scope }}</span>
         {% endfor %}
       </div>
       {% else %}
       <div class="empty">
         <div class="ei">*</div>
-        <p>No industry analysis yet.</p>
-        <p>Run Industry and Skills sync to populate slot pressure.</p>
+        <p>No scopes decoded from token.</p>
       </div>
       {% endif %}
-
-      <div class="stat-row">
-        <div class="stat">
-          <span class="v">{{ wallet_summary.transactions or 0 }}</span>
-          <span class="l">Recent Trades</span>
-        </div>
-        <div class="stat">
-          <span class="v">{{ wallet_summary.journal_entries or 0 }}</span>
-          <span class="l">Journal Events</span>
-        </div>
-        <div class="stat">
-          <span class="v">{{ wallet_summary.sells or 0 }}</span>
-          <span class="l">Sell Orders</span>
-        </div>
-        <div class="stat">
-          <span class="v">{{ wallet_summary.buys or 0 }}</span>
-          <span class="l">Buy Orders</span>
-        </div>
-      </div>
     </div>
   </div>
 
   <div class="g2">
     <div class="card stack">
       <div class="section-head">
-        <div class="ct" style="margin:0">Recent Transactions</div>
-        <a href="{{ url_for('dashboard.wallet') }}" class="lnk">Full wallet</a>
+        <div class="ct" style="margin:0">Quick Links</div>
       </div>
-      {% if wallet_txns %}
-      <div class="tw tw-scroll">
-        <table>
-          <thead>
-            <tr><th>Date</th><th>Item</th><th>Qty</th><th>Total</th><th>Side</th></tr>
-          </thead>
-          <tbody>
-            {% for txn in wallet_txns %}
-            <tr>
-              <td class="mono muted" style="white-space:nowrap">{{ txn.date }}</td>
-              <td>{{ txn.type_name }}</td>
-              <td>{{ '{:,}'.format(txn.quantity) }}</td>
-              <td class="{{ 'neg' if txn.is_buy else 'pos' }}">{{ '{:,.2f}'.format(txn.amount or 0) }}</td>
-              <td><span class="bdg {{ 'bdg-bad' if txn.is_buy else 'bdg-ok' }}">{{ 'Buy' if txn.is_buy else 'Sell' }}</span></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="pill-row" style="flex-wrap:wrap">
+        <a href="{{ url_for('admin.esi_catalog') }}" class="btn btn-a">ESI Explorer</a>
+        <a href="{{ url_for('tasks.task_list') }}" class="btn btn-g">Task Queue</a>
       </div>
-      {% else %}
-      <div class="empty">
-        <div class="ei">$</div>
-        <p>No wallet transactions yet.</p>
-      </div>
-      {% endif %}
-    </div>
-
-    <div class="card stack">
-      <div class="section-head">
-        <div class="ct" style="margin:0">Journal Snapshot</div>
-        <span class="pill">{{ '{:,.0f}'.format(wallet_summary.journal_net or 0) }} ISK net</span>
-      </div>
-      {% if wallet_journal %}
-      <div class="tw tw-scroll">
-        <table>
-          <thead>
-            <tr><th>Date</th><th>Ref</th><th>Amount</th><th>Balance</th></tr>
-          </thead>
-          <tbody>
-            {% for entry in wallet_journal[:8] %}
-            <tr>
-              <td class="mono muted" style="white-space:nowrap">{{ entry.date }}</td>
-              <td>{{ entry.ref_type }}</td>
-              <td class="{{ 'pos' if (entry.amount or 0) >= 0 else 'neg' }}">{{ '{:,.2f}'.format(entry.amount or 0) }}</td>
-              <td>{{ '{:,.2f}'.format(entry.balance or 0) }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="empty">
-        <div class="ei">=</div>
-        <p>No journal activity yet.</p>
-      </div>
-      {% endif %}
     </div>
   </div>
 
-  <div class="card stack">
-    <div class="section-head">
-      <div class="ct" style="margin:0">Top Assets</div>
-      <a href="{{ url_for('dashboard.assets') }}" class="lnk">Open inventory</a>
-    </div>
-    {% if assets_summary %}
-    <div class="tw tw-scroll">
-      <table>
-        <thead>
-          <tr><th>Item</th><th>Qty</th><th>Stacks</th><th>Locations</th></tr>
-        </thead>
-        <tbody>
-          {% for row in assets_summary %}
-          <tr>
-            <td>{{ row.name }}</td>
-            <td>{{ '{:,}'.format(row.quantity) }}</td>
-            <td>{{ row.stacks }}</td>
-            <td class="muted">{{ row.locations|join(', ') }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="empty">
-      <div class="ei">#</div>
-      <p>No assets tracked yet.</p>
-      <p>Run an Assets sync to populate this view.</p>
-    </div>
-    {% endif %}
-  </div>
 </div>
 {% endif %}
 {% endblock %}

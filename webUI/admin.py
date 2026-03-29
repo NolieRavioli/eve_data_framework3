@@ -103,15 +103,11 @@ def _user_list() -> list[dict]:
 @admin_bp.route("/")
 @require_admin
 def index():
-    from util.data_collection_queue import get_collection_queue
-
-    queue = get_collection_queue()
     users = _user_list()
     table_counts = _db_stats()
     sde_status = sde_store.get_warehouse_status()
     esi_status = get_registry_status()
     stats = {
-        "queue_depth": queue.queue_depth(),
         "table_counts": table_counts,
         "table_count": len(table_counts),
         "table_total_rows": sum(table_counts.values()),
@@ -246,3 +242,100 @@ def db_browser_query():
         return jsonify(sde_store.query_browser_sql(raw_sql, row_limit=500))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+# ── ESI Explorer ────────────────────────────────────────────────────────────
+
+@admin_bp.route("/esi")
+@require_admin
+def esi_catalog():
+    """Searchable catalog of all 208 ESI operations."""
+    from esi.generated.manifest import OPERATIONS, COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
+    ops = sorted(OPERATIONS.values(), key=lambda o: ((o.get("tags") or [""])[0], o.get("operation_id", "")))
+    return render_template(
+        "admin_esi.html",
+        operations=ops,
+        compatibility_date=COMPATIBILITY_DATE,
+        operation_count=OPERATION_COUNT,
+        scope_count=len(ALL_SCOPES),
+    )
+
+
+@admin_bp.route("/esi/<operation_id>")
+@require_admin
+def esi_detail(operation_id: str):
+    """JSON detail for a single operation — used by the explorer JS."""
+    from esi.generated.manifest import OPERATIONS
+    op = OPERATIONS.get(operation_id)
+    if not op:
+        abort(404)
+    return jsonify(op)
+
+
+@admin_bp.route("/esi/<operation_id>/run", methods=["POST"])
+@require_admin
+def esi_run(operation_id: str):
+    """
+    Execute an ESI operation immediately and return the response as JSON.
+    Authenticated routes use the admin's own access token.
+    """
+    from esi.generated.manifest import OPERATIONS
+    from esi.generated.client import execute_operation, fetch_all_pages
+
+    op = OPERATIONS.get(operation_id)
+    if not op:
+        return jsonify({"error": f"Unknown operation: {operation_id!r}"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    path_params = data.get("path_params") or {}
+    query_params = data.get("query_params") or {}
+    all_pages = bool(data.get("all_pages", False))
+
+    token = None
+    if op.get("requires_auth"):
+        from util.utils import get_token
+        owner_id = session.get("owner_id")
+        character_id = session.get("character_id")
+        if owner_id and character_id:
+            try:
+                tokens = get_token(owner_id, character_ids=[character_id])
+                row = tokens.get(character_id)
+                if row:
+                    token = row["access_token"]
+            except Exception:
+                pass
+        if not token:
+            return jsonify({"error": "Authentication required but no valid token is available for your session."}), 401
+
+    try:
+        if all_pages and op.get("pagination", {}).get("has_page_param"):
+            result = fetch_all_pages(
+                operation_id,
+                path_params=path_params or None,
+                query_params=query_params or None,
+                token=token,
+            )
+            return jsonify({
+                "ok": True,
+                "operation_id": operation_id,
+                "all_pages": True,
+                "count": len(result) if isinstance(result, list) else None,
+                "data": result,
+            })
+        else:
+            r = execute_operation(
+                operation_id,
+                path_params=path_params or None,
+                query_params=query_params or None,
+                token=token,
+            )
+            return jsonify({
+                "ok": True,
+                "operation_id": operation_id,
+                "status_code": r["status_code"],
+                "headers": {k: v for k, v in r["headers"].items() if k.lower().startswith(("x-", "content-", "expires", "etag"))},
+                "data": r["body"],
+            })
+    except Exception as exc:
+        logger.exception("[ESI Explorer] Error running %s", operation_id)
+        return jsonify({"error": str(exc)}), 500

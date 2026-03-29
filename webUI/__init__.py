@@ -7,10 +7,6 @@ from flask import Flask
 
 from util.utils import RuntimeSettings, get_runtime_settings
 from webUI.dashboard import dashboard_bp
-from webUI.market_browser import market_bp
-from webUI.personal_routes import update_personal_bp
-from webUI.public_routes import update_public_bp
-from webUI.corp_routes import update_corp_bp
 from webUI.sso import auth_bp
 from webUI.admin import admin_bp
 from webUI.tasks import tasks_bp
@@ -27,14 +23,14 @@ def create_app(settings: Optional[RuntimeSettings] = None):
     # Expose toggles for downstream handlers (dashboard, SSO, etc.).
     app.config["RUNTIME_SETTINGS"] = settings
 
-    # Register blueprints
+    # Register core blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
-    app.register_blueprint(update_personal_bp)
-    app.register_blueprint(update_public_bp)
-    app.register_blueprint(update_corp_bp)
-    app.register_blueprint(market_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
+
+    # Register tool blueprints (port/adapter framework)
+    from tools import tool_registry
+    tool_registry.register_blueprints(app)
 
     return app

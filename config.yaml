@@ -19,3 +19,9 @@ SDE:
   load_blueprints: false     # manufacturing blueprints        (~4 MB, ~8s)
   load_type_materials: false # reprocessing materials          (~2 MB, ~3s)
   load_type_dogma: false     # item dogma attributes           (~26 MB, ~60s+)
+
+Structures:
+  enrich_forbidden_cooldown_days: 21   # days to skip transiently-inaccessible structures (404/network)
+  enrich_unauthorized_cooldown_days: 7  # days to skip 403-inaccessible structures during enrichment
+  market_unauthorized_cooldown_days: 7  # days to skip structures that return 403 on the market endpoint
+  market_forbidden_cooldown_days: 21    # days to skip structures that fail for other reasons on the market endpoint

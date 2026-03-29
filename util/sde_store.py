@@ -554,10 +554,22 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
             name VARCHAR,
             type_id BIGINT,
             position_json VARCHAR,
-            last_seen TIMESTAMP
+            last_seen TIMESTAMP,
+            forbidden_until TIMESTAMP,
+            market_forbidden_until TIMESTAMP,
+            market_refreshed_until TIMESTAMP
         )
         """
     )
+    # Migrate existing databases that predate optional columns.
+    existing_cols = {row[0] for row in con.execute("DESCRIBE structures").fetchall()}
+    if "forbidden_until" not in existing_cols:
+        con.execute("ALTER TABLE structures ADD COLUMN forbidden_until TIMESTAMP")
+    if "market_forbidden_until" not in existing_cols:
+        con.execute("ALTER TABLE structures ADD COLUMN market_forbidden_until TIMESTAMP")
+    if "market_refreshed_until" not in existing_cols:
+        con.execute("ALTER TABLE structures ADD COLUMN market_refreshed_until TIMESTAMP")
+
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS market_structures (
@@ -569,6 +581,31 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
             type_id BIGINT,
             position_json VARCHAR,
             last_seen TIMESTAMP
+        )
+        """
+    )
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_region_cooldowns (
+            region_id BIGINT PRIMARY KEY,
+            refreshed_until TIMESTAMP
+        )
+        """
+    )
+
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS isk_per_hour_results (
+            type_id     BIGINT NOT NULL,
+            type_name   VARCHAR,
+            region_id   BIGINT NOT NULL,
+            category_id BIGINT,
+            isk_per_run DOUBLE,
+            isk_per_hour DOUBLE,
+            margin_pct  DOUBLE,
+            computed_at TIMESTAMP,
+            PRIMARY KEY (type_id, region_id)
         )
         """
     )
@@ -2091,21 +2128,32 @@ def list_public_structure_ids(
         _ensure_public_schema(con)
         sql = "SELECT structure_id FROM structures"
         if missing_name_only:
-            sql += " WHERE name IS NULL"
+            sql += " WHERE name IS NULL AND (forbidden_until IS NULL OR forbidden_until < now())"
         return {int(row[0]) for row in con.execute(sql).fetchall()}
     finally:
         con.close()
 
 
-def list_public_structures(database_file: str | Path | None = None) -> list[dict]:
+def list_public_structures(
+    *,
+    skip_market_forbidden: bool = False,
+    database_file: str | Path | None = None,
+) -> list[dict]:
     con = connect(database_file or get_database_path(), read_only=False)
     try:
         _ensure_public_schema(con)
+        where = (
+            "WHERE (market_forbidden_until IS NULL OR market_forbidden_until < now())"
+            "  AND (market_refreshed_until IS NULL OR market_refreshed_until < now())"
+            if skip_market_forbidden
+            else ""
+        )
         return _query_to_dicts(
             con,
-            """
+            f"""
             SELECT structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen
             FROM structures
+            {where}
             ORDER BY structure_id
             """,
         )
@@ -2124,6 +2172,7 @@ def upsert_structures(rows: list[dict], database_file: str | Path | None = None)
             _as_int(row.get("type_id")),
             _json_or_none(row.get("position_json") if "position_json" in row else row.get("position")),
             _coerce_timestamp(row.get("last_seen")) or _utc_now(),
+            _coerce_timestamp(row.get("forbidden_until")),  # NULL clears any prior ban on success
         )
         for row in rows
         if row.get("structure_id") is not None
@@ -2135,10 +2184,145 @@ def upsert_structures(rows: list[dict], database_file: str | Path | None = None)
             con,
             """
             INSERT OR REPLACE INTO structures (
-                structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen, forbidden_until
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             payload,
+        )
+    finally:
+        con.close()
+
+
+def mark_structures_forbidden(
+    structure_ids: list[int],
+    cooldown_seconds: int = 21 * 24 * 3600,
+    database_file: str | Path | None = None,
+) -> None:
+    """Record that a batch of structures returned 403/are inaccessible for enrichment.
+
+    Sets forbidden_until = now + cooldown so that list_public_structure_ids
+    skips them for the cooldown period.  Only updates rows where name IS NULL
+    so successfully-enriched structures are never penalised.
+    """
+    if not structure_ids:
+        return
+    from datetime import timedelta
+    forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
+    placeholders = ", ".join(["?"] * len(structure_ids))
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            f"UPDATE structures SET forbidden_until = ? WHERE structure_id IN ({placeholders}) AND name IS NULL",
+            [forbidden_until, *structure_ids],
+        )
+    finally:
+        con.close()
+
+
+def mark_market_structures_forbidden(
+    structure_ids: list[int],
+    cooldown_seconds: int = 7 * 24 * 3600,
+    database_file: str | Path | None = None,
+) -> None:
+    """Record that a batch of structures returned 403 on the market endpoint.
+
+    Sets market_forbidden_until = now + cooldown so that list_public_structures
+    (when called with skip_market_forbidden=True) skips them.
+    """
+    if not structure_ids:
+        return
+    from datetime import timedelta
+    forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
+    placeholders = ", ".join(["?"] * len(structure_ids))
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            f"UPDATE structures SET market_forbidden_until = ? WHERE structure_id IN ({placeholders})",
+            [forbidden_until, *structure_ids],
+        )
+    finally:
+        con.close()
+
+
+def mark_structures_market_refreshed(
+    structure_ids: list[int],
+    cooldown_seconds: int = 3600,
+    database_file: str | Path | None = None,
+) -> None:
+    """Record that a batch of structures returned market orders successfully.
+
+    Sets market_refreshed_until = now + cooldown so that list_public_structures
+    (when called with skip_market_forbidden=True) skips them until the data is stale.
+    """
+    if not structure_ids:
+        return
+    from datetime import timedelta
+    refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
+    placeholders = ", ".join(["?"] * len(structure_ids))
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            f"UPDATE structures SET market_refreshed_until = ? WHERE structure_id IN ({placeholders})",
+            [refreshed_until, *structure_ids],
+        )
+    finally:
+        con.close()
+
+
+def list_market_region_ids(
+    *,
+    skip_recently_refreshed: bool = True,
+    database_file: str | Path | None = None,
+) -> list[int]:
+    """Return region IDs that still need a market refresh.
+
+    Regions recorded in market_region_cooldowns with a future refreshed_until
+    are excluded when skip_recently_refreshed=True.
+    """
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        if "dim_regions" not in tables:
+            return []
+        if skip_recently_refreshed:
+            rows = con.execute(
+                """
+                SELECT r.region_id
+                FROM dim_regions AS r
+                LEFT JOIN market_region_cooldowns AS c ON c.region_id = r.region_id
+                WHERE c.region_id IS NULL OR c.refreshed_until < now()
+                ORDER BY r.region_id
+                """
+            ).fetchall()
+        else:
+            rows = con.execute("SELECT region_id FROM dim_regions ORDER BY region_id").fetchall()
+        return [row[0] for row in rows]
+    finally:
+        con.close()
+
+
+def mark_region_market_refreshed(
+    region_id: int,
+    cooldown_seconds: int = 3600,
+    database_file: str | Path | None = None,
+) -> None:
+    """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
+    from datetime import timedelta
+    refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            """
+            INSERT INTO market_region_cooldowns (region_id, refreshed_until)
+            VALUES (?, ?)
+            ON CONFLICT (region_id) DO UPDATE SET refreshed_until = excluded.refreshed_until
+            """,
+            [region_id, refreshed_until],
         )
     finally:
         con.close()

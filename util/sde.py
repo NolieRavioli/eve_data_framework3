@@ -351,7 +351,7 @@ def startup_load_sde(cfg: dict | None = None) -> None:
     print()
     if not _warehouse_ready():
         print(f"\r[SDE] no warehouse found at {_warehouse_path()} - building before server start", flush=True)
-        from esi.public.static_data import update_sde
+        from util.sde_bootstrap import update_sde
 
         update_sde()
         return

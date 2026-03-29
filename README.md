@@ -1,59 +1,50 @@
-# EVE Data Framework 3
+﻿# EVE Data Framework 3
 
-EVE Data Framework 3 is a self-hosted operations hub that keeps a corporation's EVE Online data synchronized, warehoused, and explorable through a single Flask web UI. The codebase automates the entire lifecycle: it provisions a shared DuckDB warehouse plus per-owner private SQLite databases, manages authentication with the EVE SSO, schedules pulls from ESI and the Static Data Export (SDE), normalizes the responses, and renders dashboards plus manual refresh tools for pilots.
-
-This document walks through how the application behaves from the first `python main.py` run through recurring data refreshes. It assumes you are comfortable with Python, SQLAlchemy, and Flask, but have never seen this project before.
+EVE Data Framework 3 is a self-hosted operations hub for EVE Online. It provisions a shared DuckDB warehouse and per-owner private SQLite databases, manages EVE SSO authentication, schedules background work through a live-streaming task queue, and renders a Flask web dashboard. The codebase is the **infrastructure layer** — authentication, database access, ESI rate limiting, SDE pipeline, and the auto-generated ESI client are all complete. The data-collection workers (corp/personal ESI collectors and analysis modules) are the next layer to be built on top.
 
 ---
 
 ## 1. High-Level Workflow
 
 1. **Runtime bootstrap (`main.py`)**
-   - Loads `config.yaml`, surfaces runtime toggles (debug mode, auto-install, host/port), and configures logging via `util.utils.initialize_runtime_environment`.
-   - Optionally auto-installs missing packages if `Runtime.auto_install` is enabled in the config.
-   - Ensures the shared DuckDB warehouse is ready for both SDE data and public operational tables.
+   - Loads `config.yaml`, configures logging, and surfaces runtime toggles via `util.utils.initialize_runtime_environment`.
+   - Optionally auto-installs missing packages if `Runtime.auto_install` is set.
+   - Ensures the shared DuckDB warehouse is ready via `sde_store.ensure_public_database()`.
+   - Loads SDE lookup caches into memory via `util.sde.startup_load_sde()`.
    - Launches the Flask application created in `webUI.create_app`.
 
-2. **Web UI startup (`webUI/app.py`)**
-   - Builds a Flask app pre-configured with sessions, blueprints, and Jinja environment.
-   - Serves the dashboard (`webUI/dashboard.py`) that surfaces job slots, wallet information, and refresh actions.
-   - Registers personal and public update routes (`webUI/personal_routes.py`, `webUI/public_routes.py`). Each route orchestrates fetchers, records progress to the logger, and streams a “console output” page for long operations.
+2. **Web UI (`webUI/`)**
+   - Four blueprints are registered: `auth_bp` (SSO), `dashboard_bp` (main view), `admin_bp` (admin panel), `tasks_bp` (background task viewer + SSE streams).
+   - The dashboard (`webUI/dashboard.py`) shows character & session info, the current ESI spec compatibility date and route count, and the OAuth scopes granted for the session token.
 
-3. **Data ingestion**
-   - **Private pulls**: Authenticated character data flows through modules in `esi/personal_*` (skills, wallet, assets, etc.). Helper utilities in `util/utils.py` retrieve and refresh tokens stored inside each owner’s private SQLite database.
-   - **Public pulls**: Market, structure, and SDE content is imported through `esi/public/*`. These modules rely on the rate-limited HTTP helpers in `util/esi_rate_limiter.py` to deduplicate requests and honor endpoint-specific TTLs.
-   - **Analysis**: Modules under `analysis/` post-process raw tables (e.g., `analysis/job_slots.py`, `analysis/structures.py`) and expose summaries consumed by the dashboard.
+3. **Background tasks (`util/task_queue.py`)**
+   - Long-running work is submitted via `enqueue()` into two single-threaded executor queues (`queue="public"` and `queue="private"`).
+   - Both `logging` output and `print()` from worker threads are captured and streamed live to the browser via SSE (`/stream/<task_id>`).
 
-4. **Storage**
+4. **ESI access**
+   - All HTTP to ESI goes through `util/esi_rate_limiter.py`, which enforces the floating-window token-bucket rate limit, handles caching, and fires SSE events that update the live rate card in the task view.
+   - `esi/generated/` is an auto-generated typed client for all 208 ESI operations derived from the OpenAPI spec (`esi/generated/client.py` -> `execute_operation()`).
+
+5. **Storage**
    - Shared public and SDE data live in `_publicData/public.duckdb`.
-   - Each account owner receives a dedicated SQLite database in `_privateData/<owner_id>/<owner_id>.db` driven by `PrivateBase` models. The separation prevents leakage between characters and reduces lock contention.
-
-5. **Long-running job UX**
-   - Routes such as “Refresh SDE” or “Structure Markets” render `webUI/templates/console_output.html`. A tee handler mirrors log output both to stdout and to an in-memory buffer passed to the template. The page displays the complete log history with a live redirect countdown so the user can read the output before returning to the dashboard.
+   - Each account owner gets a dedicated SQLite database in `_privateData/<owner_id>/<owner_id>.db`.
 
 ---
 
 ## 2. Configuration
 
-All runtime knobs live in `config.yaml`. The file has three major sections:
+All runtime knobs live in `config.yaml`. The file has these sections:
 
-- **Environment Variables** – copied into `os.environ` on startup. Use this block to define ESI credentials (`EVE_CLIENT_ID`, `EVE_SECRET_KEY`), organization identifiers, or custom cache directories.
-- **Runtime** – optional keys that map onto `util.utils.RuntimeSettings`. Notable flags include:
-  - `debug`: Enables Flask debug mode and verbose logging.
-  - `auto_install`: When true, missing modules trigger a `pip install -r requirements.txt` automatically.
-  - `host`/`port`: Network binding for the web server.
-  - `trace_esi`: Prints every outgoing ESI request.
-- **Tracked Entities** – character IDs, structure IDs, regions, and other lists consumed by fetchers. Each fetcher checks this section to decide which owners or regions to update by default.
-
-Because environment variables are populated only if they are absent from the real shell environment, you can override values at launch without editing the file.
+- **Environment Variables** -- copied into `os.environ` on startup. Contains `LANGUAGE`, `SUPPORTED_LANGUAGES`, `PUBLIC_DATA_FOLDER`, `EVE_PRIVATE_DATABASE_FOLDER`, `AUTH_DATA_FOLDER`, and `SDE_PATH`. Absent variables also accept env-var overrides.
+- **Runtime** -- optional block that maps to `util.utils.RuntimeSettings`. Keys include `debug`, `auto_install`, `host`, `port`, `log_level`, `trace_esi`, and `secret_key`. All fall back to sane defaults or the environment variables `EVE_DEBUG`, `EVE_WEB_PORT`, `EVE_LOG_LEVEL`, etc.
+- **SDE** -- toggles for each SDE dataset loaded at startup. Set a flag to `false` to skip loading that dataset (it will lazy-load on first use). The `database_file` key sets the DuckDB path.
+- **Structures** -- cooldown-day settings that control how long inaccessible structures are skipped during enrichment and market collection.
 
 ---
 
 ## 3. Dependency Management
 
-`requirements.txt` lists the supported dependency set. On startup, `ensure_dependencies` will attempt to import each required module. If a module is missing and `auto_install` is false, the program raises an `ImportError` describing what to install. If `auto_install` is true, the runtime executes `pip install -r requirements.txt` in-place and retries the imports.
-
-You can safely pre-create a virtual environment, install dependencies manually, and run the framework there; nothing in the codebase assumes global installations.
+`requirements.txt` lists the supported dependency set. On startup, `ensure_dependencies` checks that required modules are importable. If `auto_install` is true, a missing module triggers `pip install -r requirements.txt` in place.
 
 ---
 
@@ -61,156 +52,191 @@ You can safely pre-create a virtual environment, install dependencies manually, 
 
 ### 4.1 Shared Warehouse (`_publicData/public.duckdb`)
 
-This DuckDB file holds both the shared public operational tables and the static SDE warehouse:
+This DuckDB file holds all public and SDE data:
 
-- `users`: Character-to-owner mapping used when tokens are refreshed automatically.
-- `structures` & `market_structures`: Station metadata including solar system, region, ownership, and last-seen timestamps.
-- `market_orders` & `public_contracts`: Latest snapshots of public order books and contracts.
+- **SDE marts**: `dim_types`, `dim_groups`, `dim_categories`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, dogma/material tables, and SDE manifest tables.
+- **Public operational tables**: `users`, `site_admins`, `structures`, `market_structures`, `market_orders`.
+- **ESI spec metadata**: `esi_routes`, `esi_schemas`, `esi_scopes` -- populated by `util/esi_spec_registry.py`.
 
-- Raw coverage tables for every top-level `_sde/fsd/*.yaml` and `_sde/bsd/*.yaml` file.
-- Typed marts such as `dim_types`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, and dogma/material tables.
-- Manifest tables that record build timestamps, source hashes, and dataset row counts.
+Access: `util/sde_store.connect()` returns a fresh `duckdb.DuckDBPyConnection`. Always get a new connection per thread; DuckDB connections are not thread-safe.
 
-### 4.2 Private Databases (`_privateData/<owner_id>.db`)
+> `get_public_session()` in `db/database.py` raises `RuntimeError` -- public SQLite was retired. The `PublicBase` SQLAlchemy models (`User`, `SiteAdmin`, `Structure`, etc.) exist as ORM definitions but all DuckDB writes go through `sde_store` helpers directly.
 
-When a character logs in or data is pulled for a new owner, `initialize_private_database` provisions a dedicated SQLite database. It stores sensitive information such as:
+### 4.2 Private Databases (`_privateData/<owner_id>/<owner_id>.db`)
 
-- OAuth tokens and identity metadata (`characters`).
-- Personal assets and blueprints.
-- Industry jobs, skill queue, wallet balances, journal entries, and bookmarks.
+When a character first authenticates, `initialize_private_database(owner_id)` provisions a dedicated SQLite database for that owner. It currently stores:
 
-Sessions are created on demand via `db.database.get_private_session(owner_id)` so concurrent requests can work with separate session objects. `check_same_thread=False` combined with `pool_pre_ping=True` mitigates SQLite lock errors when routes are executed in quick succession.
+- Character identity and OAuth tokens (`characters` table via `PrivateBase`).
+
+Future per-character data (assets, wallet, industry jobs, skills, etc.) will be added here as new `PrivateBase` models.
+
+Sessions are obtained via `db.database.get_private_session(owner_id)`. SQLite is configured with WAL mode, `synchronous=NORMAL`, a 30 s busy timeout, and `foreign_keys=ON`.
 
 ---
 
 ## 5. Authentication and Token Flow
 
-1. Characters authenticate through EVE SSO. Credentials are encrypted at rest using Fernet (see `util/auth.py`).
-2. OAuth tokens are persisted in the owner’s private database. Each fetcher begins by calling `util.utils.get_token(owner_id)`:
-   - It loads all characters for the owner.
-   - Expired tokens are refreshed synchronously with the `/oauth/token` endpoint.
-   - Access and refresh tokens are updated in-place and the caller receives a dictionary keyed by `character_id`.
-3. Fetchers then attach the tokens to their ESI requests.
-
-This design allows the framework to refresh tokens lazily at the moment of use, avoiding a central scheduler.
+1. Characters authenticate through EVE SSO (OAuth 2.0 Authorization Code flow) via the routes in `webUI/sso.py`.
+2. A time-limited `OAuthStateCache` issues and consumes each CSRF `state` token exactly once.
+3. OAuth tokens are Fernet-encrypted at rest (`_publicData/key`) and stored in the owner's private SQLite database via `util/auth.py`.
+4. On each request that needs an access token, `util.utils.get_token(owner_id)` loads the character's stored token and refreshes it if expired.
+5. Multiple characters can be attached to a single owner (add-toon flow); each character gets its own token row.
 
 ---
 
 ## 6. ESI Access, Caching, and Rate Limiting
 
-`util/esi_rate_limiter.py` centralizes outbound HTTP calls. Key behaviors:
+`util/esi_rate_limiter.py` centralises all outbound ESI HTTP. Key behaviours:
 
-- **Request Coalescing** – identical requests within a TTL window reuse cached responses to avoid tripping ESI rate limits. For example, `/universe/structures/` responses are cached for a week, while `/markets/structures/{id}/` refresh every 30 minutes.
-- **Thread Safety** – an `asyncio`-style token bucket is implemented using threading primitives so multiple routes can queue requests without exceeding per-second thresholds.
-- **Tracing** – when `RuntimeSettings.trace_esi` is true, each outbound call is printed with method, URL, and cache status. This output also appears in the console template pages for long-running jobs.
-
-All fetcher modules import `esi_get`, `esi_post`, or `esi_request` from this helper to ensure consistent behavior.
-
----
-
-## 7. Static Data Export (SDE) Pipeline
-
-Triggering “Refresh SDE” in the UI, or calling the underlying helper directly, performs the following steps (`esi/public/static_data.py` and `util/sde.py`):
-
-1. Download the latest SDE ZIP from CCP.
-2. Extract YAML files into `_sde/` and prune multilingual fields to the configured supported languages.
-3. Rebuild cached lookup dictionaries, including solar system ⇄ region mappings.
-4. Rebuild `_publicData/public.duckdb` and refresh the hot lookup caches exposed through `util.sde`.
-
-During this process, log lines are captured by the console template so the operator can monitor progress.
+- **Floating-window token bucket** -- tracks per `(rate_limit_group, applicationID:characterID)` pair. 2XX = 2 tokens, 4XX = 5 tokens; 3XX = 1; 5XX = 0 (server fault).
+- **Error-rate tracking** -- monitors `X-ESI-Error-Limit-Remain` separately from the main bucket.
+- **ETag / `If-None-Match`** -- responses are cached and re-requested with the ETag; unchanged data returns 304 (1 token) instead of a full response.
+- **Alternating gate** -- when both `public` and `private` task queues are active, the gate interleaves their HTTP requests one-for-one to avoid one queue monopolising the rate budget.
+- **Post-request hook** -- after each real HTTP call, a hook fires an `esi_rate` SSE event so the live rate card in `task_progress.html` updates in the browser.
+- **Tracing** -- when `RuntimeSettings.trace_esi` is true, each outbound call is printed (also visible in task log streams).
 
 ---
 
-## 8. Fetcher Modules and Data Refreshes
+## 7. ESI Spec Registry & Auto-Generated Client
 
-### 8.1 Personal Update Routes (`webUI/personal_routes.py`)
+### Spec Registry (`util/esi_spec_registry.py`)
 
-Each route corresponds to a button on the dashboard:
+Fetches the ESI OpenAPI spec for a given compatibility date and parses it into structured JSON files stored in `_publicData/esi_specs/<date>/`:
 
-- `/update_personal/skills` → `esi.personal_skills.fetch_all_skills`
-- `/update_personal/wallet` → `esi.personal_wallet.sync_wallet`
-- `/update_personal/assets`, `/industry`, `/bookmarks`, etc.
+- `routes.json` -- all operations with parameters, scopes, pagination info, cache hints.
+- `schemas.json` -- TypedDict-compatible schema definitions.
+- `scopes.json` -- all unique OAuth scopes.
+- `latest.json` -- records the most recently fetched date and counts.
 
-Execution flow:
-1. Resolve the active owner/character from the session.
-2. Acquire tokens via `get_token`.
-3. Call the appropriate fetcher which contacts ESI, parses JSON payloads, and merges rows into the private database.
-4. Emit summary log lines (counts of stored rows, queue lengths, balances).
-5. Redirect back to the dashboard or render the console output template if the route is long-running.
+Spec metadata is also inserted into the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes` for browsing via the admin DB browser.
 
-### 8.2 Public Update Routes (`webUI/public_routes.py`)
+```python
+from util.esi_spec_registry import refresh_esi_spec_registry, get_registry_status
+refresh_esi_spec_registry()       # fetch latest spec and store it
+status = get_registry_status()    # dict with date, counts, last_updated, etc.
+```
 
-These routes populate global intelligence and require more CPU/IO time:
+### Code Generator (`util/esi_codegen.py`)
 
-- `update_public/sde`: runs the SDE pipeline described above.
-- `update_public/structures`: orchestrates structure discovery in `analysis.structures`. The analysis module merges SDE metadata, corporation sovereignty data, and private structure IDs to ensure every structure has a `solar_system_id` and `region_id` recorded.
-- `update_public/markets`: imports public market contracts or pulls market orders for user-tracked structures, depending on the route.
+Reads the spec snapshot and regenerates the `esi/generated/` package:
 
-The shared `run_with_console_output` helper wraps each route so stdout/stderr are captured, displayed in `console_output.html`, and then the page automatically redirects.
+```powershell
+python -m util.esi_codegen                   # regenerate from latest snapshot
+python -m util.esi_codegen --date 2025-12-16 # pin to a specific date
+python -m util.esi_codegen --force           # overwrite even if date matches
+```
 
----
+The generated package (`esi/generated/`) is pinned to compatibility date `2025-12-16` and provides 208 typed operations. **Do not hand-edit `esi/generated/`.**
 
-## 9. Analysis Modules
-
-Data consumers under `analysis/` summarize stored information for display:
-
-- `analysis/job_slots.py`: Calculates how many manufacturing and science slots are currently free for each character by comparing job counts to configured limits.
-- `analysis/structures.py`: Discovers structure IDs, enriches them with region/system data, and exposes progress metrics while scanning sovereignty systems.
-- Additional modules can be added without changing the ingestion layer because they read directly from the databases through SQLAlchemy sessions.
-
-These scripts are pure Python and rely on the persisted data, so you can run them manually for offline analysis if desired.
+```python
+from esi.generated.client import execute_operation
+result = execute_operation("GetCharactersCharacterId", character_id=12345, token=access_token)
+```
 
 ---
 
-## 10. Web UI Overview
+## 8. Static Data Export (SDE) Pipeline
 
-The Flask UI lives under `webUI/`:
+The SDE provides static game data (type names, market groups, universe geometry, blueprints, dogma). It is rebuilt whenever CCP patches the game.
 
-- `webUI/__init__.py`: Factory for the Flask app, registers blueprints, configures Jinja globals, and sets up session management.
-- `webUI/templates/`: Jinja templates used throughout the interface. `dashboard.html` provides the main landing page, while `console_output.html` captures log streams for long jobs.
-- `webUI/static/`: Houses CSS, JavaScript, and images required by the templates.
+Pipeline (`util/sde_bootstrap.py`):
 
-When you run the app, navigate to `http://127.0.0.1:5000`. The dashboard shows:
+1. Download the SDE ZIP from CCP's S3 bucket.
+2. Extract YAML files into `_sde/`.
+3. Language-prune multilingual fields to only the languages in `SUPPORTED_LANGUAGES`.
+4. Rebuild the DuckDB warehouse (`sde_store.build_sde_warehouse()`).
+5. Refresh the ESI spec registry (`esi_spec_registry.refresh_esi_spec_registry()`).
+6. Reload in-memory SDE caches (`sde.refresh_all_caches()`).
 
-- Character summaries (skill queue, wallet balances, job slots).
-- Buttons for each fetcher to trigger manual refreshes.
-- Status banners derived from analysis modules.
-
-Because the server uses Flask’s built-in development server, deploy behind a production WSGI server or reverse proxy for long-term hosting.
-
----
-
-## 11. Logging
-
-The framework uses the standard library `logging` module. Default log level is INFO, configurable via `Runtime.log_level`. Notable behaviors:
-
-- Each fetcher logs the number of rows inserted/updated per pull.
-- Token refresh events are explicitly logged so you can detect authentication churn.
-- During long-running public tasks, output is duplicated to the browser console page.
-
-Logs are emitted to stdout; consider redirecting output to files or a centralized logging system when running in production.
+At normal startup, `startup_load_sde()` loads the SDE datasets that are toggled `true` in `config.yaml` (no download). The download pipeline is triggered manually or from a future admin route.
 
 ---
 
-## 12. Development Tips
+## 9. Background Task Queue
 
-- **Running Tests**: Many modules are plain scripts. Use `python -m compileall <path>` to perform a quick syntax check, or integrate a linter/formatter of your choice.
-- **Extending Fetchers**: Implement a new ESI integration by creating a module in `esi/personal_*` or `esi/public/`, reusing the rate-limited request helpers, and adding a route button in the corresponding blueprint.
-- **Schema Changes**: Update models in `db/models.py` and ensure `PublicBase.metadata.create_all` or `PrivateBase.metadata.create_all` is called somewhere during initialization so new tables are created automatically.
-- **Background Jobs**: A future `scheduler.py` placeholder exists. Today, refreshes are triggered manually from the UI; you can schedule them with cron or a task runner by invoking the fetcher modules directly.
+`util/task_queue.py` provides a simple but complete background work system:
+
+```python
+from util.task_queue import enqueue
+
+task_id = enqueue("My Task Name", worker_fn, arg1, arg2, owner_id=owner_id)
+# queue="public" for market/SDE tasks (default is "private")
+```
+
+- Two single-threaded `ThreadPoolExecutor` queues (`tq-pub`, `tq-prv`) run concurrently with each other but each queue is strictly serial (FIFO).
+- `logging` calls and `print()` inside worker threads are captured by thread-aware interceptors and streamed to the browser via SSE.
+- ESI rate stats are pushed to the browser as `esi_rate` SSE events after each HTTP call.
+- The `/stream/<task_id>` SSE endpoint and `task_progress.html` render the live view.
+- Helpers: `get_task()`, `get_tasks_for_owner()`, `get_all_tasks()`, `cancel_task()`, `clear_tasks()`.
 
 ---
 
-## 13. Frequently Asked Operational Questions
+## 10. Admin Panel
 
-- **Where are credentials stored?** In the private database for each owner. Tokens are encrypted before persisting, and the encryption key derives from values in `config.yaml`.
-- **How do I add a new character?** Invite them through the UI’s SSO login flow. The framework will create the private DB (if needed), record the character, and start collecting data on the next refresh.
-- **Can I run it headless?** Yes. Trigger refresh functions from standalone scripts or CLI wrappers that import the relevant modules and call them directly. The web UI is optional but helpful for visibility.
-- **What happens if ESI is down?** Errors bubble up through the rate limiter with descriptive log messages. Because responses are cached with TTLs, the framework will continue serving the last known data until new pulls succeed.
+`webUI/admin.py` provides the admin blueprint (`/admin/*`), accessible only to users with `session["is_admin"] == True`:
+
+- **Live log console** (`/admin/stream`) -- SSE stream of all `logging` output, ring-buffered to the last 500 lines.
+- **DB browser** (`/admin/db_browser`) -- read-only browser for the DuckDB warehouse and any owner's private SQLite database.
+- **User management** (`/admin/promote`, `/admin/demote`) -- grant or revoke site-admin status, stored in the `site_admins` DuckDB table.
+- **ESI registry status** -- current compatibility date, operation/schema/scope counts, and last-updated timestamp.
 
 ---
 
-## 14. Licensing
+## 11. Web UI Overview
+
+The Flask app (`webUI/`) registers four blueprints:
+
+| Blueprint | Prefix | Purpose |
+|---|---|---|
+| `auth_bp` | `/` | EVE SSO login / callback / logout |
+| `dashboard_bp` | `/` | Main landing page |
+| `admin_bp` | `/admin` | Admin panel (log console, DB browser, user management) |
+| `tasks_bp` | `/tasks` | Task list, task detail, SSE stream |
+
+Templates under `webUI/templates/` all extend `base.html`:
+
+| Template | Rendered by |
+|---|---|
+| `dashboard.html` | `dashboard_bp` -- character info, ESI spec status, granted scopes |
+| `admin.html` | `admin_bp` -- live log console |
+| `admin_esi.html` | `admin_bp` -- ESI registry details |
+| `db_browser.html` | `admin_bp` -- DuckDB / SQLite browser |
+| `task_list.html` | `tasks_bp` -- list of all tasks |
+| `task_progress.html` | `tasks_bp` -- live task output + ESI rate card |
+
+---
+
+## 12. Logging
+
+The framework uses the standard library `logging` module. Default level is INFO, configurable via `Runtime.log_level` or the `EVE_LOG_LEVEL` env var. Notable behaviours:
+
+- Worker threads have their `logging` output and `print()` automatically captured and forwarded to the running `Task` object for SSE streaming.
+- The admin panel's `_AdminLogHandler` buffers the last 500 log lines from all modules and streams them to the live log console page.
+- A `StreamHandler` on the real `sys.stdout` emits all log records to the terminal without double-capturing from the task interceptors.
+
+---
+
+## 13. Development Tips
+
+- **Running the app**: `python main.py` -- default `http://127.0.0.1:5000`. Override host/port with `EVE_WEB_HOST` / `EVE_WEB_PORT`.
+- **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
+- **Adding a collector**: create `esi/corp_<name>.py` or `esi/personal_<name>.py`, use `esi_get`/`execute_operation` for HTTP, upsert to the private DB via `get_private_session(owner_id)`, submit as `enqueue(...)`, expose a trigger route in a new blueprint registered in `webUI/__init__.py`.
+- **Adding a DB model**: subclass `PrivateBase` in `db/models.py` -- `create_all` runs automatically via `initialize_private_database`. For DuckDB/public tables add DDL in `sde_store.ensure_public_database()`.
+- **Regenerating the ESI client**: `python -c "from util.esi_spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"` then `python -m util.esi_codegen --force`.
+- **Never call `requests` directly** outside `util/esi_rate_limiter.py`, `util/esi_spec_registry.py`, and `util/sde_bootstrap.py`.
+
+---
+
+## 14. Security Notes
+
+- `_publicData/key` -- Fernet symmetric key. **Never commit.**
+- `_publicData/client_cred` -- encrypted OAuth `client_id`/`client_secret`. **Never commit.**
+- `_privateData/` -- per-user SQLite databases. **Never commit.**
+- CSRF is mitigated by the `OAuthStateCache` in `webUI/sso.py`, which consumes each state token exactly once within a 5-minute window.
+- All SQL uses parameterised DuckDB queries or the SQLAlchemy ORM -- no string interpolation with user input.
+
+---
+
+## 15. Licensing
 
 This project is released under the MIT License. See `LICENCE.md` for the full text.
-
