@@ -1,15 +1,15 @@
-"""
+﻿"""
 util/esi_codegen.py
 ────────────────────
 Code generator that reads the active ESI spec snapshot and emits the
-``esi/generated/`` package.
+``esi/client/`` package.
 
 Generated files
 ───────────────
-  esi/generated/__init__.py          — package marker + version check
-  esi/generated/manifest.py          — authoritative operation catalog dict
-  esi/generated/schemas.py           — TypedDict stubs + aliases from schemas.json
-  esi/generated/client.py            — dynamic execute_operation() + batch helpers
+  esi/client/__init__.py          — package marker + version check
+  esi/client/manifest.py          — authoritative operation catalog dict
+  esi/client/schemas.py           — TypedDict stubs + aliases from schemas.json
+  esi/client/client.py            — dynamic execute_operation() + batch helpers
 
 Entry points
 ────────────
@@ -102,7 +102,7 @@ def _load_schemas(compatibility_date: str) -> dict[str, dict]:
 def _gen_manifest(routes: list[dict], compatibility_date: str) -> str:
     lines: list[str] = [
         '"""',
-        "esi/generated/manifest.py",
+        "esi/client/manifest.py",
         "─────────────────────────",
         "AUTO-GENERATED — do not edit by hand.",
         f"Source: ESI compatibility date {compatibility_date}",
@@ -196,7 +196,7 @@ def _schema_to_python_type(schema: dict | None) -> str:
 def _gen_schemas(schemas: dict[str, dict], compatibility_date: str) -> str:
     lines: list[str] = [
         '"""',
-        "esi/generated/schemas.py",
+        "esi/client/schemas.py",
         "─────────────────────────",
         "AUTO-GENERATED — do not edit by hand.",
         f"Source: ESI compatibility date {compatibility_date}",
@@ -252,7 +252,7 @@ def _gen_schemas(schemas: dict[str, dict], compatibility_date: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CLIENT_TEMPLATE = '''"""
-esi/generated/client.py
+esi/client/client.py
 ────────────────────────
 AUTO-GENERATED — do not edit by hand.
 Source: ESI compatibility date {compatibility_date}
@@ -276,7 +276,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from esi.generated.manifest import OPERATIONS, COMPATIBILITY_DATE, ALL_SCOPES
+from esi.client.manifest import OPERATIONS, COMPATIBILITY_DATE, ALL_SCOPES
 
 
 RESPONSE_CONTRACT_KEYS = ("route", "url", "status_code", "headers", "body", "queue_channel")
@@ -500,7 +500,7 @@ def execute_tag_batch(
     Each result is a standardised response dict with an added 'operation_id' key.
     Skips operations that require auth when no token is supplied.
     """
-    from esi.generated.manifest import OPERATIONS_BY_TAG
+    from esi.client.manifest import OPERATIONS_BY_TAG
     results: list[dict] = []
     for op_id in OPERATIONS_BY_TAG.get(tag, []):
         op = OPERATIONS[op_id]
@@ -528,7 +528,7 @@ def _gen_client(compatibility_date: str) -> str:
 def _gen_operations(routes: list[dict], compatibility_date: str) -> str:
     lines: list[str] = [
         '"""',
-        "esi/generated/operations.py",
+        "esi/client/operations.py",
         "────────────────────────────",
         "AUTO-GENERATED — do not edit by hand.",
         f"Source: ESI compatibility date {compatibility_date}",
@@ -540,7 +540,7 @@ def _gen_operations(routes: list[dict], compatibility_date: str) -> str:
         "# ruff: noqa",
         "from __future__ import annotations",
         "from typing import Any",
-        "from esi.generated.client import execute_operation, fetch_all_pages",
+        "from esi.client.client import execute_operation, fetch_all_pages",
         "",
     ]
 
@@ -601,7 +601,7 @@ def _gen_operations(routes: list[dict], compatibility_date: str) -> str:
 
 def _gen_init(compatibility_date: str, route_count: int, schema_count: int, scope_count: int) -> str:
     return f'''"""
-esi/generated/__init__.py
+esi/client/__init__.py
 ──────────────────────────
 AUTO-GENERATED — do not edit by hand.
 Compatibility date: {compatibility_date}
@@ -625,14 +625,14 @@ def generate(
     force: bool = False,
 ) -> dict:
     """
-    Read the active ESI spec snapshot and write the ``esi/generated/`` package.
+    Read the active ESI spec snapshot and write the ``esi/client/`` package.
 
     Parameters
     ----------
     compatibility_date:
         The spec version to use.  Defaults to the active date in latest.json.
     output_dir:
-        Where to write the package.  Defaults to ``esi/generated/``.
+        Where to write the package.  Defaults to ``esi/client/``.
     force:
         If False (default), skip generation when the package already matches
         the active compatibility date.
@@ -643,14 +643,14 @@ def generate(
     """
     info = _latest_info()
     date = compatibility_date or info["compatibility_date"]
-    out = Path(output_dir or "esi/generated")
+    out = Path(output_dir or "esi/client")
 
     # Check if already current
     init_path = out / "__init__.py"
     if not force and init_path.exists():
         content = init_path.read_text(encoding="utf-8")
         if f"COMPATIBILITY_DATE = {repr(date)}" in content:
-            print(f"[codegen] esi/generated/ already at {date} — nothing to do.  Use force=True to regenerate.")
+            print(f"[codegen] esi/client/ already at {date} — nothing to do.  Use force=True to regenerate.")
             routes = _load_routes(date)
             schemas = _load_schemas(date)
             all_scopes = sorted({s for r in routes for s in r.get("scopes", [])})
@@ -680,7 +680,7 @@ def generate(
         "scope_count": len(all_scopes),
     }
     print(
-        f"[codegen] Generated esi/generated/ for {date} — "
+        f"[codegen] Generated esi/client/ for {date} — "
         f"{len(routes)} operations, {len(schemas)} schemas, {len(all_scopes)} scopes."
     )
     return result
@@ -696,10 +696,10 @@ def check_generated_is_current() -> None:
     Raises RuntimeError if the generated package is missing or stale.
     Called at app startup from main.py.
     """
-    init_path = Path("esi/generated/__init__.py")
+    init_path = Path("esi/client/__init__.py")
     if not init_path.exists():
         raise RuntimeError(
-            "esi/generated/ package is missing.  Run util.esi_codegen.generate() "
+            "esi/client/ package is missing.  Run util.esi_codegen.generate() "
             "or: python -m util.esi_codegen"
         )
 
@@ -710,15 +710,15 @@ def check_generated_is_current() -> None:
     content = init_path.read_text(encoding="utf-8")
     if f"COMPATIBILITY_DATE = {repr(expected_date)}" not in content:
         raise RuntimeError(
-            f"esi/generated/ is stale (expected {expected_date}).  "
+            f"esi/client/ is stale (expected {expected_date}).  "
             "Run: python -m util.esi_codegen"
         )
 
     if expected_ops:
-        from esi.generated import OPERATION_COUNT
+        from esi.client import OPERATION_COUNT
         if OPERATION_COUNT != expected_ops:
             raise RuntimeError(
-                f"esi/generated/ operation count mismatch: "
+                f"esi/client/ operation count mismatch: "
                 f"generated={OPERATION_COUNT}, spec={expected_ops}.  "
                 "Run: python -m util.esi_codegen"
             )
@@ -727,7 +727,7 @@ def check_generated_is_current() -> None:
     from util.collector_codegen import collectors_are_current
     if not collectors_are_current(expected_date):
         raise RuntimeError(
-            f"esi/personal|corp|public_api/ collector packages are missing or stale "
+            f"esi/personal|corp|public/ collector packages are missing or stale "
             f"(expected {expected_date}).  Run: python build.py --collectors"
         )
 
@@ -737,9 +737,9 @@ def check_generated_is_current() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _cli() -> None:
-    parser = argparse.ArgumentParser(description="Generate esi/generated/ from the active ESI spec.")
+    parser = argparse.ArgumentParser(description="Generate esi/client/ from the active ESI spec.")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="Spec compatibility date (defaults to latest)")
-    parser.add_argument("--output", metavar="DIR", default="esi/generated", help="Output directory (default: esi/generated)")
+    parser.add_argument("--output", metavar="DIR", default="esi/client", help="Output directory (default: esi/generated)")
     parser.add_argument("--force", action="store_true", help="Regenerate even if already current")
     args = parser.parse_args()
     result = generate(compatibility_date=args.date, output_dir=args.output, force=args.force)

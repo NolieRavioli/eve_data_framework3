@@ -1,10 +1,10 @@
-"""build.py — Refresh the ESI spec and regenerate esi/generated/ and domain collectors.
+﻿"""build.py — Refresh the ESI spec and regenerate esi/client/ and domain collectors.
 
 Usage:
     python build.py              # fetch latest spec + regenerate generated + collectors
     python build.py --force      # force regenerate even if spec is current
     python build.py --spec-only  # only refresh the spec, skip codegen
-    python build.py --gen-only   # only run esi/generated/ codegen, skip collectors
+    python build.py --gen-only   # only run esi/client/ codegen, skip collectors
     python build.py --collectors # only regenerate domain collector packages
 """
 
@@ -15,7 +15,7 @@ from util.utils import load_config, CONFIG_PATH
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Refresh ESI spec and regenerate esi/generated/.")
+    parser = argparse.ArgumentParser(description="Refresh ESI spec and regenerate esi/client/.")
     parser.add_argument("--force", action="store_true", help="Force codegen even if spec date matches.")
     parser.add_argument("--spec-only", action="store_true", help="Only refresh the spec; skip codegen.")
     parser.add_argument("--gen-only", action="store_true", help="Only run codegen from the cached spec; skip collectors.")
@@ -38,9 +38,9 @@ def main() -> None:
             f"  schemas={status.get('schema_count', '?')}"
         )
 
-    # Step 2: esi/generated/ codegen — skip if --spec-only or --collectors
+    # Step 2: esi/client/ codegen — skip if --spec-only or --collectors
     if not args.spec_only and not args.collectors_only:
-        print("[build] Regenerating esi/generated/…")
+        print("[build] Regenerating esi/client/…")
         from util.esi_codegen import generate
         result = generate(compatibility_date=args.date, force=args.force)
         print(
@@ -59,7 +59,7 @@ def main() -> None:
             f"[build] Collectors done — date={result['compatibility_date']}"
             f"  personal={result['personal_files']}"
             f"  corp={result['corp_files']}"
-            f"  public_api={result['public_api_files']}"
+            f"  public={result['public_files']}"
         )
 
     print("[build] Done.")

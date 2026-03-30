@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import os
 import time
@@ -25,7 +25,7 @@ KEY_FILE = os.path.join(PUBLIC_DATA_FOLDER, "key")
 
 # Scopes are sourced from the generated manifest — do not edit by hand.
 # Run `python -m util.esi_codegen` to regenerate when the ESI spec changes.
-from esi.generated.manifest import ALL_SCOPES as _ALL_SCOPES
+from esi.client.manifest import ALL_SCOPES as _ALL_SCOPES
 
 REQUIRED_SCOPES = " ".join(sorted(_ALL_SCOPES))
 

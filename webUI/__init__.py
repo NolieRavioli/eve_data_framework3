@@ -29,8 +29,8 @@ def create_app(settings: Optional[RuntimeSettings] = None):
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
 
-    # Register tool blueprints (port/adapter framework)
-    from tools import tool_registry
+    # Register application blueprints (port/adapter framework)
+    from applications import tool_registry
     tool_registry.register_blueprints(app)
 
     return app

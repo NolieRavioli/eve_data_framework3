@@ -1,4 +1,4 @@
-"""
+﻿"""
 Admin panel blueprint.
 - Live console via Server-Sent Events (SSE)
 - Database statistics
@@ -250,7 +250,7 @@ def db_browser_query():
 @require_admin
 def esi_catalog():
     """Searchable catalog of all 208 ESI operations."""
-    from esi.generated.manifest import OPERATIONS, COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
+    from esi.client.manifest import OPERATIONS, COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
     from db.database import get_private_session
     from db.models import Character
 
@@ -285,7 +285,7 @@ def esi_catalog():
 @require_admin
 def esi_detail(operation_id: str):
     """JSON detail for a single operation — used by the explorer JS."""
-    from esi.generated.manifest import OPERATIONS
+    from esi.client.manifest import OPERATIONS
     op = OPERATIONS.get(operation_id)
     if not op:
         abort(404)
@@ -299,8 +299,8 @@ def esi_run(operation_id: str):
     Execute an ESI operation immediately and return the response as JSON.
     Authenticated routes use the admin's own access token.
     """
-    from esi.generated.manifest import OPERATIONS
-    from esi.generated.client import execute_operation, fetch_all_pages
+    from esi.client.manifest import OPERATIONS
+    from esi.client.client import execute_operation, fetch_all_pages
 
     op = OPERATIONS.get(operation_id)
     if not op:

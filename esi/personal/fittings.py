@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from esi.generated.client import execute_operation, fetch_all_pages
+from esi.client.client import execute_operation, fetch_all_pages
 
 logger = logging.getLogger(__name__)
 

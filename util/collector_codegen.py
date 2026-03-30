@@ -1,11 +1,11 @@
-"""util/collector_codegen.py
+﻿"""util/collector_codegen.py
 ────────────────────────────
 Generates typed ESI domain collector packages from the active manifest.
 
 Writes three always-regenerated packages:
     esi/personal/    — character-scoped routes (character_id in path, or auth'd with fleet_id etc.)
     esi/corp/        — corporation-scoped routes (corporation_id in path, no character_id)
-    esi/public_api/  — unauthenticated public routes (Alliance, Dogma, Universe, etc.)
+    esi/public/      — unauthenticated public routes (Alliance, Dogma, Universe, etc.)
 
 Each package contains one module per ESI tag (e.g. assets.py, wallet.py).
 Each module contains one typed wrapper function per operation in that tag.
@@ -202,7 +202,7 @@ def _render_file(tag: str, ops: list[tuple[str, dict]], date: str, scope: str) -
     lines.append("import logging")
     lines.append("from typing import Any")
     lines.append("")
-    lines.append("from esi.generated.client import execute_operation, fetch_all_pages")
+    lines.append("from esi.client.client import execute_operation, fetch_all_pages")
     lines.append("")
     lines.append("logger = logging.getLogger(__name__)")
     lines.append("")
@@ -229,7 +229,7 @@ def _render_init(date: str, scope: str) -> str:
 
 def collectors_are_current(date: str) -> bool:
     """Return True if all three collector packages match ``date``."""
-    for scope in ("personal", "corp", "public_api"):
+    for scope in ("personal", "corp", "public"):
         init = Path(f"esi/{scope}/__init__.py")
         if not init.exists():
             return False
@@ -247,14 +247,14 @@ def generate_collectors(
     force: bool = False,
 ) -> dict:
     """
-    Read OPERATIONS / OPERATIONS_BY_TAG from esi.generated.manifest and write
+    Read OPERATIONS / OPERATIONS_BY_TAG from esi.client.manifest and write
     the three domain collector packages.
 
     Parameters
     ----------
     compatibility_date:
         The ESI compatibility date to label the output. Defaults to
-        ``esi.generated.manifest.COMPATIBILITY_DATE``.
+        ``esi.client.manifest.COMPATIBILITY_DATE``.
     force:
         If False (default), skip generation when all packages are already
         current.
@@ -264,31 +264,30 @@ def generate_collectors(
     dict with keys: compatibility_date, personal_files, corp_files,
     public_api_files, skipped.
     """
-    from esi.generated.manifest import OPERATIONS, OPERATIONS_BY_TAG, COMPATIBILITY_DATE as _MANIFEST_DATE
+    from esi.client.manifest import OPERATIONS, OPERATIONS_BY_TAG, COMPATIBILITY_DATE as _MANIFEST_DATE
     date = compatibility_date or _MANIFEST_DATE
 
     if not force and collectors_are_current(date):
         print(
-            f"[collector_codegen] esi/personal|corp|public_api/ already at {date} — nothing to do. "
+            f"[collector_codegen] esi/personal|corp|public/ already at {date} — nothing to do. "
             "Use force=True to regenerate."
         )
-        return {"compatibility_date": date, "personal_files": 0, "corp_files": 0, "public_api_files": 0, "skipped": True}
+        return {"compatibility_date": date, "personal_files": 0, "corp_files": 0, "public_files": 0, "skipped": True}
 
     # Scope → tag → list of (op_id, op)
     buckets: dict[str, dict[str, list[tuple[str, dict]]]] = {
         "personal": {},
         "corp": {},
-        "public_api": {},
+        "public": {},
     }
 
     for tag, op_ids in sorted(OPERATIONS_BY_TAG.items()):
         for op_id in op_ids:
             op = OPERATIONS[op_id]
             scope = _classify_operation(op)
-            pkg = "public_api" if scope == "public" else scope
-            buckets[pkg].setdefault(tag, []).append((op_id, op))
+            buckets[scope].setdefault(tag, []).append((op_id, op))
 
-    counts: dict[str, int] = {"personal": 0, "corp": 0, "public_api": 0}
+    counts: dict[str, int] = {"personal": 0, "corp": 0, "public": 0}
 
     for scope, tags in buckets.items():
         pkg_dir = Path(f"esi/{scope}")
@@ -305,13 +304,13 @@ def generate_collectors(
         f"[collector_codegen] Generated for {date} — "
         f"personal={counts['personal']} files, "
         f"corp={counts['corp']} files, "
-        f"public_api={counts['public_api']} files."
+        f"public={counts['public']} files."
     )
     return {
         "compatibility_date": date,
         "personal_files": counts["personal"],
         "corp_files": counts["corp"],
-        "public_api_files": counts["public_api"],
+        "public_files": counts["public"],
         "skipped": False,
     }
 
@@ -321,7 +320,7 @@ def generate_collectors(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _cli() -> None:
-    parser = argparse.ArgumentParser(description="Generate esi/personal|corp|public_api/ from the active manifest.")
+    parser = argparse.ArgumentParser(description="Generate esi/personal|corp|public/ from the active manifest.")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="Override compatibility date label")
     parser.add_argument("--force", action="store_true", help="Regenerate even if already current")
     args = parser.parse_args()

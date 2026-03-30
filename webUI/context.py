@@ -8,7 +8,7 @@ from db.models import Character
 
 def base_ctx(active_page: str = "") -> dict:
     """Return context variables required by base.html for every page."""
-    from tools import tool_registry
+    from applications import tool_registry
     ctx = {
         "base_logged_in": False,
         "base_char_id": None,
