@@ -352,7 +352,7 @@ def execute_route(
     compatibility_date: str | None = None,
     timeout: int = 30,
 ) -> dict:
-    from util.esi_rate_limiter import esi_request
+    from esi.rate_limiter import esi_request
 
     selected_route = route or find_route(
         method=method,
@@ -444,7 +444,7 @@ def refresh_esi_spec_registry(compatibility_date: str | None = None) -> dict:
     latest_path.write_text(json.dumps(latest_payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     try:
-        from util import sde_store
+        from db import sde_store
 
         sde_store.sync_esi_registry_to_warehouse(
             compatibility_date=active_date,

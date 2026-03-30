@@ -1,6 +1,6 @@
-﻿"""
+"""
 tests/test_generated.py
-────────────────────────
+------------------------
 Unittest suite for the generated ESI package.
 Asserts invariants that break if the spec snapshot or codegen changes unexpectedly.
 """
@@ -186,7 +186,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("util.esi_rate_limiter.esi_request", return_value=mock_resp) as mock_req:
+        with patch("esi.rate_limiter.esi_request", return_value=mock_resp) as mock_req:
             result = execute_operation("GetAlliances")
             self.assertEqual(result["status_code"], 200)
             self.assertEqual(result["body"], [1, 2, 3])
@@ -206,7 +206,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json", "X-Pages": "1"}
 
-        with patch("util.esi_rate_limiter.esi_request", return_value=mock_resp):
+        with patch("esi.rate_limiter.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertIsInstance(result, list)
 
@@ -218,7 +218,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.content = b""
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("util.esi_rate_limiter.esi_request", return_value=mock_resp):
+        with patch("esi.rate_limiter.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertEqual(result, [])
 
@@ -227,23 +227,23 @@ class TestAuthScopesFromManifest(unittest.TestCase):
     """Verify auth.py uses generated scopes and no hardcoded list."""
 
     def test_required_scopes_from_manifest(self):
-        from util import auth
+        from esi import auth
         from esi.client.manifest import ALL_SCOPES
         import re
         # auth.py should no longer contain a hardcoded scope string
-        auth_src = Path("util/auth.py").read_text(encoding="utf-8")
+        auth_src = Path("esi/auth.py").read_text(encoding="utf-8")
         self.assertNotIn("esi-wallet.read_character_wallet.v1", auth_src)
         self.assertNotIn("esi-skills.read_skills.v1", auth_src)
         # The generated import should be present
         self.assertIn("from esi.client.manifest import ALL_SCOPES", auth_src)
 
     def test_required_scopes_is_66_scopes(self):
-        from util.auth import REQUIRED_SCOPES
+        from esi.auth import REQUIRED_SCOPES
         scopes = REQUIRED_SCOPES.split()
         self.assertEqual(len(scopes), 66)
 
     def test_required_scopes_matches_manifest(self):
-        from util.auth import REQUIRED_SCOPES
+        from esi.auth import REQUIRED_SCOPES
         from esi.client.manifest import ALL_SCOPES
         self.assertEqual(set(REQUIRED_SCOPES.split()), set(ALL_SCOPES))
 
@@ -281,7 +281,7 @@ class TestCodegenCheckIsCurrentPassesWhenCurrent(unittest.TestCase):
     """check_generated_is_current() should not raise on a fresh generate()."""
 
     def test_no_error(self):
-        from util.esi_codegen import check_generated_is_current
+        from build.esi_codegen import check_generated_is_current
         # Should not raise since we just ran the generator
         check_generated_is_current()
 
@@ -295,7 +295,7 @@ class TestFlaskAppBlueprints(unittest.TestCase):
         self.assertSetEqual(set(app.blueprints.keys()), {"auth", "dashboard", "admin", "tasks"})
 
 
-# ── Utilities ─────────────────────────────────────────────────────────────────
+# -- Utilities -----------------------------------------------------------------
 
 import re
 import keyword

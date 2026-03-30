@@ -137,7 +137,7 @@ def _esi_rate_hook(stats: dict) -> None:
 
 
 try:
-    from util.esi_rate_limiter import set_post_request_hook as _set_esi_hook
+    from esi.rate_limiter import set_post_request_hook as _set_esi_hook
     _set_esi_hook(_esi_rate_hook)
 except Exception:
     pass
@@ -242,7 +242,7 @@ def _run(task: Task, fn: Callable, args: tuple, kwargs: dict) -> None:
         return
     _thread_task.task_id = task.task_id
     try:
-        from util.esi_rate_limiter import set_request_lane
+        from esi.rate_limiter import set_request_lane
         set_request_lane(task.queue)
     except Exception:
         pass
@@ -334,7 +334,7 @@ def rate_stream():
     Falls back to a 5 s keepalive tick so the connection stays alive while idle.
     """
     import json
-    from util.esi_rate_limiter import get_esi_rate_limiter
+    from esi.rate_limiter import get_esi_rate_limiter
 
     last: Optional[dict] = None
     while True:

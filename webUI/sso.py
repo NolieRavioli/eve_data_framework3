@@ -13,9 +13,9 @@ from requests_oauthlib import OAuth2Session
 
 from db.database import get_private_session
 from db.models import Character
-from util import sde_store
-from util.auth import CredentialManager, TokenDBManager
-from util.utils import RuntimeSettings, get_runtime_settings
+from db import sde_store
+from esi.auth import CredentialManager, TokenDBManager
+from config import RuntimeSettings, get_runtime_settings
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)

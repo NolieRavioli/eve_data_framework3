@@ -111,25 +111,25 @@ Fetches the ESI OpenAPI spec for a given compatibility date and parses it into s
 Spec metadata is also inserted into the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes` for browsing via the admin DB browser.
 
 ```python
-from util.esi_spec_registry import refresh_esi_spec_registry, get_registry_status
+from esi.spec_registry import refresh_esi_spec_registry, get_registry_status
 refresh_esi_spec_registry()       # fetch latest spec and store it
 status = get_registry_status()    # dict with date, counts, last_updated, etc.
 ```
 
-### Code Generator (`util/esi_codegen.py`)
+### Code Generator (`build/esi_codegen.py`)
 
-Reads the spec snapshot and regenerates the `esi/generated/` package:
+Reads the spec snapshot and regenerates the `esi/client/` package:
 
 ```powershell
-python -m util.esi_codegen                   # regenerate from latest snapshot
-python -m util.esi_codegen --date 2025-12-16 # pin to a specific date
-python -m util.esi_codegen --force           # overwrite even if date matches
+python -m build.esi_codegen                   # regenerate from latest snapshot
+python -m build.esi_codegen --date 2025-12-16 # pin to a specific date
+python -m build.esi_codegen --force           # overwrite even if date matches
 ```
 
-The generated package (`esi/generated/`) is pinned to compatibility date `2025-12-16` and provides 208 typed operations. **Do not hand-edit `esi/generated/`.**
+The generated package (`esi/client/`) is pinned to compatibility date `2025-12-16` and provides 208 typed operations. **Do not hand-edit `esi/client/`.**
 
 ```python
-from esi.generated.client import execute_operation
+from esi.client.client import execute_operation
 result = execute_operation("GetCharactersCharacterId", character_id=12345, token=access_token)
 ```
 
@@ -139,7 +139,7 @@ result = execute_operation("GetCharactersCharacterId", character_id=12345, token
 
 The SDE provides static game data (type names, market groups, universe geometry, blueprints, dogma). It is rebuilt whenever CCP patches the game.
 
-Pipeline (`util/sde_bootstrap.py`):
+Pipeline (`build/sde_bootstrap.py`):
 
 1. Download the SDE ZIP from CCP's S3 bucket.
 2. Extract YAML files into `_sde/`.
@@ -154,10 +154,10 @@ At normal startup, `startup_load_sde()` loads the SDE datasets that are toggled 
 
 ## 9. Background Task Queue
 
-`util/task_queue.py` provides a simple but complete background work system:
+`tasks/task_queue.py` provides a simple but complete background work system:
 
 ```python
-from util.task_queue import enqueue
+from tasks.task_queue import enqueue
 
 task_id = enqueue("My Task Name", worker_fn, arg1, arg2, owner_id=owner_id)
 # queue="public" for market/SDE tasks (default is "private")
@@ -222,8 +222,8 @@ The framework uses the standard library `logging` module. Default level is INFO,
 - **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
 - **Adding a collector**: create `esi/corp_<name>.py` or `esi/personal_<name>.py`, use `esi_get`/`execute_operation` for HTTP, upsert to the private DB via `get_private_session(owner_id)`, submit as `enqueue(...)`, expose a trigger route in a new blueprint registered in `webUI/__init__.py`.
 - **Adding a DB model**: subclass `PrivateBase` in `db/models.py` -- `create_all` runs automatically via `initialize_private_database`. For DuckDB/public tables add DDL in `sde_store.ensure_public_database()`.
-- **Regenerating the ESI client**: `python -c "from util.esi_spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"` then `python -m util.esi_codegen --force`.
-- **Never call `requests` directly** outside `util/esi_rate_limiter.py`, `util/esi_spec_registry.py`, and `util/sde_bootstrap.py`.
+- **Regenerating the ESI client**: `python -c "from esi.spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"` then `python -m build.esi_codegen --force`.
+- **Never call `requests` directly** outside `esi/rate_limiter.py`, `esi/spec_registry.py`, and `build/sde_bootstrap.py`.
 
 ---
 

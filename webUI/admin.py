@@ -25,8 +25,8 @@ from flask import (
     stream_with_context,
 )
 
-from util import sde_store
-from util.esi_spec_registry import get_registry_status
+from db import sde_store
+from esi.spec_registry import get_registry_status
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -313,7 +313,7 @@ def esi_run(operation_id: str):
 
     token = None
     if op.get("requires_auth"):
-        from util.utils import get_token
+        from esi.auth import get_token
         owner_id = session.get("owner_id")
         character_id = session.get("character_id")
         if owner_id and character_id:

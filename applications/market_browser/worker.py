@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 
-from workers.market_station import fetch_market_orders, save_orders_to_db
+from workers.publicData.MarketStation import fetch_market_orders, save_orders_to_db
 
 logger = logging.getLogger(__name__)
 

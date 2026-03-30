@@ -1091,7 +1091,7 @@ def sync_esi_registry_to_warehouse(
     registry_root: str | Path | None = None,
     database_file: str | Path | None = None,
 ) -> dict:
-    from util import esi_spec_registry
+    from esi import spec_registry as esi_spec_registry
 
     status = esi_spec_registry.get_registry_status()
     if not status.get("available"):
@@ -1282,7 +1282,7 @@ def sync_esi_registry_to_warehouse(
 
 
 def ensure_esi_registry_current(database_file: str | Path | None = None) -> dict | None:
-    from util import esi_spec_registry
+    from esi import spec_registry as esi_spec_registry
 
     registry_status = esi_spec_registry.get_registry_status()
     if not registry_status.get("available"):

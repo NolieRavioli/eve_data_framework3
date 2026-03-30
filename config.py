@@ -1,28 +1,20 @@
-# utils.py
+# config.py
 
 import importlib
 import logging
 import os
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from threading import Lock
 from typing import Iterable, Optional
 
-import requests
 import yaml
-
-from util.auth import CredentialManager, TokenDBManager, get_token, refresh_token  # noqa: F401 re-exports
-from util.esi_rate_limiter import esi_get, esi_request
 
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config.yaml"
 PRIVATE_DATA_FOLDER = os.getenv("EVE_PRIVATE_DATABASE_FOLDER", "_privateData/")
-ESI_BASE = "https://esi.evetech.net/latest"
-HEADERS = {"Accept": "application/json"}
-DATASOURCE = {"datasource": "tranquility"}
 
 
 REQUIRED_MODULES = (
@@ -189,59 +181,4 @@ def load_config(config_path: str = CONFIG_PATH) -> dict:
 
     logger.info(f"Loaded {len(env_vars)} environment variables from {config_path}")
     return cfg
-
-# ──────── Token / Character Utilities ───────────────────────────────────────────
-# get_token and refresh_token live in util.auth and are re-exported from this module.
-# Import them via: from util.utils import get_token, refresh_token
-# or directly via: from util.auth import get_token, refresh_token
-
-# ──────── ESI Utilities ──────────────────────────────────────────────────────────
-
-def safe_request(method, url, **kwargs):
-    retries = 3
-    backoff = 2
-    if get_runtime_settings().trace_esi:
-        print(f"[ESI] {method.upper()} {url} kwargs={kwargs}")
-    for attempt in range(retries):
-        try:
-            kwargs.setdefault("timeout", 30)
-            resp = esi_request(method, url, **kwargs)
-            if resp.status_code == 403:
-                logger.warning(f"Access forbidden (403) for {url}. Skipping retries.")
-                resp.raise_for_status()
-            resp.raise_for_status()
-            if get_runtime_settings().trace_esi:
-                print(f"[ESI] Response {resp.status_code} for {url}")
-            return resp
-        except requests.HTTPError as e:
-            if e.response.status_code == 403:
-                raise
-            logger.warning(f"Request failed ({attempt+1}/{retries}): {e}")
-            if attempt < retries - 1:
-                time.sleep(backoff)
-                backoff *= 2
-            else:
-                raise
-
-def get_portrait(character_id: int):
-    """ get esi portraits """
-    url = f"{ESI_BASE}/characters/{character_id}/portrait/"
-    resp = esi_get(url, headers=HEADERS, params=DATASOURCE)
-    resp.raise_for_status()
-    if get_runtime_settings().trace_esi:
-        print(f"[ESI] Portrait lookup for {character_id}: {resp.json()}")
-    return resp.json()
-
-
-def batched(iterable, batch_size):
-    """Yield successive batches of a list."""
-    for i in range(0, len(iterable), batch_size):
-        yield iterable[i:i + batch_size]
-
-def get_all_region_ids():
-    """Get all region IDs from ESI."""
-    url = f"{ESI_BASE}/universe/regions/"
-    resp = esi_get(url, headers=HEADERS, params=DATASOURCE)
-    resp.raise_for_status()
-    return resp.json()
 

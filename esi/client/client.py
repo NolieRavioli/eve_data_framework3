@@ -8,7 +8,7 @@ Provides:
   execute_operation(operation_id, *, path_params, query_params, token,
                     json_body, headers, pages) -> dict | list[dict]
     Generic executor for any operation in the manifest.  Routes all HTTP
-    through util.esi_rate_limiter.esi_request — never calls requests directly.
+    through esi.rate_limiter.esi_request — never calls requests directly.
 
   execute_tag(tag, owner_id, ...) -> list[dict]
     Convenience batch runner for all GET operations in a tag.
@@ -123,9 +123,9 @@ def execute_operation(
     Execute a single ESI operation and return the standardised response dict.
 
     Response dict keys: route, url, status_code, headers, body, queue_channel.
-    All HTTP goes through util.esi_rate_limiter.esi_request.
+    All HTTP goes through esi.rate_limiter.esi_request.
     """
-    from util.esi_rate_limiter import esi_request
+    from esi.rate_limiter import esi_request
 
     op = OPERATIONS.get(operation_id)
     if op is None:

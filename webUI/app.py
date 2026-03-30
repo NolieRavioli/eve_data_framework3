@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from util.utils import RuntimeSettings, get_runtime_settings
+from config import RuntimeSettings, get_runtime_settings
 from webUI import create_app
 
 

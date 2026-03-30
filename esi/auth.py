@@ -11,8 +11,8 @@ from sqlalchemy import text
 
 from db.database import get_private_session, initialize_private_database
 from db.models import Character
-from util import sde_store
-from util.esi_rate_limiter import esi_get
+from db import sde_store
+from esi.rate_limiter import esi_get
 
 logger = logging.getLogger(__name__)
 

@@ -6,8 +6,8 @@ import logging
 
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, session, url_for
 
-from util import task_queue
-from util.esi_rate_limiter import get_esi_rate_limiter
+from tasks import task_queue
+from esi.rate_limiter import get_esi_rate_limiter
 from webUI.context import base_ctx
 
 logger = logging.getLogger(__name__)

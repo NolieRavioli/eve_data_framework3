@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from util import sde_store
+from db import sde_store
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +351,7 @@ def startup_load_sde(cfg: dict | None = None) -> None:
     print()
     if not _warehouse_ready():
         print(f"\r[SDE] no warehouse found at {_warehouse_path()} - building before server start", flush=True)
-        from util.sde_bootstrap import update_sde
+        from build.sde_bootstrap import update_sde
 
         update_sde()
         return

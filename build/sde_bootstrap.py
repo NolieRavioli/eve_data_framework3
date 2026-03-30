@@ -10,9 +10,10 @@ from pathlib import Path
 import requests
 import yaml
 
-from util.esi_spec_registry import refresh_esi_spec_registry
-from util.sde import refresh_all_caches
-from util import sde_loader, sde_store
+from esi.spec_registry import refresh_esi_spec_registry
+from db.sde import refresh_all_caches
+from build import sde_loader
+from db import sde_store
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from db.models import (
     PrivateBase,
     PublicBase,
 )
-from util import sde_store
+from db import sde_store
 
 logger = logging.getLogger(__name__)
 

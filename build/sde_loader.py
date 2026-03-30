@@ -25,7 +25,7 @@ from typing import Any, Iterable
 import duckdb
 import yaml
 
-from util.sde_store import (
+from db.sde_store import (
     _as_bool,
     _as_float,
     _as_int,

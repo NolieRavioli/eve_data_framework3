@@ -9,7 +9,7 @@ import logging
 
 from flask import Blueprint, redirect, render_template, session, url_for
 
-from util.esi_spec_registry import get_registry_status
+from esi.spec_registry import get_registry_status
 from webUI.context import base_ctx
 
 logger = logging.getLogger(__name__)

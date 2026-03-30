@@ -325,7 +325,7 @@ def _cli() -> None:
     parser.add_argument("--force", action="store_true", help="Regenerate even if already current")
     args = parser.parse_args()
 
-    from util.utils import load_config, CONFIG_PATH
+    from config import load_config, CONFIG_PATH
     load_config(CONFIG_PATH)
 
     result = generate_collectors(compatibility_date=args.date, force=args.force)

@@ -5,7 +5,7 @@ from typing import Optional
 
 from flask import Flask
 
-from util.utils import RuntimeSettings, get_runtime_settings
+from config import RuntimeSettings, get_runtime_settings
 from webUI.dashboard import dashboard_bp
 from webUI.sso import auth_bp
 from webUI.admin import admin_bp

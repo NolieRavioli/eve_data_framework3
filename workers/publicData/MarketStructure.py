@@ -1,14 +1,27 @@
+"""Fetch player-structure market orders from ESI and write them to the public DuckDB.
+
+Structures are enriched with metadata (name, solar system, owner, type) before
+market orders are fetched.  Cooldowns are applied per-structure based on the
+ESI response code so stale or inaccessible structures are skipped on future runs.
+
+Entry point::
+
+    from tasks.task_queue import enqueue
+    from workers.publicData.MarketStructure import update_structure_market_orders
+    enqueue("Market Structure Orders", update_structure_market_orders, owner_id=owner_id, queue="public")
+"""
+
 import logging
 import time
 from datetime import datetime
-from typing import Optional
 
 import requests
 
-from util import sde_store
-from util.esi_rate_limiter import esi_get
-from util.sde import region_id_from_system_id
-from util.utils import CONFIG_PATH, PRIVATE_DATA_FOLDER, get_token, load_config
+import workers as _w
+from db import sde_store
+from esi.rate_limiter import esi_get
+from db.sde import region_id_from_system_id
+from config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +36,8 @@ _MARKET_404 = object()  # sentinel: 404 on /markets/structures/{id}/
 _ENRICH_403 = object()  # sentinel: 403 on /universe/structures/{id}/
 _ENRICH_404 = object()  # sentinel: 404 on /universe/structures/{id}/
 
+
+# ── config helpers ────────────────────────────────────────────────────────────
 
 def _get_market_unauthorized_cooldown() -> int:
     try:
@@ -76,6 +91,8 @@ def _get_enrich_authorized_cooldown() -> int:
         return 3600
 
 
+# ── ESI calls ─────────────────────────────────────────────────────────────────
+
 def fetch_structure_orders(
     structure_id: int,
     token: str,
@@ -91,7 +108,7 @@ def fetch_structure_orders(
 
             if resp.status_code == 403:
                 logger.warning(
-                    "[MarketFetch] Skipping %s page %s: HTTP 403",
+                    "[MarketStructure] Skipping %s page %s: HTTP 403",
                     structure_id,
                     page,
                 )
@@ -99,14 +116,14 @@ def fetch_structure_orders(
 
             if resp.status_code == 404:
                 logger.warning(
-                    "[MarketFetch] Skipping %s page %s: HTTP 404",
+                    "[MarketStructure] Skipping %s page %s: HTTP 404",
                     structure_id,
                     page,
                 )
                 return _MARKET_404, 1
 
             if resp.status_code == 420:
-                logger.warning("[RateLimit] 420 returned for %s, sleeping 10s", structure_id)
+                logger.warning("[MarketStructure] 420 rate limit for %s, sleeping 10s", structure_id)
                 time.sleep(10)
                 continue
 
@@ -116,11 +133,11 @@ def fetch_structure_orders(
             return data, pages
 
         except requests.exceptions.Timeout:
-            logger.warning("[Timeout] Attempt %s/%s for structure %s page %s", attempt, retries, structure_id, page)
+            logger.warning("[MarketStructure] Timeout attempt %s/%s for structure %s page %s", attempt, retries, structure_id, page)
             time.sleep(3 * attempt)
         except Exception as exc:
             logger.warning(
-                "[RetryError] Attempt %s/%s for structure %s page %s: %s",
+                "[MarketStructure] Retry %s/%s for structure %s page %s: %s",
                 attempt,
                 retries,
                 structure_id,
@@ -129,7 +146,7 @@ def fetch_structure_orders(
             )
             time.sleep(2 * attempt)
 
-    logger.error("[MarketFetch] Failed after %s retries for structure %s page %s", retries, structure_id, page)
+    logger.error("[MarketStructure] Failed after %s retries for structure %s page %s", retries, structure_id, page)
     return [], 1
 
 
@@ -145,55 +162,22 @@ def fetch_structure_details(structure_id: int, token: str) -> "dict | object | N
     try:
         resp = esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
-        logger.warning("[StructMeta] Request failed for %s: %s", structure_id, exc)
+        logger.warning("[MarketStructure] Metadata request failed for %s: %s", structure_id, exc)
         return None
 
     if resp.status_code in (403, 404):
-        logger.debug("[StructMeta] Access denied for %s: HTTP %s", structure_id, resp.status_code)
+        logger.debug("[MarketStructure] Access denied for %s: HTTP %s", structure_id, resp.status_code)
         return _ENRICH_403 if resp.status_code == 403 else _ENRICH_404
 
     try:
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        logger.warning("[StructMeta] Failed to parse metadata for %s: %s", structure_id, exc)
+        logger.warning("[MarketStructure] Failed to parse metadata for %s: %s", structure_id, exc)
         return None
 
     _STRUCTURE_INFO_CACHE[structure_id] = (now + _STRUCTURE_INFO_TTL, data)
     return data
-
-
-def _pick_token(owner_id: int) -> tuple[int, dict]:
-    tokens = get_token(owner_id)
-    char_id, token_data = sorted(tokens.items())[0]
-    if token_data.get("expires_at") and token_data["expires_at"] < time.time():
-        logger.info("[TokenRefresh] Token expired for %s, refreshing...", char_id)
-        tokens = get_token(owner_id)
-        char_id, token_data = sorted(tokens.items())[0]
-    return char_id, token_data
-
-
-def _get_fresh_token(owner_id: int, char_id: int, token_data: dict) -> tuple[int, dict]:
-    """Return current token if still valid; only call _pick_token (DB query) if expired."""
-    expires_at = token_data.get("expires_at")
-    if expires_at is not None and expires_at > time.time() + 30:
-        return char_id, token_data
-    return _pick_token(owner_id)
-
-
-def _resolve_default_owner_id() -> int | None:
-    import os
-    from os.path import isdir, join
-
-    if not os.path.isdir(PRIVATE_DATA_FOLDER):
-        return None
-
-    owner_ids = [
-        int(name)
-        for name in os.listdir(PRIVATE_DATA_FOLDER)
-        if name.isdigit() and isdir(join(PRIVATE_DATA_FOLDER, name))
-    ]
-    return min(owner_ids) if owner_ids else None
 
 
 def populate_structure_metadata(structure: dict, token: str) -> tuple[dict, str]:
@@ -239,16 +223,18 @@ def populate_structure_metadata(structure: dict, token: str) -> tuple[dict, str]
     return updated, enrich_status
 
 
+# ── main worker ───────────────────────────────────────────────────────────────
+
 def update_structure_market_orders() -> None:
-    owner_id = _resolve_default_owner_id()
+    owner_id = _w.resolve_default_owner_id()
     if owner_id is None:
-        logger.error("[MarketUpdate] No private owner directories found.")
+        logger.error("[MarketStructure] No private owner directories found.")
         return
 
-    _char_id, token_data = _pick_token(owner_id)
+    _char_id, token_data = _w.pick_token(owner_id)
     token = token_data["access_token"]
     structures = sde_store.list_public_structures(skip_market_forbidden=True)
-    logger.info("[MarketUpdate] Checking %s structures.", len(structures))
+    logger.info("[MarketStructure] Checking %s structures.", len(structures))
     total = len(structures)
     skipped = 0
     market_unauthorized_ids: list[int] = []   # 403 on market endpoint -> short cooldown
@@ -261,7 +247,7 @@ def update_structure_market_orders() -> None:
         num_orders = 0
         structure_id = structure["structure_id"]
         try:
-            _char_id, token_data = _get_fresh_token(owner_id, _char_id, token_data)
+            _char_id, token_data = _w.fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             structure, enrich_status = populate_structure_metadata(structure, token)
@@ -284,7 +270,7 @@ def update_structure_market_orders() -> None:
                     elapsed = time.time() - t0
                     eta = (elapsed / count) * (total - count) if count else 0
                     logger.info(
-                        "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                        "[MarketStructure] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
                         count, total, (100 * count / total) if total else 100.0,
                         eta, f"{orders_total:,}", skipped,
                     )
@@ -296,7 +282,7 @@ def update_structure_market_orders() -> None:
                     elapsed = time.time() - t0
                     eta = (elapsed / count) * (total - count) if count else 0
                     logger.info(
-                        "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                        "[MarketStructure] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
                         count, total, (100 * count / total) if total else 100.0,
                         eta, f"{orders_total:,}", skipped,
                     )
@@ -307,13 +293,9 @@ def update_structure_market_orders() -> None:
                     elapsed = time.time() - t0
                     eta = (elapsed / count) * (total - count) if count else 0
                     logger.info(
-                        "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
-                        count,
-                        total,
-                        (100 * count / total) if total else 100.0,
-                        eta,
-                        f"{orders_total:,}",
-                        skipped,
+                        "[MarketStructure] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                        count, total, (100 * count / total) if total else 100.0,
+                        eta, f"{orders_total:,}", skipped,
                     )
                 continue
 
@@ -322,7 +304,7 @@ def update_structure_market_orders() -> None:
             num_orders += len(all_rows)
 
             for page in range(2, pages + 1):
-                _char_id, token_data = _get_fresh_token(owner_id, _char_id, token_data)
+                _char_id, token_data = _w.fresh_token(owner_id, _char_id, token_data)
                 token = token_data["access_token"]
                 more, _ = fetch_structure_orders(structure_id, token, page=page)
                 page_rows = [{**order, "region_id": region_id, "location_id": structure_id} for order in more]
@@ -332,28 +314,24 @@ def update_structure_market_orders() -> None:
             sde_store.upsert_market_orders(all_rows)
             sde_store.mark_structures_market_refreshed([structure_id], _get_market_authorized_cooldown())
             orders_total += num_orders
-            logger.debug("[MarketUpdate] Synced %s orders for %s.", num_orders, structure_id)
+            logger.debug("[MarketStructure] Synced %s orders for %s.", num_orders, structure_id)
 
             if count % log_every == 0 or count == total:
                 elapsed = time.time() - t0
                 eta = (elapsed / count) * (total - count) if count else 0
                 logger.info(
-                    "[Progress] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
-                    count,
-                    total,
-                    (100 * count / total) if total else 100.0,
-                    eta,
-                    f"{orders_total:,}",
-                    skipped,
+                    "[MarketStructure] %s/%s (%.1f%%) ETA %.0fs orders %s skipped %s",
+                    count, total, (100 * count / total) if total else 100.0,
+                    eta, f"{orders_total:,}", skipped,
                 )
         except Exception:
-            logger.exception("[MarketUpdate] Failed for %s.", structure_id)
+            logger.exception("[MarketStructure] Failed for %s.", structure_id)
 
     if market_unauthorized_ids:
         cooldown = _get_market_unauthorized_cooldown()
         sde_store.mark_market_structures_forbidden(market_unauthorized_ids, cooldown)
         logger.info(
-            "[MarketUpdate] Marked %s structure(s) as market-403; will skip for %s days.",
+            "[MarketStructure] Marked %s structure(s) as market-403; will skip for %s days.",
             len(market_unauthorized_ids),
             cooldown // 86400,
         )
@@ -362,22 +340,7 @@ def update_structure_market_orders() -> None:
         cooldown = _get_market_forbidden_cooldown()
         sde_store.mark_market_structures_forbidden(market_forbidden_ids, cooldown)
         logger.info(
-            "[MarketUpdate] Marked %s structure(s) as market-404; will skip for %s days.",
+            "[MarketStructure] Marked %s structure(s) as market-404; will skip for %s days.",
             len(market_forbidden_ids),
             cooldown // 86400,
         )
-
-
-def update_structure_market(owner_id: int) -> None:
-    logger.warning(
-        "[Compat] update_structure_market(owner_id=%s) is deprecated, using update_structure_market_orders().",
-        owner_id,
-    )
-    update_structure_market_orders()
-
-
-def fetch_all_structure_markets() -> None:
-    logger.warning(
-        "[Compat] fetch_all_structure_markets() is deprecated, using update_structure_market_orders()."
-    )
-    update_structure_market_orders()

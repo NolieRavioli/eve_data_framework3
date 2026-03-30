@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 from esi.client.client import execute_operation, fetch_all_pages
-from util import sde_store
-from util.task_queue import enqueue as _enqueue
-from util.utils import get_token
+from db import sde_store
+from tasks.task_queue import enqueue as _enqueue
+from esi.auth import get_token
 
 
 # ---------------------------------------------------------------------------

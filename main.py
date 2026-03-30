@@ -1,8 +1,8 @@
 import logging
 
-from util import sde_store
-from util.sde import startup_load_sde
-from util.utils import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
+from db import sde_store
+from db.sde import startup_load_sde
+from config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
 from webUI.app import start_webUI
 
 logger = logging.getLogger(__name__)
