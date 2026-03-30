@@ -402,7 +402,8 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
             last_seen TIMESTAMP,
             forbidden_until TIMESTAMP,
             market_forbidden_until TIMESTAMP,
-            market_refreshed_until TIMESTAMP
+            market_refreshed_until TIMESTAMP,
+            enrich_refreshed_until TIMESTAMP
         )
         """
     )
@@ -414,6 +415,8 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
         con.execute("ALTER TABLE structures ADD COLUMN market_forbidden_until TIMESTAMP")
     if "market_refreshed_until" not in existing_cols:
         con.execute("ALTER TABLE structures ADD COLUMN market_refreshed_until TIMESTAMP")
+    if "enrich_refreshed_until" not in existing_cols:
+        con.execute("ALTER TABLE structures ADD COLUMN enrich_refreshed_until TIMESTAMP")
 
     con.execute(
         """
@@ -761,7 +764,11 @@ def list_public_structure_ids(
         _ensure_public_schema(con)
         sql = "SELECT structure_id FROM structures"
         if missing_name_only:
-            sql += " WHERE name IS NULL AND (forbidden_until IS NULL OR forbidden_until < now())"
+            sql += (
+                " WHERE name IS NULL"
+                " AND (forbidden_until IS NULL OR forbidden_until < now())"
+                " AND (enrich_refreshed_until IS NULL OR enrich_refreshed_until < now())"
+            )
         return {int(row[0]) for row in con.execute(sql).fetchall()}
     finally:
         con.close()
@@ -848,6 +855,32 @@ def mark_structures_forbidden(
         con.execute(
             f"UPDATE structures SET forbidden_until = ? WHERE structure_id IN ({placeholders}) AND name IS NULL",
             [forbidden_until, *structure_ids],
+        )
+    finally:
+        con.close()
+
+
+def mark_structures_enrich_refreshed(
+    structure_ids: list[int],
+    cooldown_seconds: int = 3600,
+    database_file: str | Path | None = None,
+) -> None:
+    """Record that a batch of structures were successfully enriched with metadata.
+
+    Sets enrich_refreshed_until = now + cooldown so that list_public_structure_ids
+    (when called with missing_name_only=True) skips them until the data is stale.
+    """
+    if not structure_ids:
+        return
+    from datetime import timedelta
+    refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
+    placeholders = ", ".join(["?"] * len(structure_ids))
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            f"UPDATE structures SET enrich_refreshed_until = ? WHERE structure_id IN ({placeholders})",
+            [refreshed_until, *structure_ids],
         )
     finally:
         con.close()
