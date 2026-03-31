@@ -724,7 +724,7 @@ def check_generated_is_current() -> None:
             )
 
     # ── Collector packages ────────────────────────────────────────────────
-    from build.collector_codegen import collectors_are_current
+    from codegen.domain_codegen import collectors_are_current
     if not collectors_are_current(expected_date):
         raise RuntimeError(
             f"esi/personal|corp|public/ collector packages are missing or stale "

@@ -1,4 +1,4 @@
-﻿"""util/collector_codegen.py
+﻿"""codegen/domain_codegen.py
 ────────────────────────────
 Generates typed ESI domain collector packages from the active manifest.
 

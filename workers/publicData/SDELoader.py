@@ -1,4 +1,4 @@
-# util/sde_loader.py
+# workers/publicData/SDELoader.py
 """Build-time SDE warehouse loader.
 
 Contains everything needed to parse SDE YAML files and build the DuckDB

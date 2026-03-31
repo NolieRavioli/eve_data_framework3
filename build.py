@@ -41,7 +41,7 @@ def main() -> None:
     # Step 2: esi/client/ codegen — skip if --spec-only or --collectors
     if not args.spec_only and not args.collectors_only:
         print("[build] Regenerating esi/client/…")
-        from build.esi_codegen import generate
+        from codegen.esi_codegen import generate
         result = generate(compatibility_date=args.date, force=args.force)
         print(
             f"[build] Codegen done — date={result['compatibility_date']}"
@@ -53,7 +53,7 @@ def main() -> None:
     # Step 3: domain collector packages — skip if --spec-only or --gen-only
     if not args.spec_only and not args.gen_only:
         print("[build] Generating domain collector packages…")
-        from build.collector_codegen import generate_collectors
+        from codegen.domain_codegen import generate_collectors
         result = generate_collectors(compatibility_date=args.date, force=args.force)
         print(
             f"[build] Collectors done — date={result['compatibility_date']}"

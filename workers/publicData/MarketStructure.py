@@ -20,7 +20,7 @@ import requests
 import workers as _w
 from db import sde_store
 from esi.rate_limiter import esi_get
-from db.sde import region_id_from_system_id
+from sde import region_id_from_system_id
 from config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)

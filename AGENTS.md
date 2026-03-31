@@ -15,11 +15,12 @@ Read this before modifying any file.
 | `config.py` | Runtime settings, config loading, dependency checks |
 | `config.yaml` | Environment variables + SDE toggle flags |
 | `esi/` | Rate limiter, auth, spec registry, auto-generated client package |
-| `db/` | SQLAlchemy models, session factories, SDE store, SDE facade |
+| `db/` | SQLAlchemy models, session factories, DuckDB operational schema |
+| `sde.py` | In-memory SDE cache facade — `startup_load_sde()` + lookup helpers |
 | `tasks/` | Background task queue with live SSE log streaming |
-| `build/` | SDE bootstrap, warehouse loader, ESI codegen, collector codegen |
+| `codegen/` | ESI client codegen (`esi_codegen.py`) + domain collector codegen (`domain_codegen.py`) |
 | `webUI/` | Flask blueprints, SSE streaming, Jinja2 templates |
-| `workers/` | Background ESI data collection workers |
+| `workers/` | Background workers: market, structures, SDE bootstrap, DB init |
 | `_sde/` | Local copy of the EVE Static Data Export (YAML) |
 | `_publicData/` | DuckDB public database (`public.duckdb`), OAuth credentials, ESI spec cache |
 | `_privateData/<owner_id>/` | Per-owner SQLite databases |
@@ -64,22 +65,22 @@ esi/
     operations.py        # per-operation typed wrappers
     schemas.py           # TypedDict stubs from OpenAPI schemas
 
+sde.py                   # startup_load_sde() + in-memory SDE caches + lookup helpers
+                         #   (name_from_type_id, region_id_from_system_id, etc.)
+
 db/
   models.py              # SQLAlchemy ORM: PublicBase (User, SiteAdmin, Structure, MarketOrder,
                          #   MarketStructure) + PrivateBase (Character)
   database.py            # initialize_private_database(owner_id), get_private_session(owner_id)
                          # NOTE: get_public_session() raises RuntimeError — public SQLite retired
   sde_store.py           # connect() + ensure_public_database() + all DuckDB DDL/DML
-  sde.py                 # startup_load_sde() + DuckDB-backed lookup facade (get_type_name, etc.)
 
 tasks/
   task_queue.py          # background Task runner — enqueue() / get_task() / cancel_task()
 
-build/
-  sde_bootstrap.py       # download_sde() / extract_sde() / run_full_bootstrap() — SDE pipeline
-  sde_loader.py          # build-time SDE YAML → DuckDB warehouse loader
+codegen/
   esi_codegen.py         # generate() — reads spec snapshot, writes esi/client/ package
-  collector_codegen.py   # generate_collectors() — writes esi/personal/, esi/corp/, esi/public/
+  domain_codegen.py      # generate_collectors() — writes esi/personal/, esi/corp/, esi/public/
 
 webUI/
   __init__.py            # Flask app factory (create_app) — registers blueprints
@@ -100,6 +101,7 @@ webUI/
 
 tests/
   test_generated.py      # smoke tests for esi/client/ package
+  test_sde.py            # integration tests for SDE warehouse population + in-memory caches
 
 _publicData/
   public.duckdb          # DuckDB warehouse (SDE + public operational tables + ESI spec metadata)
@@ -113,7 +115,13 @@ _privateData/<owner_id>/
   <owner_id>.db          # per-character SQLite database                    [NEVER COMMIT]
 ```
 
-> **Not yet implemented:** `esi/corp_*.py`, `esi/personal_*.py`, `esi/data_collector.py`, `analysis/` module, and the corresponding web routes (`/corp/*`, `/personal/*`, `/update_public/*`). These are the next layer to build on top of the existing infrastructure.
+> **Workers — `workers/publicData/`:**
+> - `DatabaseInit.py` — `initialize_all()` wraps `ensure_public_database()` + `startup_load_sde()`. Called synchronously at startup and enqueueable at runtime.
+> - `SDEBootstrap.py` — `update_sde()` — downloads SDE ZIP, prunes languages, rebuilds DuckDB warehouse, warms caches. Also exposes `rebuild_sde_warehouse()` for re-build-only.
+> - `SDELoader.py` — `build_sde_warehouse()` — parses YAML and writes DuckDB. Called only by `SDEBootstrap`.
+> - `MarketStation.py`, `MarketStructure.py`, `DiscoverStructures.py` — ESI market / structure collectors.
+>
+> **Not yet implemented:** `workers/corp/`, `workers/personal/`, `analysis/` module, and the corresponding web routes (`/corp/*`, `/personal/*`, `/update_public/*`). These are the next layer to build on top of the existing infrastructure.
 
 ---
 
@@ -247,7 +255,7 @@ The SDE contains static game data (types, groups, blueprints, universe geometry)
 - Local copy: `_sde/` (YAML format; multilingual fields pruned to `SUPPORTED_LANGUAGES` by `sde_bootstrap.py`)
 - In-memory store: `util/sde_store.py` — lookup helpers (`get_type_name`, `get_system_region`, etc.) backed by DuckDB
 - DuckDB tables bootstrapped from SDE at startup via `sde_store.ensure_public_database()`
-- Full re-download pipeline: `util/sde_bootstrap.py` — `run_full_bootstrap()` downloads the SDE ZIP, extracts, prunes, then rebuilds the warehouse
+- Full re-download pipeline: `workers/publicData/SDEBootstrap.py` — `update_sde()` downloads the SDE ZIP, extracts, prunes, then rebuilds the warehouse
 - Startup toggles under `SDE:` in `config.yaml` — set `false` to skip expensive datasets; they lazy-load on first use
 
 SDE YAML integer-keyed maps use plain integer keys. Large files should be read as JSON Lines when possible.
@@ -274,12 +282,12 @@ status = get_registry_status()
 
 Spec snapshots are stored under `_publicData/esi_specs/<date>/` as `routes.json`, `schemas.json`, `scopes.json`. `latest.json` records the most recently fetched date and counts.
 
-`build/esi_codegen.py` reads the spec snapshot and regenerates the `esi/client/` package:
+`codegen/esi_codegen.py` reads the spec snapshot and regenerates the `esi/client/` package:
 
 ```powershell
-python -m build.esi_codegen                   # regenerate from latest snapshot
-python -m build.esi_codegen --date 2025-12-16 # pin to a specific date
-python -m build.esi_codegen --force           # overwrite even if date matches
+python -m codegen.esi_codegen                   # regenerate from latest snapshot
+python -m codegen.esi_codegen --date 2025-12-16 # pin to a specific date
+python -m codegen.esi_codegen --force           # overwrite even if date matches
 ```
 
 **Do not hand-edit `esi/client/`** — all changes will be overwritten on the next codegen run.
@@ -402,7 +410,7 @@ Only users with `session["is_admin"] == True` can access these routes (enforced 
 python -c "from esi.spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"
 
 # 2. Regenerate esi/client/
-python -m build.esi_codegen --force
+python -m codegen.esi_codegen --force
 ```
 
 ### Run the application
@@ -431,13 +439,13 @@ pip install -r requirements.txt
 ## Code Conventions
 
 - **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** (never raw `requests`).
-- **Never call `requests` directly** anywhere outside `esi/rate_limiter.py` and `esi/spec_registry.py` / `build/sde_bootstrap.py` (which make non-ESI HTTP calls for spec/SDE download).
+- **Never call `requests` directly** anywhere outside `esi/rate_limiter.py` and `esi/spec_registry.py` / `workers/publicData/SDEBootstrap.py` (which make non-ESI HTTP calls for spec/SDE download).
 - **Logging**: use module-level `logger = logging.getLogger(__name__)`; `logger.warning`, `logger.info`, `logger.debug` — not bare `print()` in production code (though `print()` is captured by the task queue in workers).
 - **Token handling**: always check for 401 separately from 403/404. A 401 means the access token is expired; stop using it. A 403 means no permission — not an error to retry.
 - **Thread safety**: all shared mutable state must use `threading.Lock()`. Get a fresh `sde_store.connect()` connection per thread — do not share DuckDB connections across threads.
 - **No raw SQL with user input** — always use parameterised DuckDB queries (`con.execute("… WHERE id = ?", [val])`) or SQLAlchemy ORM.
 - **Config values**: read from `config.yaml` via `load_config(CONFIG_PATH)` at startup; don't re-read config files inside request handlers.
-- **Do not edit `esi/client/`** — regenerate via `build/esi_codegen.py` instead.
+- **Do not edit `esi/client/`** — regenerate via `codegen/esi_codegen.py` instead.
 
 ---
 

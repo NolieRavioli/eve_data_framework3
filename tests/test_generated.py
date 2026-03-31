@@ -281,7 +281,7 @@ class TestCodegenCheckIsCurrentPassesWhenCurrent(unittest.TestCase):
     """check_generated_is_current() should not raise on a fresh generate()."""
 
     def test_no_error(self):
-        from build.esi_codegen import check_generated_is_current
+        from codegen.esi_codegen import check_generated_is_current
         # Should not raise since we just ran the generator
         check_generated_is_current()
 

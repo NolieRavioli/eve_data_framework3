@@ -11,8 +11,8 @@ import requests
 import yaml
 
 from esi.spec_registry import refresh_esi_spec_registry
-from db.sde import refresh_all_caches
-from build import sde_loader
+from sde import refresh_all_caches
+from workers.publicData import SDELoader as sde_loader
 from db import sde_store
 
 logger = logging.getLogger(__name__)

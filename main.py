@@ -1,8 +1,7 @@
 import logging
 
-from db import sde_store
-from db.sde import startup_load_sde
 from config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
+from workers.publicData.DatabaseInit import initialize_all
 from webUI.app import start_webUI
 
 logger = logging.getLogger(__name__)
@@ -12,10 +11,8 @@ def main() -> None:
     settings = initialize_runtime_environment()
     ensure_dependencies(settings)
 
-    logger.info("Initializing SDE warehouse...")
     cfg = load_config(CONFIG_PATH)
-    startup_load_sde(cfg.get("SDE", {}))
-    sde_store.ensure_public_database()
+    initialize_all(cfg.get("SDE", {}))
 
     logger.info("Starting EVE Data Framework WebUI...")
     start_webUI(settings)

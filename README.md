@@ -116,14 +116,14 @@ refresh_esi_spec_registry()       # fetch latest spec and store it
 status = get_registry_status()    # dict with date, counts, last_updated, etc.
 ```
 
-### Code Generator (`build/esi_codegen.py`)
+### Code Generator (`codegen/esi_codegen.py`)
 
 Reads the spec snapshot and regenerates the `esi/client/` package:
 
 ```powershell
-python -m build.esi_codegen                   # regenerate from latest snapshot
-python -m build.esi_codegen --date 2025-12-16 # pin to a specific date
-python -m build.esi_codegen --force           # overwrite even if date matches
+python -m codegen.esi_codegen                   # regenerate from latest snapshot
+python -m codegen.esi_codegen --date 2025-12-16 # pin to a specific date
+python -m codegen.esi_codegen --force           # overwrite even if date matches
 ```
 
 The generated package (`esi/client/`) is pinned to compatibility date `2025-12-16` and provides 208 typed operations. **Do not hand-edit `esi/client/`.**
@@ -139,7 +139,7 @@ result = execute_operation("GetCharactersCharacterId", character_id=12345, token
 
 The SDE provides static game data (type names, market groups, universe geometry, blueprints, dogma). It is rebuilt whenever CCP patches the game.
 
-Pipeline (`build/sde_bootstrap.py`):
+Pipeline (`workers/publicData/SDEBootstrap.py`):
 
 1. Download the SDE ZIP from CCP's S3 bucket.
 2. Extract YAML files into `_sde/`.
@@ -222,8 +222,8 @@ The framework uses the standard library `logging` module. Default level is INFO,
 - **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
 - **Adding a collector**: create `esi/corp_<name>.py` or `esi/personal_<name>.py`, use `esi_get`/`execute_operation` for HTTP, upsert to the private DB via `get_private_session(owner_id)`, submit as `enqueue(...)`, expose a trigger route in a new blueprint registered in `webUI/__init__.py`.
 - **Adding a DB model**: subclass `PrivateBase` in `db/models.py` -- `create_all` runs automatically via `initialize_private_database`. For DuckDB/public tables add DDL in `sde_store.ensure_public_database()`.
-- **Regenerating the ESI client**: `python -c "from esi.spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"` then `python -m build.esi_codegen --force`.
-- **Never call `requests` directly** outside `esi/rate_limiter.py`, `esi/spec_registry.py`, and `build/sde_bootstrap.py`.
+- **Regenerating the ESI client**: `python -c "from esi.spec_registry import refresh_esi_spec_registry; refresh_esi_spec_registry()"` then `python -m codegen.esi_codegen --force`.
+- **Never call `requests` directly** outside `esi/rate_limiter.py`, `esi/spec_registry.py`, and `workers/publicData/SDEBootstrap.py`.
 
 ---
 
