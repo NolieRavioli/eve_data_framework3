@@ -1,7 +1,7 @@
 import logging
 
 from config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
-from workers.publicData.DatabaseInit import initialize_all
+from core.db import initialize_all
 from webUI.app import start_webUI
 
 logger = logging.getLogger(__name__)

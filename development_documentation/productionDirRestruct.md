@@ -459,3 +459,41 @@ from collectors.contracts import fetch_public_contracts
 
 task_id = enqueue("Contracts: The Forge", fetch_public_contracts, 10000002, owner_id=0, queue="public")
 ```
+
+# Results
+
+## Phase 1 - 4:
+
+| New file | Origin | 
+|---|---|
+| identity.py | Split from models.py — User, SiteAdmin, Character + bases |
+| market.py | Split — MarketOrder, MarketStructure |
+| structures.py | Split — Structure |
+| __init__.py | Re-exports all models |
+| publicDB.py | sde_store.py → updated internal imports |
+| privateDB.py | database.py → updated imports to `core.db.models` |
+| __init__.py | Absorbed DatabaseInit.py orchestration |
+| auth.py | Merged auth.py + __init__.py token helpers |
+| registry.py | spec_registry.py → updated imports |
+| generated | 5 forwarding shims → client (until codegen updates in Phase 7) |
+| scheduler.py | Split from task_queue.py — Task class, executors, enqueue/get/cancel |
+| streams.py | Split — `_ThreadRoutedWriter`, SSE generators, ESI rate hook |
+| esi_req.py | rate_limiter.py (no import changes needed) |
+| __init__.py | Re-exports from scheduler + streams |
+| cache.py | sde.py → `from db import sde_store` → `from core.db import publicDB` |
+| __init__.py | Re-exports all 28 lookup helpers |
+| base.py | _base.py |
+| ports.py | _ports.py |
+| adapters.py | _adapters.py → imports updated to `core.*` |
+
+**12 forwarding shims** installed at old paths (models.py, sde_store.py, database.py, auth.py, rate_limiter.py, spec_registry.py, task_queue.py, sde.py, __init__.py, _base.py, _ports.py, _adapters.py) so all existing code in webUI, publicData, codegen, and tests continues working unchanged.
+
+**main.py** updated: `from core.db import initialize_all`.
+
+All verification checks pass: phase 1-4 imports, all forwarding shims, and `import main`.
+
+Made changes.
+
+## Phase 5 - 7:
+
+results go here
