@@ -1,10 +1,13 @@
 .git
+
+# data folders
 _privateData
 _publicData
 _sde
+config.yaml
+
 **/__pycache__
 **/.env
-**/oldCode
 
 # Virtual environments
 .venv/
