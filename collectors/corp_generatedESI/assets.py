@@ -47,4 +47,3 @@ def post_corporations_corporation_id_assets_names(corporation_id: int, token: st
         return result['body']
     logger.debug('%s returned %s for %s', 'PostCorporationsCorporationIdAssetsNames', result['status_code'], result['url'])
     return None
-

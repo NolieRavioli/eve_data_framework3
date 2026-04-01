@@ -94,4 +94,3 @@ def get_characters_character_id_contacts_labels(character_id: int, token: str) -
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdContactsLabels', result['status_code'], result['url'])
     return None
-

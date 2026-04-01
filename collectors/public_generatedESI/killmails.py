@@ -24,4 +24,3 @@ def get_killmails_killmail_id_killmail_hash(killmail_hash: str, killmail_id: int
         return result['body']
     logger.debug('%s returned %s for %s', 'GetKillmailsKillmailIdKillmailHash', result['status_code'], result['url'])
     return None
-

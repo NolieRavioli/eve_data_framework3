@@ -24,4 +24,3 @@ def get_insurance_prices() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetInsurancePrices', result['status_code'], result['url'])
     return None
-

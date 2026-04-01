@@ -262,4 +262,3 @@ def get_corporations_corporation_id_titles(corporation_id: int, token: str) -> d
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsCorporationIdTitles', result['status_code'], result['url'])
     return None
-

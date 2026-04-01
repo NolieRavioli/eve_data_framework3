@@ -25,4 +25,3 @@ def get_characters_character_id_loyalty_points(character_id: int, token: str) ->
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdLoyaltyPoints', result['status_code'], result['url'])
     return None
-

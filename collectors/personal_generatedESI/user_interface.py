@@ -68,4 +68,3 @@ def post_ui_openwindow_newmail(token: str) -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'PostUiOpenwindowNewmail', result['status_code'], result['url'])
     return None
-

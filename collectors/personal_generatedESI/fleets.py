@@ -171,4 +171,3 @@ def post_fleets_fleet_id_wings_wing_id_squads(fleet_id: int, wing_id: int, token
         return result['body']
     logger.debug('%s returned %s for %s', 'PostFleetsFleetIdWingsWingIdSquads', result['status_code'], result['url'])
     return None
-

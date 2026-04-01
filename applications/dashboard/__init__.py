@@ -15,7 +15,7 @@ class DashboardTool(BaseTool):
         name="Dashboard",
         icon="[]",
         description="Character overview, active ESI spec status, and granted scopes.",
-        url_prefix="",
+        url_prefix="/dashboard",
         required_scopes=[],
         nav_weight=-100,
         nav_section="overview",

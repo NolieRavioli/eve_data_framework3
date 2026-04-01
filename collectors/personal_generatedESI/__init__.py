@@ -3,4 +3,3 @@ Regenerate: python build.py --collectors --force
 """
 # ruff: noqa
 COLLECTOR_COMPATIBILITY_DATE: str = '2025-12-16'
-

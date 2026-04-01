@@ -37,4 +37,3 @@ def get_characters_character_id_planets_planet_id(character_id: int, planet_id: 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdPlanetsPlanetId', result['status_code'], result['url'])
     return None
-

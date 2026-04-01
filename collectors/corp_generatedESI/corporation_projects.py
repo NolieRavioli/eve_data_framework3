@@ -47,4 +47,3 @@ def get_corporations_projects_contributors(corporation_id: int, project_id: int,
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsProjectsContributors', result['status_code'], result['url'])
     return None
-

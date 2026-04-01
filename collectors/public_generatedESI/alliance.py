@@ -56,4 +56,3 @@ def get_alliances_alliance_id_icons(alliance_id: int) -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetAlliancesAllianceIdIcons', result['status_code'], result['url'])
     return None
-

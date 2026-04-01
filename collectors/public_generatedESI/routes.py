@@ -23,4 +23,3 @@ def post_route(origin_system_id: int, destination_system_id: int, body: list | d
         return result['body']
     logger.debug('%s returned %s for %s', 'PostRoute', result['status_code'], result['url'])
     return None
-

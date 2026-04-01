@@ -25,4 +25,3 @@ def get_universe_structures_structure_id(structure_id: int, token: str) -> dict 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetUniverseStructuresStructureId', result['status_code'], result['url'])
     return None
-

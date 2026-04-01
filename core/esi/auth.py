@@ -80,6 +80,25 @@ class CredentialManager:
         )
 
     @staticmethod
+    def save_credentials(client_id: str, client_secret: str, redirect_uri: str, scopes: str) -> None:
+        """Save OAuth credentials to disk (called from the web setup wizard)."""
+        ensure_folder(PUBLIC_DATA_FOLDER)
+        if not os.path.exists(KEY_FILE):
+            with open(KEY_FILE, "wb") as handle:
+                handle.write(Fernet.generate_key())
+        with open(KEY_FILE, "rb") as handle:
+            fernet = Fernet(handle.read())
+        creds = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "scopes": scopes,
+        }
+        with open(CLIENT_CRED_FILE, "wb") as handle:
+            handle.write(fernet.encrypt(json.dumps(creds).encode()))
+        logger.info("Credentials saved at %s", CLIENT_CRED_FILE)
+
+    @staticmethod
     def setup_credentials(fernet: Fernet) -> Tuple[str, str, str, str]:
         import webbrowser
 

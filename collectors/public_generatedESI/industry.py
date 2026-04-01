@@ -35,4 +35,3 @@ def get_industry_systems() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetIndustrySystems', result['status_code'], result['url'])
     return None
-

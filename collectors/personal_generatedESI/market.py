@@ -49,4 +49,3 @@ def get_markets_structures_structure_id(structure_id: int, token: str) -> list:
         path_params={'structure_id': structure_id},
         token=token,
     )
-

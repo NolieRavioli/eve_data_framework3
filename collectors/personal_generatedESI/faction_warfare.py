@@ -24,4 +24,3 @@ def get_characters_character_id_fw_stats(character_id: int, token: str) -> dict 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdFwStats', result['status_code'], result['url'])
     return None
-

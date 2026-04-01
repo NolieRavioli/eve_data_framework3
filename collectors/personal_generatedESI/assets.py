@@ -47,4 +47,3 @@ def post_characters_character_id_assets_names(character_id: int, token: str) -> 
         return result['body']
     logger.debug('%s returned %s for %s', 'PostCharactersCharacterIdAssetsNames', result['status_code'], result['url'])
     return None
-

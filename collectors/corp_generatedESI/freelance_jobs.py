@@ -35,4 +35,3 @@ def get_corporations_freelance_jobs_participants(corporation_id: int, job_id: in
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsFreelanceJobsParticipants', result['status_code'], result['url'])
     return None
-

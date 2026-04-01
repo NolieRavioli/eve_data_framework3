@@ -25,4 +25,3 @@ def get_characters_character_id_killmails_recent(character_id: int, token: str) 
         path_params={'character_id': character_id},
         token=token,
     )
-

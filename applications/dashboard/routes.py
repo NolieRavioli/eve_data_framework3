@@ -25,7 +25,7 @@ def _decode_scope(access_token: str) -> str:
         return ""
 
 
-@dashboard_bp.route("/")
+@dashboard_bp.route("/", strict_slashes=False)
 @require_role("dashboard")
 def home():
     owner_id = session.get("owner_id")

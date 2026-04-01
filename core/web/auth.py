@@ -336,4 +336,4 @@ def logout():
     session.clear()
     if _settings.debug_mode:
         print("[Auth] Session cleared via logout.")
-    return redirect(url_for("dashboard.home"))
+    return redirect(url_for("home.index"))

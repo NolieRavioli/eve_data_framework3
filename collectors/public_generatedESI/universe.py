@@ -306,4 +306,3 @@ def get_universe_types_type_id(type_id: int) -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetUniverseTypesTypeId', result['status_code'], result['url'])
     return None
-

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -1408,6 +1409,15 @@ def query_private_browser_sql(
         return {"columns": columns, "rows": rows}
     finally:
         con.close()
+
+
+def compute_file_sha256(path: str | Path) -> str:
+    """Return the hex SHA-256 digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def get_warehouse_status(database_file: str | Path | None = None) -> dict:

@@ -47,4 +47,3 @@ def delete_characters_character_id_fittings_fitting_id(character_id: int, fittin
         return result['body']
     logger.debug('%s returned %s for %s', 'DeleteCharactersCharacterIdFittingsFittingId', result['status_code'], result['url'])
     return None
-

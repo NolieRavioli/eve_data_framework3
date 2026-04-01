@@ -46,4 +46,3 @@ def get_contracts_public_region_id(region_id: int) -> list:
         path_params={'region_id': region_id},
         token=None,
     )
-

@@ -23,4 +23,3 @@ def get_loyalty_stores_corporation_id_offers(corporation_id: int) -> dict | None
         return result['body']
     logger.debug('%s returned %s for %s', 'GetLoyaltyStoresCorporationIdOffers', result['status_code'], result['url'])
     return None
-

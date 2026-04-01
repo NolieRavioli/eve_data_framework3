@@ -37,4 +37,3 @@ def get_corporations_corporation_id_orders_history(corporation_id: int, token: s
         path_params={'corporation_id': corporation_id},
         token=token,
     )
-

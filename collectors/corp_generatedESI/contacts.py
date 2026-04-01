@@ -37,4 +37,3 @@ def get_corporations_corporation_id_contacts_labels(corporation_id: int, token: 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsCorporationIdContactsLabels', result['status_code'], result['url'])
     return None
-

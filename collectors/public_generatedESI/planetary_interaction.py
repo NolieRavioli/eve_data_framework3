@@ -24,4 +24,3 @@ def get_universe_schematics_schematic_id(schematic_id: int) -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetUniverseSchematicsSchematicId', result['status_code'], result['url'])
     return None
-

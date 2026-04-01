@@ -23,4 +23,3 @@ def get_corporations_npccorps() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsNpccorps', result['status_code'], result['url'])
     return None
-

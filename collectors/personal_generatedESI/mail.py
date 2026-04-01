@@ -116,4 +116,3 @@ def put_characters_character_id_mail_mail_id(character_id: int, mail_id: int, to
         return result['body']
     logger.debug('%s returned %s for %s', 'PutCharactersCharacterIdMailMailId', result['status_code'], result['url'])
     return None
-

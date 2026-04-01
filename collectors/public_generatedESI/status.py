@@ -24,4 +24,3 @@ def get_status() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetStatus', result['status_code'], result['url'])
     return None
-

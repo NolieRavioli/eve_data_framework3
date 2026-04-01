@@ -37,4 +37,3 @@ def get_characters_character_id_mining(character_id: int, token: str) -> list:
         path_params={'character_id': character_id},
         token=token,
     )
-

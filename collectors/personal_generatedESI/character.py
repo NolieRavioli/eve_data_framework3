@@ -164,4 +164,3 @@ def get_characters_character_id_titles(character_id: int, token: str) -> dict | 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdTitles', result['status_code'], result['url'])
     return None
-

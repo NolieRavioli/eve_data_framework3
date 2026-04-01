@@ -24,4 +24,3 @@ def get_incursions() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetIncursions', result['status_code'], result['url'])
     return None
-

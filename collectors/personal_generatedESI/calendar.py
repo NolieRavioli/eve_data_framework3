@@ -61,4 +61,3 @@ def get_characters_character_id_calendar_event_id_attendees(character_id: int, e
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdCalendarEventIdAttendees', result['status_code'], result['url'])
     return None
-

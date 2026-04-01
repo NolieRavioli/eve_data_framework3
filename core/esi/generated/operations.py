@@ -1,6 +1,6 @@
 """
 core/esi/generated/operations.py
-────────────────────────────
+----------------------------
 AUTO-GENERATED — do not edit by hand.
 Source: ESI compatibility date 2025-12-16
 Operations: 208
@@ -1467,4 +1467,3 @@ def GetWarsWarIdKillmails(*, war_id: Any, token: str | None = None, query_params
     if all_pages:
         return fetch_all_pages('GetWarsWarIdKillmails', path_params={"war_id": war_id}, query_params=query_params, token=token)
     return execute_operation('GetWarsWarIdKillmails', path_params={"war_id": war_id}, query_params=query_params, token=token)
-

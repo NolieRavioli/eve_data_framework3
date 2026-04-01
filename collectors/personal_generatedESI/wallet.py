@@ -49,4 +49,3 @@ def get_characters_character_id_wallet_transactions(character_id: int, token: st
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdWalletTransactions', result['status_code'], result['url'])
     return None
-

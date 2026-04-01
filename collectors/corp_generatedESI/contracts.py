@@ -49,4 +49,3 @@ def get_corporations_corporation_id_contracts_contract_id_items(contract_id: int
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsCorporationIdContractsContractIdItems', result['status_code'], result['url'])
     return None
-

@@ -24,4 +24,3 @@ def get_corporations_corporation_id_fw_stats(corporation_id: int, token: str) ->
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsCorporationIdFwStats', result['status_code'], result['url'])
     return None
-

@@ -13,7 +13,7 @@ class IndustryCalculatorTool(BaseTool):
         name="Industry Calc",
         icon="⚙",
         description="Calculate manufacturing costs and margins for blueprints.",
-        url_prefix="/tools/industry",
+        url_prefix="/industry",
         required_scopes=[],
         nav_weight=20,
     )

@@ -63,4 +63,3 @@ def get_dogma_effects_effect_id(effect_id: int) -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetDogmaEffectsEffectId', result['status_code'], result['url'])
     return None
-

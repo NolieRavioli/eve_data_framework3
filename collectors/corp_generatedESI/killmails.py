@@ -25,4 +25,3 @@ def get_corporations_corporation_id_killmails_recent(corporation_id: int, token:
         path_params={'corporation_id': corporation_id},
         token=token,
     )
-

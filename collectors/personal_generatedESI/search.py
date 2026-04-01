@@ -25,4 +25,3 @@ def get_characters_character_id_search(character_id: int, token: str) -> dict | 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdSearch', result['status_code'], result['url'])
     return None
-

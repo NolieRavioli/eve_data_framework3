@@ -13,7 +13,7 @@ class MarketBrowserTool(BaseTool):
         name="Market Browser",
         icon="📊",
         description="Browse live market orders by region and item type.",
-        url_prefix="/tools/market",
+        url_prefix="/market",
         required_scopes=[],
         nav_weight=10,
     )

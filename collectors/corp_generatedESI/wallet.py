@@ -49,4 +49,3 @@ def get_corporations_corporation_id_wallets_division_transactions(corporation_id
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCorporationsCorporationIdWalletsDivisionTransactions', result['status_code'], result['url'])
     return None
-

@@ -61,4 +61,3 @@ def get_corporations_corporation_id_industry_jobs(corporation_id: int, token: st
         path_params={'corporation_id': corporation_id},
         token=token,
     )
-

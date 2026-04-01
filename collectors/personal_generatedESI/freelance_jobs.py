@@ -37,4 +37,3 @@ def get_characters_freelance_jobs_participation(character_id: int, job_id: int, 
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersFreelanceJobsParticipation', result['status_code'], result['url'])
     return None
-

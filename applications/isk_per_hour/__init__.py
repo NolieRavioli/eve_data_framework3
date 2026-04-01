@@ -13,7 +13,7 @@ class IskPerHourTool(BaseTool):
         name="ISK / hr",
         icon="💰",
         description="Rank manufacturing blueprints by ISK earned per hour.",
-        url_prefix="/tools/isk_per_hour",
+        url_prefix="/isk_per_hour",
         required_scopes=[],
         nav_weight=30,
     )

@@ -43,4 +43,3 @@ def get_meta_status() -> dict | None:
         return result['body']
     logger.debug('%s returned %s for %s', 'GetMetaStatus', result['status_code'], result['url'])
     return None
-

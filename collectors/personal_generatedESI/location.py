@@ -49,4 +49,3 @@ def get_characters_character_id_ship(character_id: int, token: str) -> dict | No
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdShip', result['status_code'], result['url'])
     return None
-

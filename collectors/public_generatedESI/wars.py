@@ -46,4 +46,3 @@ def get_wars_war_id_killmails(war_id: int) -> list:
         path_params={'war_id': war_id},
         token=None,
     )
-

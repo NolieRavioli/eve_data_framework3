@@ -76,4 +76,3 @@ def get_markets_region_id_types(region_id: int) -> list:
         path_params={'region_id': region_id},
         token=None,
     )
-

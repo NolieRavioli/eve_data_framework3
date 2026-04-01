@@ -49,4 +49,3 @@ def get_characters_character_id_contracts_contract_id_items(character_id: int, c
         return result['body']
     logger.debug('%s returned %s for %s', 'GetCharactersCharacterIdContractsContractIdItems', result['status_code'], result['url'])
     return None
-
