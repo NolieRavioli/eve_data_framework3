@@ -2,7 +2,7 @@ import logging
 
 from config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
 from core.db import initialize_all
-from webUI.app import start_webUI
+from core.web.app import start_webUI
 
 logger = logging.getLogger(__name__)
 
@@ -20,3 +20,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

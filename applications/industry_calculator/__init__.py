@@ -20,3 +20,6 @@ class IndustryCalculatorTool(BaseTool):
 
     def create_blueprint(self) -> Blueprint:
         return routes.industry_bp
+
+
+Tool = IndustryCalculatorTool()

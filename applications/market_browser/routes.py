@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from applications._adapters import storage, tasks
-from webUI.context import base_ctx
+from core.web.context import base_ctx
 
 logger = logging.getLogger(__name__)
 
-market_bp = Blueprint("market_browser", __name__, template_folder="../../webUI/templates")
+market_bp = Blueprint("market_browser", __name__)
 
 
 @market_bp.route("/")
@@ -134,3 +134,4 @@ def refresh():
         queue="public",
     )
     return redirect(url_for("tasks.task_progress", task_id=task_id))
+

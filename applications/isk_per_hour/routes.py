@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from applications._adapters import storage, tasks
-from webUI.context import base_ctx
+from core.web.context import base_ctx
 
 logger = logging.getLogger(__name__)
 
-isk_bp = Blueprint("isk_per_hour", __name__, template_folder="../../webUI/templates")
+isk_bp = Blueprint("isk_per_hour", __name__)
 
 _DEFAULT_REGION = 10000002  # The Forge (Jita)
 
@@ -128,3 +128,4 @@ def _get_categories() -> list[dict]:
         return []
     finally:
         con.close()
+

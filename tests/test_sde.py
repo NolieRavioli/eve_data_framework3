@@ -41,7 +41,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
         cls._db_file = str(Path(cls._tmp_dir.name) / "test_sde.duckdb")
 
-        from workers.publicData.SDELoader import build_sde_warehouse
+        from collectors.sde_loader import build_sde_warehouse
         build_sde_warehouse(
             database_file=cls._db_file,
             source_root=str(SDE_ROOT),
@@ -209,7 +209,7 @@ class TestSDECacheFacade(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from db.sde_store import get_database_path
+        from core.db.publicDB import get_database_path
         cls._warehouse_exists = Path(get_database_path()).exists()
 
     def _skip_if_no_warehouse(self):
@@ -218,21 +218,21 @@ class TestSDECacheFacade(unittest.TestCase):
 
     def test_type_name_lookup(self):
         self._skip_if_no_warehouse()
-        import sde
+        import core.sde as sde
         # Tritanium type_id = 34
         name = sde.name_from_type_id(34)
         self.assertEqual(name, "Tritanium", f"Expected 'Tritanium', got {name!r}")
 
     def test_unknown_type_returns_placeholder(self):
         self._skip_if_no_warehouse()
-        import sde
+        import core.sde as sde
         result = sde.name_from_type_id(999_999_999)
         # The function never returns None; unknown IDs get a placeholder string.
         self.assertIn("Unknown", result)
 
     def test_region_from_system(self):
         self._skip_if_no_warehouse()
-        import sde
+        import core.sde as sde
         # Jita is in The Forge (region 10000002), system 30000142
         region_id = sde.region_id_from_system_id(30000142)
         self.assertEqual(region_id, 10000002,
@@ -240,7 +240,7 @@ class TestSDECacheFacade(unittest.TestCase):
 
     def test_system_name_lookup(self):
         self._skip_if_no_warehouse()
-        import sde
+        import core.sde as sde
         name = sde.system_name_from_id(30000142)
         self.assertEqual(name, "Jita", f"Expected 'Jita', got {name!r}")
 

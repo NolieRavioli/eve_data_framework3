@@ -367,6 +367,86 @@ Move `esi/personal|corp|public/` → `collectors/personal_generatedESI|corp_gene
 Merge `SDEBootstrap.py` + `SDELoader.py` → `collectors/sde_loader.py`.
 Create `collectors/market/` (publicRegions.py + privateStructures.py) and `collectors/structures/` (publicDiscovery.py).
 
+**Decentralised table ownership (new requirement):**
+Each collector owns the DDL for the tables it creates. `core/db/publicDB.py`'s `_ensure_public_schema()` is
+stripped down to **only** identity/core infra tables (`users`, `site_admins`). All domain tables move
+into the collector that creates them via `ensure_tables(con)` functions:
+
+| Table(s) | Owner (creates DDL) |
+|---|---|
+| `users`, `site_admins` | `core/db/publicDB._ensure_public_schema` (core infra — stays) |
+| `esi_registry_*`, `esi_routes`, `esi_schemas`, `esi_scopes` | `core/esi/registry.py` (core infra — stays) |
+| `sde_manifest`, `sde_dataset_manifest`, all `dim_*` / `fact_*` | `collectors/sde_loader.py` (was SDELoader._bootstrap_schema) |
+| `market_orders`, `market_region_cooldowns` | `collectors/market/publicRegions.py` |
+| `market_structures` | `collectors/market/privateStructures.py` |
+| `structures` | `collectors/structures/publicDiscovery.py` |
+| `public_contracts` | `collectors/contracts/` (future) |
+| `isk_per_hour_results` | `applications/isk_per_hour/` |
+
+**`ensure_tables(con)` convention:** Every collector or application that owns DuckDB tables exposes a
+module-level `ensure_tables(con: duckdb.DuckDBPyConnection) -> None` function containing only idempotent
+`CREATE TABLE IF NOT EXISTS` statements. This is called:
+- **Lazily** at the top of the collector's worker function (before first write), OR
+- **At startup** when `core/db/__init__.py` scans registered schema providers.
+
+The lazy approach is simpler and is the default. A startup-scan approach may be added later if
+query-time table-not-found errors become a problem for read-only consumers.
+
+**Enrichment model extensions (new requirement):**
+When a collector enriches an existing table created by a different collector, it uses DuckDB's
+`ALTER TABLE … ADD COLUMN IF NOT EXISTS`. The enriching collector declares its extra columns
+in its own `ensure_columns(con)` function (called before first write), not by modifying the
+owning collector's DDL.
+
+Pattern:
+```python
+# collectors/structures/publicDiscovery.py  — CREATES the table
+def ensure_tables(con):
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS structures (
+            structure_id BIGINT PRIMARY KEY,
+            solar_system_id BIGINT,
+            region_id BIGINT,
+            owner_id BIGINT,
+            name VARCHAR,
+            type_id BIGINT,
+            position_json VARCHAR,
+            last_seen TIMESTAMP
+        )
+    """)
+
+# collectors/market/privateStructures.py  — ENRICHES with cooldown columns
+def ensure_columns(con):
+    for col, dtype in [
+        ("forbidden_until", "TIMESTAMP"),
+        ("market_forbidden_until", "TIMESTAMP"),
+        ("market_refreshed_until", "TIMESTAMP"),
+        ("enrich_refreshed_until", "TIMESTAMP"),
+    ]:
+        con.execute(f"ALTER TABLE structures ADD COLUMN IF NOT EXISTS {col} {dtype}")
+```
+
+This means:
+- The **creating collector** defines the base schema.
+- **Enrichment collectors** only add columns they need — they never redefine the base table.
+- No `core/` code changes needed for new domain tables or enrichment columns.
+- If an enrichment collector runs before the creating collector, its `ALTER TABLE` will fail
+  gracefully (table doesn't exist yet) — the guard is: call the creating collector's
+  `ensure_tables(con)` first, or depend on startup ordering.
+
+**SOP — who owns the model:**
+- Whoever *creates* the table owns the `ensure_tables()` function and the base column set.
+- Enrichment-only collectors own `ensure_columns()` for their added fields.
+- Applications that need custom result tables own their own `ensure_tables()`.
+- `core/db/models/` retains ORM class definitions for SQLAlchemy PrivateBase models and
+  the core identity PublicBase models. Domain-table column definitions are in the collectors,
+  NOT in `core/db/models/`.
+
+**Private SQLite tables:** Same pattern. Collectors that need per-character tables define their own
+`PrivateBase` model subclass in the collector package. `core/db/privateDB.initialize_private_database()`
+calls `PrivateBase.metadata.create_all(engine)` — any PrivateBase subclass imported before that
+call will be picked up automatically.
+
 Verify:
 ```python
 from collectors.personal_generatedESI.assets import get_characters_character_id_assets
@@ -380,11 +460,33 @@ Rename `webUI/` → `web/`. Move `codegen/` → `utils/build/`.
 Implement pkgutil auto-discovery in `applications/__init__.py`.
 Update `build.py` imports.
 
+**Application table ownership (new requirement):** Applications that need their own DuckDB tables
+(e.g. `isk_per_hour_results`) define `ensure_tables(con)` inside the application package. The
+application calls it on first use — `core/` is never modified.
+
+**`codegen/` output path changes:**
+- `esi_codegen.py`: output `esi/client/` → `core/esi/generated/` (until forwarding shims are removed, the old shims proxy)
+- `domain_codegen.py`: output `esi/personal|corp|public/` → `collectors/personal_generatedESI|corp_generatedESI|public_generatedESI/`
+- Generated import: `from esi.client.client import ...` → `from core.esi.generated.client import ...`
+
 Verify: Flask boots, SSO works, all three tools appear in nav.
 
 ### Phase 7 — Config + docs cleanup
 Remove `AUTH_DATA_FOLDER` from `config.yaml` and `README.md`.
-Update `AGENTS.md` with new import paths and directory references.
+Update `AGENTS.md` — full rewrite reflecting new directory structure, with:
+- New directory map
+- Updated import examples throughout (all `core.*` paths)
+- Common agent tasks: implementing new collectors (with `ensure_tables` convention)
+- Common agent tasks: implementing new database models (public DuckDB + private SQLite)
+- Common agent tasks: implementing new applications (TODO — not yet exercised)
+- Updated security notes and code conventions
+
+Update `README.md` — rewrite to match new layout, import paths, and workflows.
+
+Remove old forwarding shims where no longer needed after all consumers are updated.
+Delete old directories: `db/`, `esi/` (except `esi/client/` which stays until codegen updated),
+`tasks/`, `workers/`, root `sde.py`.
+
 Run `python build.py --force` to regenerate into new output paths.
 
 Verify: `python -c "import main"` clean. `python build.py --force` succeeds.
@@ -398,7 +500,8 @@ Verify: `python -c "import main"` clean. `python build.py --force` succeeds.
 - Generated code lives in `core/esi/generated/` and `collectors/personal_generatedESI|corp_generatedESI|public_generatedESI/` — never hand-edit
 - DuckDB connections are per-thread — `core.db.publicDB.connect()` returns a fresh connection each call
 - Token lifecycle (load, refresh, pick, resolve owner) all lives in `core.esi.auth`
-- New DuckDB tables: add model file to `core/db/models/`, DDL auto-discovered at startup
+- **New DuckDB tables: define `ensure_tables(con)` in the collector or application that creates the table — never modify `core/`**
+- **Enrichment columns: define `ensure_columns(con)` in the enriching collector — never modify the creating collector's DDL**
 - New collector domain: add subdirectory to `collectors/` (e.g., `collectors/contracts/`)
 - New application: add subdirectory to `applications/` with `BaseTool` subclass — auto-discovered
 
@@ -496,4 +599,92 @@ Made changes.
 
 ## Phase 5 - 7:
 
-results go here
+## Phase 5–7 Implementation Results
+
+### Phase 5 — Collectors Package
+
+**Created:**
+
+| File | Description |
+|---|---|
+| `collectors/__init__.py` | Package marker |
+| `collectors/sde_loader.py` | Merged SDEBootstrap + SDELoader (~750 lines). Owns all SDE dimension/fact table DDL via `_bootstrap_schema(con)`. Imports from `core.db.publicDB`, `core.esi.registry`, `core.sde`. |
+| `collectors/structures/__init__.py` | Re-exports `discover_structures` |
+| `collectors/structures/publicDiscovery.py` | Owns `structures` table DDL via `ensure_tables(con)`. Base columns only (no cooldown columns). Full worker: seed + enrich phases. |
+| `collectors/market/__init__.py` | Re-exports `fetch_all_market_data`, `update_structure_market_orders` |
+| `collectors/market/publicRegions.py` | Owns `market_orders` + `market_region_cooldowns` DDL via `ensure_tables(con)`. Calls `ensure_tables` at top of `fetch_all_market_data()`. |
+| `collectors/market/privateStructures.py` | Owns `market_structures` DDL via `ensure_tables(con)`. Owns structures cooldown columns via `ensure_columns(con)` with cross-call to `publicDiscovery.ensure_tables`. |
+| `collectors/personal_generatedESI/` | Moved from `esi/personal/` — auto-generated character-scoped ESI wrappers |
+| `collectors/corp_generatedESI/` | Moved from `esi/corp/` — auto-generated corporation-scoped ESI wrappers |
+| `collectors/public_generatedESI/` | Moved from `esi/public/` — auto-generated public ESI wrappers |
+
+**Modified:**
+
+| File | Change |
+|---|---|
+| `core/db/publicDB.py` | Stripped `_ensure_public_schema` to only `users`, `site_admins`, and dimension views. Removed `market_orders`, `public_contracts`, `structures` (with migration block), `market_structures`, `market_region_cooldowns`, `isk_per_hour_results`. |
+| `core/db/models/__init__.py` | Removed imports of `MarketOrder`, `MarketStructure`, `Structure` |
+| `core/db/models/market.py` | **Deleted** — domain ORM models removed |
+| `core/db/models/structures.py` | **Deleted** — domain ORM models removed |
+| `codegen/domain_codegen.py` | Updated output paths: `esi/{scope}/` → `collectors/{scope}_generatedESI/` |
+| `core/sde/cache.py` | Updated import: `workers.publicData.SDEBootstrap` → `collectors.sde_loader` |
+| `applications/market_browser/worker.py` | Updated import: `workers.publicData.MarketStation` → `collectors.market.publicRegions` |
+| `applications/isk_per_hour/worker.py` | Added `ensure_tables(con)` for `isk_per_hour_results` table |
+| `tests/test_sde.py` | Updated import: `workers.publicData.SDELoader` → `collectors.sde_loader` |
+
+**Forwarding shims installed:**
+
+| Old Path | Forwards To |
+|---|---|
+| `workers/publicData/MarketStation.py` | `collectors.market.publicRegions` |
+| `workers/publicData/MarketStructure.py` | `collectors.market.privateStructures` |
+| `workers/publicData/DiscoverStructures.py` | `collectors.structures.publicDiscovery` |
+| `workers/publicData/SDEBootstrap.py` | `collectors.sde_loader` |
+| `workers/publicData/SDELoader.py` | `collectors.sde_loader` |
+| `workers/publicData/DatabaseInit.py` | `core.db` |
+| `esi/personal/__init__.py` | `collectors.personal_generatedESI` |
+| `esi/corp/__init__.py` | `collectors.corp_generatedESI` |
+| `esi/public/__init__.py` | `collectors.public_generatedESI` |
+
+### Phase 6 — Web, Utils, Auto-Discovery
+
+**Created:**
+
+| File | Description |
+|---|---|
+| `web/__init__.py` | Forwarding shim → `webUI` |
+| `utils/__init__.py` | Package marker |
+| `utils/build/__init__.py` | Forwarding shim re-exporting `codegen.esi_codegen.generate` and `codegen.domain_codegen.generate_collectors` |
+
+**Modified:**
+
+| File | Change |
+|---|---|
+| `applications/__init__.py` | Replaced hardcoded 3-tool registration with `pkgutil` auto-discovery. Walks sub-packages, imports any that expose a `Tool` attribute. |
+| `applications/market_browser/__init__.py` | Added `Tool = MarketBrowserTool()` module-level attribute |
+| `applications/industry_calculator/__init__.py` | Added `Tool = IndustryCalculatorTool()` module-level attribute |
+| `applications/isk_per_hour/__init__.py` | Added `Tool = IskPerHourTool()` module-level attribute |
+
+### Phase 7 — Config Cleanup & Documentation
+
+**Modified:**
+
+| File | Change |
+|---|---|
+| `config.yaml` | Removed `AUTH_DATA_FOLDER` environment variable |
+| `AGENTS.md` | Full rewrite — new directory map, decentralised table ownership docs, enrichment pattern, auto-discovery docs |
+| `README.md` | Full rewrite — updated all sections to reference new `core.*` / `collectors.*` paths, removed outdated references |
+
+### Summary of Architectural Decisions Implemented
+
+1. **Option A**: Deleted `PublicBase` ORM models for domain tables (`MarketOrder`, `MarketStructure`, `Structure`). `core/db/models/` now only contains `PublicBase`, `PrivateBase`, `User`, `SiteAdmin`, `Character`.
+
+2. **public_contracts**: Removed entirely from schema. Will be re-created when `collectors/contracts/` is built.
+
+3. **Option C**: Lazy `create_all` per collector for private SQLite — each collector calls `PrivateBase.metadata.create_all(engine)` before first write.
+
+4. **Option B**: Cross-call enrichment — `privateStructures.ensure_columns(con)` calls `publicDiscovery.ensure_tables(con)` before adding cooldown columns.
+
+5. **publicDiscovery owns structures**: The `structures` table base columns are created by `publicDiscovery.ensure_tables(con)`. Cooldown columns are added by `privateStructures.ensure_columns(con)` as enrichment.
+
+6. **Table ownership is fully decentralised**: `_ensure_public_schema` in `publicDB.py` now only creates `users`, `site_admins`, and SDE dimension views. All domain table DDL lives in the collector/application that owns the data.

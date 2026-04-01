@@ -29,7 +29,7 @@ KEY_FILE = os.path.join(PUBLIC_DATA_FOLDER, "key")
 
 # Scopes are sourced from the generated manifest — do not edit by hand.
 # Run `python -m util.esi_codegen` to regenerate when the ESI spec changes.
-from esi.client.manifest import ALL_SCOPES as _ALL_SCOPES
+from core.esi.generated.manifest import ALL_SCOPES as _ALL_SCOPES
 
 REQUIRED_SCOPES = " ".join(sorted(_ALL_SCOPES))
 
@@ -272,3 +272,4 @@ def fresh_token(owner_id: int, char_id: int, token_data: dict) -> tuple[int, dic
     if expires_at is not None and expires_at > time.time() + 30:
         return char_id, token_data
     return pick_token(owner_id)
+

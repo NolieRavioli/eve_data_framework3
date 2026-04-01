@@ -11,6 +11,23 @@ from applications._adapters import storage
 logger = logging.getLogger(__name__)
 
 
+def ensure_tables(con) -> None:
+    """Idempotent DDL for the isk_per_hour_results table — owned by this application."""
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS isk_per_hour_results (
+            type_id     BIGINT NOT NULL,
+            type_name   VARCHAR,
+            region_id   BIGINT NOT NULL,
+            category_id BIGINT,
+            isk_per_run DOUBLE,
+            isk_per_hour DOUBLE,
+            margin_pct  DOUBLE,
+            computed_at TIMESTAMP,
+            PRIMARY KEY (type_id, region_id)
+        )
+    """)
+
+
 def compute_rankings(region_id: int, category_id: int) -> None:
     """
     Iterate every manufacturing blueprint whose product belongs to *category_id*
@@ -19,6 +36,13 @@ def compute_rankings(region_id: int, category_id: int) -> None:
     Results are upserted into the ``isk_per_hour_results`` DuckDB table.
     """
     logger.info("ISK/hr compute starting — region=%s category=%s", region_id, category_id)
+
+    # Ensure our table exists before any writes
+    con = storage.connect()
+    try:
+        ensure_tables(con)
+    finally:
+        con.close()
 
     con = storage.connect()
     try:

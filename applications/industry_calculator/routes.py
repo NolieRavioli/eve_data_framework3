@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, render_template, request
 
 from applications._adapters import storage
-from webUI.context import base_ctx
+from core.web.context import base_ctx
 
 logger = logging.getLogger(__name__)
 
-industry_bp = Blueprint("industry_calculator", __name__, template_folder="../../webUI/templates")
+industry_bp = Blueprint("industry_calculator", __name__)
 
 # Jita region id default
 _DEFAULT_REGION = 10000002
@@ -70,3 +70,4 @@ def _get_regions() -> list[dict]:
         return []
     finally:
         con.close()
+

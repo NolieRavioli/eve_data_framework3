@@ -27,6 +27,10 @@ class ToolManifest:
     required_scopes: list[str] = field(default_factory=list)
     #: Lower value = higher position in the nav list.
     nav_weight: int = 50
+    #: Sidebar section this tool appears in.
+    #: "overview" = always visible | "tools" = logged-in | "apps" = logged-in, scope-gated
+    #: "admin" = admin-only | "" = hidden from nav
+    nav_section: str = "apps"
 
 
 class BaseTool(ABC):
@@ -52,8 +56,15 @@ class ToolRegistry:
     def register_blueprints(self, app: Flask) -> None:
         """Register each tool's blueprint with the Flask app."""
         for tool in self._tools:
-            bp = tool.create_blueprint()
-            app.register_blueprint(bp, url_prefix=tool.manifest.url_prefix)
+            bp     = tool.create_blueprint()
+            prefix = tool.manifest.url_prefix
+            # Pass url_prefix only when non-empty so that a dashboard-style
+            # tool with url_prefix="" registers at the application root without
+            # Flask receiving an explicit empty-string prefix argument.
+            if prefix:
+                app.register_blueprint(bp, url_prefix=prefix)
+            else:
+                app.register_blueprint(bp)
 
     def nav_entries(self) -> list[ToolManifest]:
         """Return manifests sorted by nav_weight (ascending)."""

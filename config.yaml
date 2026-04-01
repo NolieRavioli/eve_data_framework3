@@ -3,7 +3,6 @@ Environment Variables:
   SUPPORTED_LANGUAGES: "en"
   PUBLIC_DATA_FOLDER: "_publicData"
   EVE_PRIVATE_DATABASE_FOLDER: "_privateData/"
-  AUTH_DATA_FOLDER: "auth/.gitignore/"
   SDE_PATH: "_sde/"
 
 # SDE section toggles — set false to skip a dataset at startup.
@@ -21,9 +20,13 @@ SDE:
   load_type_dogma: false     # item dogma attributes           (~26 MB, ~60s+)
 
 Structures:
-  enrich_forbidden_cooldown_days: 21        # days to skip transiently-inaccessible structures (404/network)
-  enrich_unauthorized_cooldown_days: 7      # days to skip 403-inaccessible structures during enrichment
-  enrich_authorized_cooldown_seconds: 3600  # seconds to skip structures that succeed
-  market_unauthorized_cooldown_days: 7      # days to skip structures that return 403 on the market endpoint
-  market_forbidden_cooldown_days: 21        # days to skip structures that fail for other reasons on the market endpoint
-  market_authorized_cooldown_seconds: 3600  # seconds to skip structures that succeed
+  forbidden_cooldown_days: 21           # days to skip transiently-inaccessible structures (404/network)
+  unauthorized_cooldown_days: 7         # days to skip 403-inaccessible structures during enrichment
+  authorized_cooldown_seconds: 3600     # seconds to skip structures that succeed
+
+Market:
+  unauthorized_cooldown_days: 7         # days to skip structures that return 403 on the market endpoint
+  forbidden_cooldown_days: 21           # days to skip structures that fail for other reasons on the market endpoint
+  authorized_cooldown_seconds: 3600     # seconds to skip structures that succeed
+  max_retries: 3                        # per-page fetch retry limit before skipping a structure
+  rate_limit_sleep_seconds: 10          # sleep duration when ESI returns 420 (error rate limit)

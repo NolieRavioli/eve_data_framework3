@@ -20,3 +20,6 @@ class MarketBrowserTool(BaseTool):
 
     def create_blueprint(self) -> Blueprint:
         return routes.market_bp
+
+
+Tool = MarketBrowserTool()

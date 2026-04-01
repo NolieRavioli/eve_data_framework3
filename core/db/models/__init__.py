@@ -1,8 +1,6 @@
-"""Re-export all models from domain files."""
+"""Re-export identity models — domain table DDL is owned by collectors."""
 
 from core.db.models.identity import PublicBase, PrivateBase, User, SiteAdmin, Character
-from core.db.models.market import MarketOrder, MarketStructure
-from core.db.models.structures import Structure
 
 __all__ = [
     "PublicBase",
@@ -10,7 +8,4 @@ __all__ = [
     "User",
     "SiteAdmin",
     "Character",
-    "MarketOrder",
-    "MarketStructure",
-    "Structure",
 ]

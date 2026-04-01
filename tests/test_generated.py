@@ -1,4 +1,4 @@
-"""
+﻿"""
 tests/test_generated.py
 ------------------------
 Unittest suite for the generated ESI package.
@@ -15,27 +15,27 @@ class TestGeneratedPackageExists(unittest.TestCase):
     """Verify the generated package was produced and is importable."""
 
     def test_init_importable(self):
-        import esi.client as pkg
+        import core.esi.generated as pkg
         self.assertEqual(pkg.COMPATIBILITY_DATE, "2025-12-16")
 
     def test_operation_count(self):
-        import esi.client as pkg
+        import core.esi.generated as pkg
         self.assertEqual(pkg.OPERATION_COUNT, 208)
 
     def test_schema_count(self):
-        import esi.client as pkg
+        import core.esi.generated as pkg
         self.assertEqual(pkg.SCHEMA_COUNT, 263)
 
     def test_scope_count(self):
-        import esi.client as pkg
+        import core.esi.generated as pkg
         self.assertEqual(pkg.SCOPE_COUNT, 66)
 
 
 class TestManifest(unittest.TestCase):
-    """Tests for esi/client/manifest.py."""
+    """Tests for core/esi/generated/manifest.py."""
 
     def setUp(self):
-        from esi.client.manifest import (
+        from core.esi.generated.manifest import (
             OPERATIONS, ALL_SCOPES, OPERATIONS_BY_TAG,
             OPERATIONS_BY_METHOD, AUTH_OPERATIONS, PUBLIC_OPERATIONS,
             COMPATIBILITY_DATE, OPERATION_COUNT,
@@ -116,8 +116,8 @@ class TestGeneratedOperations(unittest.TestCase):
     """Verify operations.py exports one callable per operation_id."""
 
     def test_all_ops_callable(self):
-        import esi.client.operations as ops_module
-        from esi.client.manifest import OPERATIONS
+        import core.esi.generated.operations as ops_module
+        from core.esi.generated.manifest import OPERATIONS
         for op_id in OPERATIONS:
             fn_name = _safe_ident(op_id)
             with self.subTest(op_id=op_id):
@@ -126,41 +126,41 @@ class TestGeneratedOperations(unittest.TestCase):
                 self.assertTrue(callable(fn))
 
     def test_module_imports_cleanly(self):
-        import esi.client.operations  # noqa: F401
+        import core.esi.generated.operations  # noqa: F401
 
 
 class TestGeneratedClient(unittest.TestCase):
-    """Tests for esi/client/client.py."""
+    """Tests for core/esi/generated/client.py."""
 
     def test_build_path_simple(self):
-        from esi.client.client import build_path
+        from core.esi.generated.client import build_path
         path = build_path("GetAlliances")
         self.assertEqual(path, "/alliances")
 
     def test_build_path_with_params(self):
-        from esi.client.client import build_path
+        from core.esi.generated.client import build_path
         path = build_path("GetAlliancesAllianceId", path_params={"alliance_id": 12345})
         self.assertIn("12345", path)
         self.assertNotIn("{", path)
 
     def test_build_path_missing_param(self):
-        from esi.client.client import MissingPathParam, build_path
+        from core.esi.generated.client import MissingPathParam, build_path
         with self.assertRaises(MissingPathParam):
             build_path("GetAlliancesAllianceId", path_params={})
 
     def test_operation_not_found(self):
-        from esi.client.client import OperationNotFound, build_path
+        from core.esi.generated.client import OperationNotFound, build_path
         with self.assertRaises(OperationNotFound):
             build_path("DoesNotExist123")
 
     def test_validate_write_get_is_error(self):
-        from esi.client.client import validate_write
+        from core.esi.generated.client import validate_write
         errors = validate_write("GetAlliances")
         self.assertTrue(any("GET" in e for e in errors))
 
     def test_validate_write_post_ok(self):
-        from esi.client.manifest import OPERATIONS_BY_METHOD
-        from esi.client.client import validate_write
+        from core.esi.generated.manifest import OPERATIONS_BY_METHOD
+        from core.esi.generated.client import validate_write
         post_ops = OPERATIONS_BY_METHOD.get("POST", [])
         if post_ops:
             # Just checking it doesn't crash; errors may or may not be empty
@@ -168,8 +168,8 @@ class TestGeneratedClient(unittest.TestCase):
             self.assertIsInstance(errors, list)
 
     def test_auth_required_without_token(self):
-        from esi.client.client import AuthRequired, execute_operation
-        from esi.client.manifest import AUTH_OPERATIONS
+        from core.esi.generated.client import AuthRequired, execute_operation
+        from core.esi.generated.manifest import AUTH_OPERATIONS
         if AUTH_OPERATIONS:
             op_id = AUTH_OPERATIONS[0]
             with self.assertRaises(AuthRequired):
@@ -177,7 +177,7 @@ class TestGeneratedClient(unittest.TestCase):
 
     def test_execute_public_get_dispatches(self):
         """execute_operation for a public GET route hits esi_request."""
-        from esi.client.client import execute_operation
+        from core.esi.generated.client import execute_operation
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = [1, 2, 3]
@@ -186,7 +186,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("esi.rate_limiter.esi_request", return_value=mock_resp) as mock_req:
+        with patch("core.queue.esi_req.esi_request", return_value=mock_resp) as mock_req:
             result = execute_operation("GetAlliances")
             self.assertEqual(result["status_code"], 200)
             self.assertEqual(result["body"], [1, 2, 3])
@@ -197,7 +197,7 @@ class TestGeneratedClient(unittest.TestCase):
 
     def test_fetch_all_pages_single_page(self):
         """fetch_all_pages returns list for single-page response."""
-        from esi.client.client import fetch_all_pages
+        from core.esi.generated.client import fetch_all_pages
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = [{"id": 1}]
@@ -206,19 +206,19 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json", "X-Pages": "1"}
 
-        with patch("esi.rate_limiter.esi_request", return_value=mock_resp):
+        with patch("core.queue.esi_req.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertIsInstance(result, list)
 
     def test_fetch_all_pages_403_returns_empty(self):
         """fetch_all_pages returns [] on 403."""
-        from esi.client.client import fetch_all_pages
+        from core.esi.generated.client import fetch_all_pages
         mock_resp = MagicMock()
         mock_resp.status_code = 403
         mock_resp.content = b""
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("esi.rate_limiter.esi_request", return_value=mock_resp):
+        with patch("core.queue.esi_req.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertEqual(result, [])
 
@@ -227,24 +227,24 @@ class TestAuthScopesFromManifest(unittest.TestCase):
     """Verify auth.py uses generated scopes and no hardcoded list."""
 
     def test_required_scopes_from_manifest(self):
-        from esi import auth
-        from esi.client.manifest import ALL_SCOPES
+        from core.esi import auth
+        from core.esi.generated.manifest import ALL_SCOPES
         import re
         # auth.py should no longer contain a hardcoded scope string
-        auth_src = Path("esi/auth.py").read_text(encoding="utf-8")
+        auth_src = Path("core/esi/auth.py").read_text(encoding="utf-8")
         self.assertNotIn("esi-wallet.read_character_wallet.v1", auth_src)
         self.assertNotIn("esi-skills.read_skills.v1", auth_src)
         # The generated import should be present
-        self.assertIn("from esi.client.manifest import ALL_SCOPES", auth_src)
+        self.assertIn("from core.esi.generated.manifest import ALL_SCOPES", auth_src)
 
     def test_required_scopes_is_66_scopes(self):
-        from esi.auth import REQUIRED_SCOPES
+        from core.esi.auth import REQUIRED_SCOPES
         scopes = REQUIRED_SCOPES.split()
         self.assertEqual(len(scopes), 66)
 
     def test_required_scopes_matches_manifest(self):
-        from esi.auth import REQUIRED_SCOPES
-        from esi.client.manifest import ALL_SCOPES
+        from core.esi.auth import REQUIRED_SCOPES
+        from core.esi.generated.manifest import ALL_SCOPES
         self.assertEqual(set(REQUIRED_SCOPES.split()), set(ALL_SCOPES))
 
 
@@ -281,7 +281,7 @@ class TestCodegenCheckIsCurrentPassesWhenCurrent(unittest.TestCase):
     """check_generated_is_current() should not raise on a fresh generate()."""
 
     def test_no_error(self):
-        from codegen.esi_codegen import check_generated_is_current
+        from utils.build.esi_codegen import check_generated_is_current
         # Should not raise since we just ran the generator
         check_generated_is_current()
 
@@ -290,7 +290,7 @@ class TestFlaskAppBlueprints(unittest.TestCase):
     """Verify the Flask app registers only the 4 expected blueprints."""
 
     def test_blueprints(self):
-        from webUI import create_app
+        from core.web import create_app
         app = create_app()
         self.assertSetEqual(set(app.blueprints.keys()), {"auth", "dashboard", "admin", "tasks"})
 
@@ -311,3 +311,5 @@ def _safe_ident(name: str) -> str:
 
 if __name__ == "__main__":
     unittest.main()
+
+

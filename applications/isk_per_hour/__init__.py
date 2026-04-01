@@ -20,3 +20,6 @@ class IskPerHourTool(BaseTool):
 
     def create_blueprint(self) -> Blueprint:
         return routes.isk_bp
+
+
+Tool = IskPerHourTool()

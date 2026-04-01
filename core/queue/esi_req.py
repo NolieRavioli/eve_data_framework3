@@ -106,8 +106,7 @@ def _get_cached_response(key: _CacheKey, prepared: requests.PreparedRequest) -> 
             return None
         expiry, payload = entry
         if expiry <= now:
-            del _CACHE[key]
-            return None
+            return None   # stale entry kept in _CACHE for ETag revalidation via _get_cache_entry
     return _build_cached_response(payload, prepared)
 
 
@@ -130,9 +129,32 @@ def _store_cached_response(
         _CACHE[key] = (expires, payload)
 
 
-def _token_cost_for_status(status_code: int) -> int:
-    """Return the token cost for a given HTTP status code."""
+def _get_cache_entry(key: _CacheKey) -> Optional[tuple[float, dict]]:
+    """Return the raw cache entry for *key* even if expired (used for ETag harvesting)."""
+    with _CACHE_LOCK:
+        return _CACHE.get(key)
 
+
+def _refresh_cache_ttl(key: _CacheKey, ttl: int) -> None:
+    """Reset the expiry on an existing cache entry without changing its payload (called on 304)."""
+    with _CACHE_LOCK:
+        entry = _CACHE.get(key)
+        if entry:
+            _CACHE[key] = (time.time() + ttl, entry[1])
+
+
+def _token_cost_for_status(status_code: int) -> int:
+    """Return the token cost for a given HTTP status code.
+
+    Per the ESI floating-window spec, 429 responses are explicitly excluded
+    from the 4XX 5-token penalty — the server does not count a rate-limited
+    request against your bucket, so we return our optimistic reservation.
+    420 (error-limit breach) uses the fixed-window error limit pathway: the
+    rate-limit bucket headers are absent, so we avoid charging 5 tokens against
+    our local bucket for a response that isn't really a route-level 4XX error.
+    """
+    if status_code in (420, 429):
+        return 0
     bucket = status_code // 100
     return TOKEN_COSTS.get(bucket, 5)
 
@@ -256,6 +278,11 @@ class EsiRateLimiter:
         self._url_to_group: Dict[str, str] = {}   # normalised URL path → group name
         self._group_display: Dict[str, dict] = {}  # group → latest header snapshot
 
+        # Error-limit tracking (fixed-window, X-ESI-Error-Limit-Remain / X-ESI-Error-Limit-Reset)
+        self._error_limit_lock = threading.Lock()
+        self._error_limit_remain: Optional[int] = None
+        self._error_limit_reset: Optional[int] = None
+
         # Pre-populate synthetic groups for endpoints without X-Ratelimit-Group headers.
         for norm_path, group_name in _STATIC_URL_GROUPS:
             self._url_to_group[norm_path] = group_name
@@ -291,7 +318,29 @@ class EsiRateLimiter:
                     gname = self._url_to_group.get(norm)
                     bucket = self._group_buckets.get(gname) if gname else self._default_bucket
 
+                # Inject If-None-Match from a stale cache entry when available.
+                if cache_key:
+                    stale = _get_cache_entry(cache_key)
+                    if stale:
+                        _, stale_payload = stale
+                        etag = (
+                            stale_payload.get("headers", {}).get("ETag")
+                            or stale_payload.get("headers", {}).get("etag")
+                        )
+                        if etag:
+                            req_hdrs = dict(kwargs.get("headers") or {})
+                            if "If-None-Match" not in req_hdrs:
+                                req_hdrs["If-None-Match"] = etag
+                                kwargs["headers"] = req_hdrs
+
                 bucket.acquire(initial_cost)
+
+                # Inject a default User-Agent if the caller did not supply one.
+                req_hdrs = dict(kwargs.get("headers") or {})
+                if not req_hdrs.get("User-Agent") and not req_hdrs.get("X-User-Agent"):
+                    req_hdrs["User-Agent"] = "EVE-Data-Framework/4.0"
+                    kwargs["headers"] = req_hdrs
+
                 kwargs.setdefault("timeout", 30)
                 try:
                     response = requests.request(method, url, **kwargs)
@@ -308,8 +357,21 @@ class EsiRateLimiter:
 
                 self._update_limits_from_headers(response.headers, url)
 
-                if ttl and cache_key and 200 <= response.status_code < 400:
+                if ttl and cache_key and 200 <= response.status_code < 300:
                     _store_cached_response(cache_key, response, ttl, prepared)
+
+                # 304 Not Modified: refresh cache TTL and return stored payload (1 token, already adjusted).
+                if response.status_code == 304 and cache_key and ttl:
+                    _refresh_cache_ttl(cache_key, ttl)
+                    stale = _get_cache_entry(cache_key)
+                    if stale:
+                        self._requests_total += 1
+                        if _post_request_hook is not None:
+                            try:
+                                _post_request_hook(self.get_stats())
+                            except Exception:
+                                pass
+                        return _build_cached_response(stale[1], prepared)
 
                 if response.status_code == 429 and attempt < self._max_retries:
                     retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
@@ -322,6 +384,19 @@ class EsiRateLimiter:
                         self._max_retries,
                     )
                     retry_sleep = retry_after   # sleep AFTER releasing the gate
+                    continue
+
+                if response.status_code == 420 and attempt < self._max_retries:
+                    reset_after = self._parse_retry_after(response.headers.get("X-ESI-Error-Limit-Reset"))
+                    logger.warning(
+                        "[RateLimiter] 420 error limit breach for %s %s. Sleeping %ss (attempt %s/%s)",
+                        method.upper(),
+                        url,
+                        reset_after,
+                        attempt,
+                        self._max_retries,
+                    )
+                    retry_sleep = reset_after
                     continue
 
                 self._requests_total += 1
@@ -387,6 +462,9 @@ class EsiRateLimiter:
 
         summary["requests_total"] = self._requests_total
         summary["groups"] = groups
+        with self._error_limit_lock:
+            summary["error_limit_remain"] = self._error_limit_remain
+            summary["error_limit_reset"] = self._error_limit_reset
         return summary
 
     @staticmethod
@@ -414,7 +492,22 @@ class EsiRateLimiter:
             return None, None
 
     def _update_limits_from_headers(self, headers: Dict[str, str], url: Optional[str] = None) -> None:
-        """Update per-group bucket configuration from ESI rate-limit response headers."""
+        """Update per-group and error-limit state from ESI response headers."""
+
+        # Error limit (fixed-window; headers are mutually exclusive with rate-limit bucket headers).
+        err_remain = self._extract_int(headers, "X-ESI-Error-Limit-Remain")
+        err_reset = self._extract_int(headers, "X-ESI-Error-Limit-Reset")
+        if err_remain is not None or err_reset is not None:
+            with self._error_limit_lock:
+                if err_remain is not None:
+                    self._error_limit_remain = err_remain
+                if err_reset is not None:
+                    self._error_limit_reset = err_reset
+            if err_remain is not None and err_remain < 20:
+                logger.warning(
+                    "[RateLimiter] ESI error limit low: %s remaining (resets in %ss)",
+                    err_remain, err_reset,
+                )
 
         group = headers.get("X-Ratelimit-Group") or headers.get("X-Esi-Rate-Limit-Group")
         limit_str = (
