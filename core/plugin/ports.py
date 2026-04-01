@@ -271,3 +271,19 @@ class QueueInfoPort(Protocol):
         """Return a generator yielding SSE log events for a task."""
         ...
 
+
+@runtime_checkable
+class SchedulerPort(Protocol):
+    """Manage the background job scheduler."""
+
+    def list_jobs(self) -> list[dict]:
+        """Return all registered jobs with their current state."""
+        ...
+
+    def set_enabled(self, job_id: str, enabled: bool) -> None:
+        """Enable or disable a job (persisted to DuckDB)."""
+        ...
+
+    def run_now(self, job_id: str) -> str:
+        """Fire a job immediately; return the task_id."""
+        ...

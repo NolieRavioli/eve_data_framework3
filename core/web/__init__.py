@@ -42,6 +42,14 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     from applications import tool_registry
     tool_registry.register_blueprints(app)
 
+    # Start the background scheduler engine and register all catalog jobs.
+    # Import is deferred so collectors are importable at this point.
+    from core.scheduler import get_engine
+    from core.scheduler.jobs import register_all_jobs
+    _scheduler = get_engine()
+    register_all_jobs(_scheduler)
+    _scheduler.start()
+
     @app.before_request
     def _check_setup():
         """Redirect to the setup wizard when OAuth credentials are missing."""

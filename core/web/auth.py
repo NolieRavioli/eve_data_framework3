@@ -317,6 +317,19 @@ def callback():
             session["is_site_owner"] = bool(admin_record and admin_record.get("is_site_owner"))
             session["roles"]         = sde_store.get_user_roles(owner_id)
 
+        # Kick off async character data collection.  The token is already stored
+        # so the collector can fetch it; this runs in the background and does not
+        # block the redirect.
+        from core.queue.scheduler import enqueue as _enqueue
+        from collectors.character.onboarding import initialize_character
+        _enqueue(
+            "Initialize Character",
+            initialize_character,
+            owner_id,
+            owner_id=owner_id,
+            queue="private",
+        )
+
         if _settings.debug_mode:
             print(
                 f"[Auth] Session updated owner={owner_id} "

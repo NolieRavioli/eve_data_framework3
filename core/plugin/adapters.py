@@ -375,6 +375,28 @@ class _LiveQueueInfoAdapter:
 # Module-level singletons — import these in tool modules
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Scheduler adapter
+# ---------------------------------------------------------------------------
+
+class _LiveSchedulerAdapter:
+    def list_jobs(self) -> list[dict]:
+        from core.scheduler import get_engine
+        return get_engine().list_jobs()
+
+    def set_enabled(self, job_id: str, enabled: bool) -> None:
+        from core.scheduler import get_engine
+        get_engine().set_enabled(job_id, enabled)
+
+    def run_now(self, job_id: str) -> str:
+        from core.scheduler import get_engine
+        return get_engine().run_now(job_id)
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons — import these in tool modules
+# ---------------------------------------------------------------------------
+
 esi: _LiveESIAdapter = _LiveESIAdapter()
 tokens: _LiveTokenAdapter = _LiveTokenAdapter()
 storage: _LiveStorageAdapter = _LiveStorageAdapter()
@@ -387,3 +409,4 @@ esi_registry: _LiveESIRegistryAdapter = _LiveESIRegistryAdapter()
 db_admin: _LiveDBAdminAdapter = _LiveDBAdminAdapter()
 esi_manifest: _LiveESIManifestAdapter = _LiveESIManifestAdapter()
 queue_info: _LiveQueueInfoAdapter = _LiveQueueInfoAdapter()
+scheduler: _LiveSchedulerAdapter = _LiveSchedulerAdapter()
