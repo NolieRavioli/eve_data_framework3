@@ -2,7 +2,7 @@
 
 EVE Data Framework 3 is a self-hosted operations hub for EVE Online. It provisions a shared DuckDB warehouse and per-owner private SQLite databases, manages EVE SSO authentication, schedules background work through a live-streaming task queue, and renders a Flask web dashboard.
 
-The codebase is layered into **core infrastructure** (`core/`), **data collectors** (`collectors/`), **user-facing applications** (`applications/`), and a **web layer** (`webUI/`). Legacy import paths (`db/`, `esi/`, `sde.py`, `tasks/`, `workers/`) are thin forwarding shims — new code should import from `core.*` or `collectors.*`.
+The codebase is layered into **core infrastructure** (`core/`), **data collectors** (`collectors/`), **user-facing applications** (`applications/`), and a **web layer** (`core/web/`). Legacy import paths (`db/`, `esi/`, `sde.py`, `tasks/`, `workers/`) are thin forwarding shims — new code should import from `core.*` or `collectors.*`.
 
 ---
 
@@ -13,11 +13,12 @@ The codebase is layered into **core infrastructure** (`core/`), **data collector
    - Optionally auto-installs missing packages if `Runtime.auto_install` is set.
    - Ensures the shared DuckDB warehouse is ready via `core.db.ensure_public_database()`.
    - Loads SDE lookup caches into memory via `core.sde.startup_load_sde()`.
-   - Launches the Flask application created in `webUI.create_app`.
+   - Launches the Flask application created in `core.web.create_app`.
 
-2. **Web UI (`webUI/`)**
-   - Four blueprints are registered: `auth_bp` (SSO), `dashboard_bp` (main view), `admin_bp` (admin panel), `tasks_bp` (background task viewer + SSE streams).
+2. **Web UI (`core/web/`)**
    - Application blueprints are auto-discovered via `pkgutil` from `applications/` and registered automatically.
+   - The `auth_bp` (SSO) blueprint handles EVE SSO login, callback, and logout.
+   - The `ToolRegistry` handles sidebar visibility and access-level checks for each registered tool.
 
 3. **Background tasks (`core/queue/manager.py`)**
    - Long-running work is submitted via `enqueue()` into two single-threaded executor queues (`queue="public"` and `queue="private"`).
@@ -41,6 +42,7 @@ All runtime knobs live in `config.yaml`. The file has these sections:
 - **Runtime** — optional block that maps to `config.RuntimeSettings`. Keys include `debug`, `auto_install`, `host`, `port`, `log_level`, `trace_esi`, and `secret_key`. All fall back to sane defaults or the environment variables `EVE_DEBUG`, `EVE_WEB_PORT`, `EVE_LOG_LEVEL`, etc.
 - **SDE** — toggles for each SDE dataset loaded at startup. Set a flag to `false` to skip loading that dataset (it will lazy-load on first use). The `database_file` key sets the DuckDB path.
 - **Structures** — cooldown-day settings that control how long inaccessible structures are skipped during enrichment and market collection.
+- **Auth** — role configuration. `default_roles` is a list of role names automatically granted to every new user on their first login (e.g. `[dashboard, queue]`).
 
 ---
 
@@ -57,7 +59,7 @@ All runtime knobs live in `config.yaml`. The file has these sections:
 This DuckDB file holds all public and SDE data:
 
 - **SDE marts**: `dim_types`, `dim_groups`, `dim_categories`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, dogma/material tables, and SDE manifest tables.
-- **Identity tables**: `users`, `site_admins` — owned by `core/db/publicDB.py`.
+- **Identity tables**: `users`, `site_admins`, `user_roles` — owned by `core/db/publicDB.py`.
 - **Domain tables**: `structures`, `market_orders`, `market_structures`, `market_region_cooldowns`, `isk_per_hour_results` — owned by their respective collectors/applications.
 - **ESI spec metadata**: `esi_routes`, `esi_schemas`, `esi_scopes` — populated by `core/esi/registry.py`.
 
@@ -77,13 +79,20 @@ Future per-character data (assets, wallet, industry jobs, skills, etc.) will be 
 
 ---
 
-## 5. Authentication and Token Flow
+## 5. Authentication, Roles, and Token Flow
 
-1. Characters authenticate through EVE SSO (OAuth 2.0 Authorization Code flow) via the routes in `webUI/sso.py`.
+1. Characters authenticate through EVE SSO (OAuth 2.0 Authorization Code flow) via the routes in `core/web/auth.py`.
 2. A time-limited `OAuthStateCache` issues and consumes each CSRF `state` token exactly once.
 3. OAuth tokens are Fernet-encrypted at rest (`_publicData/key`) and stored in the owner's private SQLite database via `core/esi/auth.py`.
 4. On each request that needs an access token, token helpers in `core.esi.auth` load the character's stored token and refresh it if expired.
 5. Multiple characters can be attached to a single owner (add-toon flow); each character gets its own token row.
+6. On first login, new users are granted the `default_roles` from `config.yaml` (e.g. `dashboard`, `queue`). Site owners and site admins bypass all role checks automatically.
+
+### Role-Based Access Control
+
+Access to applications is controlled by named roles stored in the `user_roles` DuckDB table. Every application package contains an `auth.json` file declaring its `role` (string or null) and `minimum_level` (`"public"` | `"user"` | `"admin"` | `"site_owner"`). `BaseTool` reads this file automatically on startup.
+
+The `@require_role("role_name")` decorator (exported from `applications._base`) enforces named-role access on Flask routes. Site admins and site owners bypass role checks. New user roles can be granted via `core.db.publicDB.grant_user_roles()` or through the admin panel.
 
 ---
 
@@ -161,19 +170,25 @@ Collectors live in `collectors/` and own their table DDL via `ensure_tables(con)
 
 ## 10. Applications (Auto-Discovery)
 
-User-facing tools live in `applications/` and are auto-discovered via `pkgutil`. Each sub-package exposes a `Tool` attribute (an instance of `BaseTool`) and a Flask `Blueprint`.
+User-facing tools live in `applications/` and are auto-discovered via `pkgutil`. Each sub-package exposes a `Tool` attribute (an instance of `BaseTool`) and a Flask `Blueprint`. Access is controlled by an `auth.json` file in each package.
 
-| Application | Description |
-|---|---|
-| `market_browser` | Browse live market orders by region and item type |
-| `industry_calculator` | Calculate manufacturing costs and margins |
-| `isk_per_hour` | Rank blueprints by ISK earned per hour |
+| Application | Access | Description |
+|---|---|---|
+| `market_browser` | Public (no login) | Browse live market orders by region and item type |
+| `dashboard` | Role: `dashboard` | Character overview and quick links |
+| `queue_viewer` | Role: `queue` | Live task progress and ESI rate monitor |
+| `industry_calculator` | Role: `industry` | Calculate manufacturing costs and margins |
+| `isk_per_hour` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
+| `admin_panel` | Admin only | Logs, stats, and user management |
+| `db_browser` | Admin only | DuckDB/SQLite schema and query browser |
+| `esi_browser` | Admin only | ESI operation explorer |
 
 To add a new application:
 1. Create `applications/<name>/` with `__init__.py`, `routes.py`, optional `worker.py`.
-2. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`.
-3. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
-4. The application will be auto-registered on import.
+2. Create `applications/<name>/auth.json` declaring the role and minimum access level.
+3. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`. Do **not** set `access_level` or `required_role` in the manifest — they are loaded from `auth.json` automatically.
+4. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
+5. The application will be auto-registered on import.
 
 ---
 
@@ -194,14 +209,19 @@ task_id = enqueue("My Task Name", worker_fn, arg1, arg2, owner_id=owner_id)
 
 ## 12. Web UI Overview
 
-The Flask app (`webUI/`) registers four core blueprints plus any application blueprints:
+The Flask app (`core/web/`) registers the `auth_bp` blueprint plus all auto-discovered application blueprints:
 
 | Blueprint | Prefix | Purpose |
 |---|---|---|
-| `auth_bp` | `/` | EVE SSO login / callback / logout |
-| `dashboard_bp` | `/` | Main landing page |
-| `admin_bp` | `/admin` | Admin panel (log console, DB browser, user management) |
-| `tasks_bp` | `/tasks` | Task list, task detail, SSE stream |
+| `auth_bp` | `/auth` | EVE SSO login / callback / logout |
+| `dashboard_bp` | `/` | Character overview |
+| `queue_viewer_bp` | `/tools/queue` | Task list, task detail, SSE stream |
+| `admin_panel_bp` | `/admin` | Admin panel (logs, stats, user management) |
+| `db_browser_bp` | `/admin/db` | DuckDB/SQLite browser |
+| `esi_browser_bp` | `/admin/esi` | ESI operation explorer |
+| `market_browser_bp` | `/market` | Live market orders |
+| `industry_calculator_bp` | `/tools/industry` | Manufacturing cost calculator |
+| `isk_per_hour_bp` | `/tools/isk` | ISK/hr ranker |
 
 ---
 
@@ -210,11 +230,12 @@ The Flask app (`webUI/`) registers four core blueprints plus any application blu
 - **Running the app**: `python main.py` — default `http://127.0.0.1:5000`. Override host/port with `EVE_WEB_HOST` / `EVE_WEB_PORT`.
 - **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
 - **Adding a collector**: create `collectors/<domain>/` — see AGENTS.md for the full pattern.
-- **Adding an application**: create `applications/<name>/` — see AGENTS.md for the full pattern.
+- **Adding an application**: create `applications/<name>/` with an `auth.json` — see AGENTS.md for the full pattern.
 - **Adding a private DB model**: subclass `PrivateBase` in `core/db/models/identity.py`.
 - **Regenerating the ESI client**: `python build.py --force`.
 - **Never call `requests` directly** — use `core.queue.esi_req`.
 - **New code imports from `core.*` / `collectors.*`** — not from legacy shim paths.
+- **Protect routes with `@require_role`** — prefer `@require_role("role")` over bare `@require_login` for named-role access; use `@require_admin` only for admin-only routes.
 
 ---
 
@@ -223,7 +244,7 @@ The Flask app (`webUI/`) registers four core blueprints plus any application blu
 - `_publicData/key` — Fernet symmetric key. **Never commit.**
 - `_publicData/client_cred` — encrypted OAuth `client_id`/`client_secret`. **Never commit.**
 - `_privateData/` — per-user SQLite databases. **Never commit.**
-- CSRF is mitigated by the `OAuthStateCache` in `webUI/sso.py`, which consumes each state token exactly once within a 5-minute window.
+- CSRF is mitigated by the `OAuthStateCache` in `core/web/auth.py`, which consumes each state token exactly once within a 5-minute window.
 - All SQL uses parameterised DuckDB queries or the SQLAlchemy ORM — no string interpolation with user input.
 
 ---

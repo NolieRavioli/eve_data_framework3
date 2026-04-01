@@ -80,14 +80,14 @@ core/                    # ── INFRASTRUCTURE ──────────�
     cache.py             # in-memory SDE caches: name_from_type_id, region_id_from_system_id, etc.
   plugin/
     __init__.py
-    base.py              # BaseTool, ToolManifest (access_level, nav_section), ToolRegistry
+    base.py              # BaseTool, ToolManifest (access_level, required_role, nav_section), ToolRegistry
     ports.py             # Protocol interfaces: ESIPort, TokenPort, StoragePort, TaskPort, SDEPort, etc.
     adapters.py          # _Live*Adapter singletons: esi, tokens, storage, tasks, raw_esi, sde, etc.
-    web.py               # re-exports: base_ctx, require_login, require_admin
+    web.py               # re-exports: base_ctx, require_login, require_admin, require_role
   web/                   # ── WEB FRAMEWORK ───────────────────────────────────
     __init__.py          # Flask app factory: create_app() — registers auth_bp + tool_registry
     app.py               # start_webUI(settings) — entry point called by main.py
-    auth.py              # EVE SSO OAuth2 flow (auth_bp) + require_login / require_admin decorators
+    auth.py              # EVE SSO OAuth2 flow (auth_bp) + require_login / require_admin / require_role decorators
     context.py           # base_ctx(active_page) — sidebar template context helper
     templates/           # Shared base template only (base.html)
 
@@ -110,14 +110,14 @@ applications/            # ── USER-FACING TOOLS ─────────�
   _base.py               # re-exports: BaseTool, ToolManifest, base_ctx, require_login, require_admin
   _adapters.py           # re-exports adapter singletons from core.plugin.adapters
   _ports.py              # re-exports Protocol interfaces from core.plugin.ports
-  dashboard/             # nav_section="overview" — character overview; templates/ has dashboard.html
-  queue_viewer/          # nav_section="tools"    — task progress + ESI rate SSE; templates/ + static/ (task_list.js, task_progress.js)
-  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; templates/ + static/ (admin.js)
-  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; templates/ + static/ (db_browser.js)
-  esi_browser/           # nav_section="admin"    — ESI operation explorer; templates/ + static/ (admin_esi.js)
-  market_browser/        # nav_section="apps"     — browse live market orders; templates/ has market_browser.html
-  industry_calculator/   # nav_section="apps"     — manufacturing cost calculator; templates/ has industry_calculator.html
-  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; templates/ has isk_per_hour.html
+  dashboard/             # nav_section="overview" — character overview; templates/ has dashboard.html; auth.json: role="dashboard"
+  queue_viewer/          # nav_section="tools"    — task progress + ESI rate SSE; auth.json: role="queue"
+  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; auth.json: minimum_level="admin"
+  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; auth.json: minimum_level="admin"
+  esi_browser/           # nav_section="admin"    — ESI operation explorer; auth.json: minimum_level="admin"
+  market_browser/        # nav_section="apps"     — browse live market orders; auth.json: role=null, minimum_level="public"
+  industry_calculator/   # nav_section="apps"     — manufacturing cost calculator; auth.json: role="industry"
+  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; auth.json: role="isk_per_hour"
 
 codegen/                 # ── CODE GENERATION ─────────────────────────────────
   esi_codegen.py         # generates core/esi/generated/ package from ESI OpenAPI spec
@@ -147,11 +147,11 @@ _privateData/<owner_id>/
 
 ## Decentralised Table Ownership
 
-Each collector (or application) **owns** the DDL for its tables via an `ensure_tables(con)` function. Core infrastructure (`core/db/publicDB._ensure_public_schema`) only creates identity tables (`users`, `site_admins`) and views.
+Each collector (or application) **owns** the DDL for its tables via an `ensure_tables(con)` function. Core infrastructure (`core/db/publicDB._ensure_public_schema`) only creates identity tables (`users`, `site_admins`, `user_roles`) and views.
 
 | Table | Owner |
 |---|---|
-| `users`, `site_admins` | `core/db/publicDB.py` |
+| `users`, `site_admins`, `user_roles` | `core/db/publicDB.py` |
 | `structures` | `collectors/structures/publicDiscovery.py` |
 | `market_orders`, `market_region_cooldowns` | `collectors/market/publicRegions.py` |
 | `market_structures` | `collectors/market/privateStructures.py` |
@@ -415,14 +415,54 @@ Applications are auto-discovered via `pkgutil` in `applications/__init__.py`. Ea
 
 ### `access_level` values
 
-The `ToolManifest.access_level` field controls **who can see and use** this tool:
+The `ToolManifest.access_level` field controls the **minimum privilege** required to see and use a tool:
 
 | Value | Visibility |
 |-------|-----------|
 | `"public"` | No login required |
-| `"user"` | Logged-in users (default) |
+| `"user"` | Logged-in users — further gated by `required_role` if set |
 | `"admin"` | Site admin or site owner |
 | `"site_owner"` | Site owner only |
+
+These values are set automatically from each application's `auth.json` — do not hard-code them in `ToolManifest` constructors.
+
+### Role-Based Access Control (`auth.json`)
+
+Every application package contains an `auth.json` file that defines its access requirements. `BaseTool.__init__` reads this file automatically when the `Tool` singleton is instantiated:
+
+```json
+// auth.json schema
+{
+  "role": "my_role",    // named role users must hold (null = no role required)
+  "minimum_level": "user" // access_level value: "public" | "user" | "admin" | "site_owner"
+}
+```
+
+**Role hierarchy:**
+
+| Principal | Access |
+|-----------|--------|
+| `site_owner` | Full access — bypasses all role and level checks |
+| `site_admin` | Full access — bypasses named-role checks |
+| Regular user | Access only to tools whose role they hold |
+| Unauthenticated | Only `minimum_level="public"` tools |
+
+**Default roles** for new users are configured in `config.yaml`:
+
+```yaml
+Auth:
+  default_roles: [dashboard, queue]
+```
+
+Roles are stored in the `user_roles` DuckDB table. Helpers:
+
+```python
+from core.db.publicDB import get_user_roles, grant_user_roles, revoke_user_role
+
+roles = get_user_roles(owner_id)                        # list[str]
+grant_user_roles(owner_id, ["industry"], granted_by=admin_id)
+revoke_user_role(owner_id, "isk_per_hour")
+```
 
 ### `nav_section` values
 
@@ -442,7 +482,7 @@ The `ToolManifest.nav_section` field controls **where** the tool appears in the 
 
 Applications must **never** import from `core.*` directly. All framework access goes through:
 
-- **`applications._base`** — `BaseTool`, `ToolManifest`, `base_ctx`, `require_login`, `require_admin`
+- **`applications._base`** — `BaseTool`, `ToolManifest`, `base_ctx`, `require_login`, `require_admin`, `require_role`
 - **`applications._adapters`** — adapter singletons: `esi`, `tokens`, `storage`, `tasks`, `raw_esi`, `sde`, `token_resolution`, `char_data`, `esi_registry`, `db_admin`, `esi_manifest`, `queue_info`
 - **`applications._ports`** — Protocol interfaces for type-checking
 
@@ -451,11 +491,12 @@ This keeps a clean architectural boundary between the application and infrastruc
 ### Adding a new application
 
 1. Create `applications/<name>/` with `__init__.py`, `routes.py`, `templates/`, `static/`, optional `worker.py`.
-2. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`.
-3. Put your Jinja2 templates in `applications/<name>/templates/`. They inherit from `base.html` (shared in `core/web/templates/`).
-4. Put JavaScript in `applications/<name>/static/`. Reference via `{{ url_for('<bp_name>.static', filename='<name>.js') }}` in a `{% block scripts %}` block.
-5. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
-6. The application will be auto-registered on import.
+2. Create `applications/<name>/auth.json` declaring the role and minimum access level.
+3. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`. Do **not** set `access_level` or `required_role` in the manifest — they are loaded from `auth.json` automatically.
+4. Put your Jinja2 templates in `applications/<name>/templates/`. They inherit from `base.html` (shared in `core/web/templates/`).
+5. Put JavaScript in `applications/<name>/static/`. Reference via `{{ url_for('<bp_name>.static', filename='<name>.js') }}` in a `{% block scripts %}` block.
+6. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
+7. The application will be auto-registered on import.
 
 ```python
 # applications/my_tool/__init__.py
@@ -470,12 +511,20 @@ class MyTool(BaseTool):
         required_scopes=[],
         nav_weight=10,
         nav_section="apps",
-        access_level="user",
+        # access_level and required_role are set from auth.json — omit here
     )
     def create_blueprint(self):
         return routes.my_bp
 
 Tool = MyTool()
+```
+
+```json
+// applications/my_tool/auth.json
+{
+  "role": "my_tool",
+  "minimum_level": "user"
+}
 ```
 
 ```python
@@ -511,16 +560,22 @@ use `data-*` attributes on a DOM element and read them in the external `.js` fil
 ### Access-control decorators
 
 ```python
-from applications._base import require_login, require_admin
+from applications._base import require_login, require_admin, require_role
 
 @my_bp.route("/")
-@require_login
+@require_login          # any authenticated user
+def index(): ...
+
+@my_bp.route("/")
+@require_role("my_tool") # authenticated user with the named role (admins bypass)
 def index(): ...
 
 @my_bp.route("/admin")
-@require_admin
+@require_admin          # site admin or site owner only
 def admin_view(): ...
 ```
+
+Prefer `@require_role` over `@require_login` for all new routes — it enforces named-role access and still allows admins through.
 
 ---
 
@@ -549,6 +604,8 @@ python build.py --collectors # only regenerate collector packages
 - **No raw SQL with user input** — parameterised `con.execute("WHERE id = ?", [val])`
 - **Do not edit auto-generated packages** — `core/esi/generated/`, `collectors/*_generatedESI/`
 - **Table DDL belongs to collectors** — never add domain table DDL to `core/db/publicDB.py`
+- **Access control via `@require_role`** — prefer `@require_role("role")` over `@require_login` for any route gated on a named role; use `@require_admin` only for admin-only routes; never use bare `@require_login` for new application routes
+- **Do not set `access_level` or `required_role` in `ToolManifest` directly** — define them in `auth.json` and let `BaseTool._load_auth_config()` read them on instantiation
 
 ---
 
