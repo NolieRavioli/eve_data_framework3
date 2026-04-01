@@ -10,7 +10,7 @@ import requests
 
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
-from core.queue.esi_req import esi_get
+from core.plugin.adapters import raw_esi
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def fetch_with_retries(url: str, params: dict, max_retries: int = 3) -> requests
     backoff = 1
     for attempt in range(1, max_retries + 1):
         try:
-            resp = esi_get(url, headers=HEADERS, params=params)
+            resp = raw_esi.get(url, headers=HEADERS, params=params)
             if resp.status_code == 420:
                 logger.warning("[MarketStation] 420 rate limit on %s, sleeping 5s (attempt %s)", url, attempt)
                 time.sleep(5)
@@ -71,7 +71,7 @@ def fetch_with_retries(url: str, params: dict, max_retries: int = 3) -> requests
             logger.warning("[MarketStation] Request error on %s (attempt %s): %s", url, attempt, exc)
             time.sleep(backoff)
             backoff *= 2
-    return esi_get(url, headers=HEADERS, params=params)
+    return raw_esi.get(url, headers=HEADERS, params=params)
 
 
 def fetch_market_orders(region_id: int, page: int = 1) -> tuple[list, int]:

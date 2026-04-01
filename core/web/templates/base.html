@@ -955,14 +955,13 @@
       <div class="nav-group">
         <div class="nav-label">Admin</div>
         {% for tool in admin_nav %}
+        {% if tool_access_ok.get(tool.id, false) %}
         <a href="{{ tool.url_prefix }}/"
            class="nav-link {{ 'active' if active_page == tool.id else '' }}">
           <span class="nav-ic">{{ tool.icon }}</span><span>{{ tool.name }}</span>
         </a>
+        {% endif %}
         {% endfor %}
-        <a href="{{ url_for('admin.esi_catalog') }}" class="nav-link {{ 'active' if active_page == 'esi_explorer' else '' }}">
-          <span class="nav-ic">⚡</span><span>ESI Explorer</span>
-        </a>
       </div>
       {% endif %}
     </nav>

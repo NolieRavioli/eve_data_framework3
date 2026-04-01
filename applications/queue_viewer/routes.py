@@ -1,5 +1,5 @@
-# applications/task_queue/routes.py
-"""Task Queue blueprint — progress view, list, cancel, clear, and ESI rate SSE."""
+# applications/queue_viewer/routes.py
+"""Queue Viewer blueprint — progress view, list, cancel, clear, and ESI rate SSE."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ import logging
 
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, session, url_for
 
-import core.queue as task_queue
-from core.queue.esi_req import get_esi_rate_limiter
-from core.web.context import base_ctx
+from applications._base import base_ctx
+from applications._adapters import queue_info
 
 logger = logging.getLogger(__name__)
-tasks_bp = Blueprint("tasks", __name__)
+tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")
 
 
 def _logged_in() -> bool:
@@ -34,10 +33,10 @@ def rate_stats():
     """Return current ESI rate-limiter snapshot as JSON."""
     if not _logged_in():
         abort(403)
-    stats = get_esi_rate_limiter().get_stats()
+    stats = queue_info.get_esi_rate_stats()
     running = [
         {"task_id": t.task_id, "name": t.name, "esi_rate": t.esi_rate}
-        for t in task_queue.get_all_tasks()
+        for t in queue_info.get_all_tasks()
         if t.status == "running" and t.esi_rate
     ]
     return jsonify({"limiter": stats, "running_tasks": running})
@@ -49,7 +48,7 @@ def rate_stream():
     if not _logged_in():
         abort(403)
     return Response(
-        task_queue.rate_stream(),
+        queue_info.rate_stream(),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -62,13 +61,13 @@ def task_list():
 
     is_admin = bool(session.get("is_admin"))
     owner_id = session["owner_id"]
-    tasks    = task_queue.get_all_tasks() if is_admin else task_queue.get_tasks_for_owner(owner_id)
+    tasks    = queue_info.get_all_tasks() if is_admin else queue_info.get_tasks_for_owner(owner_id)
     task_rows = [task.as_dict() for task in tasks]
     summary   = Counter(task["status"] for task in task_rows)
 
     return render_template(
         "task_list.html",
-        **base_ctx("task_queue"),
+        **base_ctx("queue_viewer"),
         tasks=task_rows,
         is_admin=is_admin,
         task_summary={
@@ -87,7 +86,7 @@ def task_progress(task_id: str):
     if not _logged_in():
         return _login_redirect()
 
-    task = task_queue.get_task(task_id)
+    task = queue_info.get_task(task_id)
     if not task:
         abort(404)
     if not _owns_task(task):
@@ -95,7 +94,7 @@ def task_progress(task_id: str):
 
     return render_template(
         "task_progress.html",
-        **base_ctx("task_queue"),
+        **base_ctx("queue_viewer"),
         task=task.as_dict(),
     )
 
@@ -106,14 +105,14 @@ def task_stream(task_id: str):
     if not _logged_in():
         abort(403)
 
-    task = task_queue.get_task(task_id)
+    task = queue_info.get_task(task_id)
     if not task:
         abort(404)
     if not _owns_task(task):
         abort(403)
 
     return Response(
-        task_queue.log_stream(task_id),
+        queue_info.log_stream(task_id),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -124,13 +123,13 @@ def cancel_task(task_id: str):
     if not _logged_in():
         abort(403)
 
-    task = task_queue.get_task(task_id)
+    task = queue_info.get_task(task_id)
     if not task:
         abort(404)
     if not _owns_task(task):
         abort(403)
 
-    ok = task_queue.cancel_task(task_id)
+    ok = queue_info.cancel_task(task_id)
     return jsonify({
         "cancelled": ok,
         "status":    task.status,
@@ -145,5 +144,5 @@ def clear_tasks():
 
     owner_id = session["owner_id"]
     is_admin = bool(session.get("is_admin"))
-    cleared  = task_queue.clear_tasks(None if is_admin else owner_id)
+    cleared  = queue_info.clear_tasks(None if is_admin else owner_id)
     return jsonify({"cleared": cleared})

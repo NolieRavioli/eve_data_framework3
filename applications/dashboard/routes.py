@@ -8,13 +8,11 @@ import logging
 import jwt
 from flask import Blueprint, redirect, render_template, session, url_for
 
-from core.db.privateDB import get_private_session
-from core.db.models import Character
-from core.esi.registry import get_registry_status
-from core.web.context import base_ctx
+from applications._base import base_ctx
+from applications._adapters import char_data, esi_registry
 
 logger = logging.getLogger(__name__)
-dashboard_bp = Blueprint("dashboard", __name__)
+dashboard_bp = Blueprint("dashboard", __name__, template_folder="templates", static_folder="static")
 
 
 def _decode_scope(access_token: str) -> str:
@@ -37,11 +35,7 @@ def home():
     # Validate that this owner still has at least one character in our DB.
     # Stale cookies from old sessions / test runs can have non-existent owner IDs.
     try:
-        db = get_private_session(owner_id)
-        try:
-            char_exists = db.query(Character).filter_by(character_id=owner_id).first() is not None
-        finally:
-            db.close()
+        char_exists = char_data.get_character(owner_id, owner_id) is not None
     except Exception:
         char_exists = False
 
@@ -49,7 +43,7 @@ def home():
         session.clear()
         return redirect(url_for("auth.login"))
 
-    esi_status = get_registry_status()
+    esi_status = esi_registry.get_status()
 
     granted_scopes: list[str] = []
     access_token = session.get("access_token")

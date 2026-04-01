@@ -1,3 +1,11 @@
-﻿"""Forwarding shim - real code lives in core.plugin.base."""
-import importlib, sys
-sys.modules[__name__] = importlib.import_module("core.plugin.base")
+﻿"""Re-export plugin framework for applications.
+
+Applications should import from here, not from core.plugin.* directly.
+"""
+from core.plugin.base import BaseTool, ToolManifest, ToolRegistry, ACCESS_LEVELS
+from core.plugin.web import base_ctx, require_login, require_admin
+
+__all__ = [
+    "BaseTool", "ToolManifest", "ToolRegistry", "ACCESS_LEVELS",
+    "base_ctx", "require_login", "require_admin",
+]

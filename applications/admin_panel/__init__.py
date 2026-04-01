@@ -1,5 +1,5 @@
 # applications/admin_panel/__init__.py
-"""Admin Panel application — live logs, DB browser, user management, ESI Explorer."""
+"""Admin Panel application — live logs, system stats, user management."""
 
 from __future__ import annotations
 
@@ -14,11 +14,12 @@ class AdminPanelTool(BaseTool):
         id="admin_panel",
         name="Admin Panel",
         icon="!",
-        description="Live log console, DuckDB browser, user management, and ESI Explorer.",
+        description="Live log console, system stats, and user management.",
         url_prefix="/admin",
         required_scopes=[],
         nav_weight=0,
         nav_section="admin",
+        access_level="admin",
     )
 
     def create_blueprint(self) -> Blueprint:

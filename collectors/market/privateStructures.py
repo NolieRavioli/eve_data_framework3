@@ -17,11 +17,9 @@ from datetime import datetime
 
 import requests
 
-from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
-from core.queue.esi_req import esi_get
-from core.sde import region_id_from_system_id
+from core.plugin.adapters import raw_esi, sde, token_resolution
 from config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
@@ -155,7 +153,7 @@ def fetch_structure_orders(
 
     for attempt in range(1, retries + 1):
         try:
-            resp = esi_get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
+            resp = raw_esi.get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
 
             if resp.status_code == 403:
                 logger.warning("[MarketStructure] Skipping %s page %s: HTTP 403", structure_id, page)
@@ -202,7 +200,7 @@ def fetch_structure_details(structure_id: int, token: str) -> "dict | object | N
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        resp = esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
+        resp = raw_esi.get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
         logger.warning("[MarketStructure] Metadata request failed for %s: %s", structure_id, exc)
         return None
@@ -259,7 +257,7 @@ def populate_structure_metadata(structure: dict, token: str) -> tuple[dict, str]
         enrich_status = "skipped"
 
     if updated.get("solar_system_id") and not updated.get("region_id"):
-        updated["region_id"] = region_id_from_system_id(updated["solar_system_id"])
+        updated["region_id"] = sde.region_id_from_system_id(updated["solar_system_id"])
 
     updated["last_seen"] = datetime.utcnow()
     return updated, enrich_status
@@ -284,12 +282,12 @@ def update_structure_market_orders() -> None:
     finally:
         con.close()
 
-    owner_id = resolve_default_owner_id()
+    owner_id = token_resolution.resolve_default_owner_id()
     if owner_id is None:
         logger.error("[MarketStructure] No private owner directories found.")
         return
 
-    _char_id, token_data = pick_token(owner_id)
+    _char_id, token_data = token_resolution.pick_token(owner_id)
     token = token_data["access_token"]
     structures = sde_store.list_public_structures(skip_market_forbidden=True)
     logger.info("[MarketStructure] Checking %s structures.", len(structures))
@@ -305,7 +303,7 @@ def update_structure_market_orders() -> None:
         num_orders = 0
         structure_id = structure["structure_id"]
         try:
-            _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
+            _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             structure, enrich_status = populate_structure_metadata(structure, token)
@@ -365,7 +363,7 @@ def update_structure_market_orders() -> None:
             num_orders += len(all_rows)
 
             for page in range(2, pages + 1):
-                _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
+                _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
                 token = token_data["access_token"]
                 more, _ = fetch_structure_orders(
                     structure_id, token, page=page,

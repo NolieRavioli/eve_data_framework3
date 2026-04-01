@@ -1,18 +1,18 @@
-# applications/task_queue/__init__.py
-"""Task Queue application — background job progress, log streaming, and ESI rate stats."""
+# applications/queue_viewer/__init__.py
+"""Queue Viewer application — background job progress, log streaming, and ESI rate stats."""
 
 from __future__ import annotations
 
 from flask import Blueprint
 
 from applications._base import BaseTool, ToolManifest
-from applications.task_queue import routes
+from applications.queue_viewer import routes
 
 
-class TaskQueueTool(BaseTool):
+class QueueViewerTool(BaseTool):
     manifest = ToolManifest(
-        id="task_queue",
-        name="Task Queue",
+        id="queue_viewer",
+        name="Queue Viewer",
         icon="=",
         description="Monitor background tasks, stream live logs, and inspect ESI rate stats.",
         url_prefix="/tasks",
@@ -25,4 +25,4 @@ class TaskQueueTool(BaseTool):
         return routes.tasks_bp
 
 
-Tool = TaskQueueTool()
+Tool = QueueViewerTool()

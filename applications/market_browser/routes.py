@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from applications._adapters import storage, tasks
-from core.web.context import base_ctx
+from applications._base import base_ctx
 
 logger = logging.getLogger(__name__)
 
-market_bp = Blueprint("market_browser", __name__)
+market_bp = Blueprint("market_browser", __name__, template_folder="templates", static_folder="static")
 
 
 @market_bp.route("/")
@@ -32,7 +32,7 @@ def index():
         con.close()
 
     ctx.update({"regions": regions, "orders": None, "type_id": None, "region_id": None})
-    return render_template("tools/market_browser.html", **ctx)
+    return render_template("market_browser.html", **ctx)
 
 
 @market_bp.route("/orders")
@@ -112,7 +112,7 @@ def orders():
         "best_buy": best_buy,
         "best_sell": best_sell,
     })
-    return render_template("tools/market_browser.html", **ctx)
+    return render_template("market_browser.html", **ctx)
 
 
 @market_bp.route("/refresh", methods=["POST"])
@@ -133,5 +133,5 @@ def refresh():
         owner_id=0,
         queue="public",
     )
-    return redirect(url_for("tasks.task_progress", task_id=task_id))
+    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
 

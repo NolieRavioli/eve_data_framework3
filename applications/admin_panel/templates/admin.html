@@ -1,199 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin Panel - EVE Data Framework</title>
-  <style>
-    :root {
-      --bg: #07111c;
-      --bg-2: #0b1625;
-      --surface: rgba(12, 26, 42, 0.9);
-      --surface-2: rgba(7, 18, 29, 0.82);
-      --border: rgba(117, 157, 195, 0.16);
-      --border-strong: rgba(117, 157, 195, 0.3);
-      --accent: #69d2ff;
-      --gold: #f4b54c;
-      --good: #34d399;
-      --warn: #f59e0b;
-      --bad: #f87171;
-      --text: #d4deea;
-      --text-strong: #f6fbff;
-      --muted: rgba(202, 214, 228, 0.56);
-      --font-sans: "Bahnschrift", "Segoe UI Variable", "Segoe UI", sans-serif;
-      --font-mono: "Cascadia Code", Consolas, monospace;
-      --shadow: 0 22px 50px rgba(1, 8, 15, 0.34);
-    }
+{% extends "base.html" %}
+{% block title %}Admin Panel - EVE Data Framework{% endblock %}
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at top left, rgba(105, 210, 255, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(244, 181, 76, 0.08), transparent 22%),
-        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
-      color: var(--text);
-      font-family: var(--font-sans);
-    }
-
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.024) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.024) 1px, transparent 1px);
-      background-size: 28px 28px;
-      mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), transparent 90%);
-      pointer-events: none;
-    }
-
-    a { color: inherit; }
-
-    .shell {
-      position: relative;
-      z-index: 1;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-      background: rgba(5, 12, 20, 0.78);
-      backdrop-filter: blur(18px);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    .title {
-      display: grid;
-      gap: 0.18rem;
-    }
-
-    .title .eyebrow {
-      font-size: 0.62rem;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      color: var(--accent);
-      font-weight: 800;
-    }
-
-    .title h1 {
-      font-size: 1.35rem;
-      color: var(--text-strong);
-    }
-
-    .title .sub {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.4rem;
-      padding: 0.48rem 0.9rem;
-      border: 1px solid transparent;
-      border-radius: 999px;
-      background: rgba(12, 27, 44, 0.8);
-      color: var(--text);
-      font-size: 0.78rem;
-      font-weight: 700;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .btn.primary {
-      background: linear-gradient(135deg, var(--accent), #4db6e4);
-      color: #04111a;
-    }
-
-    .btn.ghost {
-      border-color: var(--border);
-    }
-
-    .btn.good {
-      background: rgba(52, 211, 153, 0.14);
-      border-color: rgba(52, 211, 153, 0.22);
-      color: var(--good);
-    }
-
-    .btn.bad {
-      background: rgba(248, 113, 113, 0.14);
-      border-color: rgba(248, 113, 113, 0.22);
-      color: var(--bad);
-    }
-
-    .main {
-      padding: 1.1rem 1.5rem 1.6rem;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .card {
-      background: linear-gradient(180deg, rgba(14, 31, 50, 0.78), rgba(9, 20, 33, 0.94));
-      border: 1px solid var(--border);
-      border-radius: 1.1rem;
-      padding: 1rem 1.05rem;
-      box-shadow: var(--shadow);
-    }
-
-    .card h2 {
-      font-size: 0.68rem;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--accent);
-      margin-bottom: 0.75rem;
-    }
-
-    .stat-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 0.75rem;
-    }
-
-    .stat {
-      padding: 0.85rem 0.9rem;
-      border: 1px solid var(--border);
-      border-radius: 1rem;
-      background: rgba(7, 18, 29, 0.56);
-    }
-
-    .stat .v {
-      display: block;
-      font-size: 1.12rem;
-      font-weight: 800;
-      color: var(--text-strong);
-      line-height: 1.1;
-    }
-
-    .stat .l {
-      display: block;
-      margin-top: 0.28rem;
-      font-size: 0.66rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .grid {
+{% block extra_css %}
+    .admin-grid {
       display: grid;
       grid-template-columns: 1.3fr 1fr;
       gap: 1rem;
@@ -219,15 +28,6 @@
     .log-line.WARNING { color: var(--warn); }
     .log-line.INFO { color: var(--accent); }
     .log-line.DEBUG { color: var(--muted); }
-
-    .toolbar,
-    .section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
 
     .pill {
       display: inline-flex;
@@ -274,12 +74,12 @@
       max-height: 520px;
     }
 
-    table {
+    .table-wrap table {
       width: 100%;
       border-collapse: collapse;
     }
 
-    th, td {
+    .table-wrap th, .table-wrap td {
       padding: 0.55rem 0.65rem;
       text-align: left;
       vertical-align: top;
@@ -287,7 +87,7 @@
       font-size: 0.78rem;
     }
 
-    th {
+    .table-wrap th {
       position: sticky;
       top: 0;
       background: rgba(6, 16, 27, 0.95);
@@ -299,11 +99,11 @@
       z-index: 1;
     }
 
-    tr:hover td {
+    .table-wrap tr:hover td {
       background: rgba(105, 210, 255, 0.035);
     }
 
-    tr:last-child td {
+    .table-wrap tr:last-child td {
       border-bottom: 0;
     }
 
@@ -338,7 +138,7 @@
       color: var(--muted);
     }
 
-    .msg {
+    .admin-msg {
       display: none;
       padding: 0.65rem 0.85rem;
       border-radius: 0.9rem;
@@ -347,64 +147,48 @@
       border: 1px solid transparent;
     }
 
-    .msg.ok {
+    .admin-msg.ok {
       display: block;
       background: rgba(52, 211, 153, 0.14);
       border-color: rgba(52, 211, 153, 0.22);
       color: var(--good);
     }
 
-    .msg.err {
+    .admin-msg.err {
       display: block;
       background: rgba(248, 113, 113, 0.14);
       border-color: rgba(248, 113, 113, 0.22);
       color: var(--bad);
     }
 
-    .muted {
-      color: var(--muted);
-    }
-
-    .mono {
-      font-family: var(--font-mono);
+    .card h2 {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
     }
 
     @media (max-width: 1100px) {
-      .grid {
+      .admin-grid {
         grid-template-columns: 1fr;
       }
     }
+{% endblock %}
 
-    @media (max-width: 700px) {
-      .topbar,
-      .main {
-        padding-left: 1rem;
-        padding-right: 1rem;
-      }
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>! Operations Console</h1>
+    <div class="pg-sub">Live logs, privilege management, and public database overview.</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">DB Browser</a>
+  </div>
+</div>
 
-      .actions {
-        width: 100%;
-      }
-    }
-  </style>
-</head>
-<body>
-<div class="shell">
-  <header class="topbar">
-    <div class="title">
-      <span class="eyebrow">Site Admin</span>
-      <h1>Operations Console</h1>
-      <div class="sub">Live logs, privilege management, and public database overview.</div>
-    </div>
-    <nav class="actions">
-      <a href="{{ url_for('dashboard.home') }}" class="btn ghost">Dashboard</a>
-      <a href="{{ url_for('admin.db_browser') }}" class="btn primary">DB Browser</a>
-      <a href="{{ url_for('auth.logout') }}" class="btn ghost">Logout</a>
-    </nav>
-  </header>
-
-  <main class="main">
-    <div id="msg-bar" class="msg"></div>
+<div class="pg-body">
+    <div id="msg-bar" class="admin-msg"></div>
 
     <div class="stat-row">
       <div class="stat"><span class="v">{{ stats.total_owners }}</span><span class="l">Owners</span></div>
@@ -415,7 +199,7 @@
       <div class="stat"><span class="v">{{ stats.esi_status.compatibility_date if stats.esi_status.available else 'Missing' }}</span><span class="l">ESI Spec</span></div>
     </div>
 
-    <div class="grid">
+    <div class="admin-grid">
       <section class="card">
         <div class="section-head" style="margin-bottom:0.75rem">
           <div>
@@ -424,8 +208,8 @@
           </div>
           <div class="toolbar">
             <span class="pill"><span id="status-dot" class="status-dot"></span><span id="sse-status">Connecting</span></span>
-            <button class="btn ghost" type="button" onclick="toggleScroll()">Auto-scroll <span id="scroll-label">ON</span></button>
-            <button class="btn ghost" type="button" onclick="clearConsole()">Clear</button>
+            <button class="btn btn-g" type="button" onclick="toggleScroll()">Auto-scroll <span id="scroll-label">ON</span></button>
+            <button class="btn btn-g" type="button" onclick="clearConsole()">Clear</button>
           </div>
         </div>
         <div id="console-output" class="console"></div>
@@ -451,7 +235,7 @@
               {% for user in stats.users %}
               <tr data-owner="{{ user.owner_id }}" data-role="{% if user.is_site_owner %}site owner{% elif user.is_admin %}admin{% else %}user{% endif %}">
                 <td class="mono">
-                  <a href="{{ url_for('admin.db_browser', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
+                  <a href="{{ url_for('db_browser.index', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
                 </td>
                 <td>{{ user.character_count }}</td>
                 <td>
@@ -467,10 +251,10 @@
                   {% if not user.is_site_owner %}
                     {% if user.is_admin %}
                       {% if is_site_owner %}
-                      <button class="btn bad" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="demote({{ user.owner_id }})">Demote</button>
+                      <button class="btn btn-danger" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="demote({{ user.owner_id }})">Demote</button>
                       {% endif %}
                     {% else %}
-                    <button class="btn good" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="promote({{ user.owner_id }})">Promote</button>
+                    <button class="btn btn-ok" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="promote({{ user.owner_id }})">Promote</button>
                     {% endif %}
                   {% else %}
                   <span class="muted">Locked</span>
@@ -550,7 +334,7 @@
           <h2 style="margin-bottom:0.35rem">Public Database Table Counts</h2>
           <div class="muted" style="font-size:0.8rem">Fast snapshot of row counts in the shared database.</div>
         </div>
-        <a href="{{ url_for('admin.db_browser') }}" class="btn primary">Open SQL Browser</a>
+        <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">Open SQL Browser</a>
       </div>
 
       <div class="table-wrap">
@@ -569,100 +353,9 @@
         </table>
       </div>
     </section>
-  </main>
-</div>
+  </div>
+{% endblock %}
 
-<script>
-  var consoleEl = document.getElementById('console-output');
-  var statusDot = document.getElementById('status-dot');
-  var sseStatus = document.getElementById('sse-status');
-  var autoScroll = true;
-
-  function appendLine(text) {
-    var line = document.createElement('span');
-    line.className = 'log-line';
-    if (text.indexOf('[ERROR]') >= 0 || text.indexOf('ERROR') >= 0) line.classList.add('ERROR');
-    else if (text.indexOf('[WARNING]') >= 0 || text.indexOf('WARNING') >= 0) line.classList.add('WARNING');
-    else if (text.indexOf('[INFO]') >= 0 || text.indexOf('INFO') >= 0) line.classList.add('INFO');
-    else line.classList.add('DEBUG');
-    line.textContent = text;
-    consoleEl.appendChild(line);
-    if (autoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
-    while (consoleEl.children.length > 600) consoleEl.removeChild(consoleEl.firstChild);
-  }
-
-  function clearConsole() {
-    consoleEl.innerHTML = '';
-  }
-
-  function toggleScroll() {
-    autoScroll = !autoScroll;
-    document.getElementById('scroll-label').textContent = autoScroll ? 'ON' : 'OFF';
-  }
-
-  function showMsg(message, isErr) {
-    var bar = document.getElementById('msg-bar');
-    bar.textContent = message;
-    bar.className = 'msg ' + (isErr ? 'err' : 'ok');
-    window.setTimeout(function () { bar.className = 'msg'; }, 3500);
-  }
-
-  function filterUsers(value) {
-    var needle = value.trim().toLowerCase();
-    var rows = document.querySelectorAll('#user-table tbody tr');
-    rows.forEach(function (row) {
-      var owner = (row.getAttribute('data-owner') || '').toLowerCase();
-      var role = (row.getAttribute('data-role') || '').toLowerCase();
-      row.style.display = !needle || owner.indexOf(needle) >= 0 || role.indexOf(needle) >= 0 ? '' : 'none';
-    });
-  }
-
-  (function connectSSE() {
-    var es = new EventSource('/admin/stream');
-    es.onopen = function () {
-      statusDot.className = 'status-dot';
-      sseStatus.textContent = 'Connected';
-    };
-    es.onmessage = function (event) {
-      try { appendLine(JSON.parse(event.data)); }
-      catch (err) { appendLine(event.data); }
-    };
-    es.onerror = function () {
-      statusDot.className = 'status-dot offline';
-      sseStatus.textContent = 'Disconnected';
-    };
-  }());
-
-  async function promote(ownerId) {
-    var response = await fetch('/admin/promote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_id: ownerId })
-    });
-    var payload = await response.json();
-    if (payload.ok) {
-      showMsg('Owner ' + ownerId + ' promoted.', false);
-      window.setTimeout(function () { location.reload(); }, 400);
-    } else {
-      showMsg(payload.error || 'Promote failed.', true);
-    }
-  }
-
-  async function demote(ownerId) {
-    if (!window.confirm('Demote owner ' + ownerId + '?')) return;
-    var response = await fetch('/admin/demote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_id: ownerId })
-    });
-    var payload = await response.json();
-    if (payload.ok) {
-      showMsg('Owner ' + ownerId + ' demoted.', false);
-      window.setTimeout(function () { location.reload(); }, 400);
-    } else {
-      showMsg(payload.error || 'Demote failed.', true);
-    }
-  }
-</script>
-</body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('admin.static', filename='admin.js') }}"></script>
+{% endblock %}

@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from flask import Flask
 from flask import Blueprint
 
+#: Valid values for ToolManifest.access_level.
+ACCESS_LEVELS = ("public", "user", "admin", "site_owner")
+
 
 @dataclass
 class ToolManifest:
@@ -27,10 +30,13 @@ class ToolManifest:
     required_scopes: list[str] = field(default_factory=list)
     #: Lower value = higher position in the nav list.
     nav_weight: int = 50
-    #: Sidebar section this tool appears in.
-    #: "overview" = always visible | "tools" = logged-in | "apps" = logged-in, scope-gated
-    #: "admin" = admin-only | "" = hidden from nav
+    #: Sidebar section this tool appears in (visual grouping only).
+    #: "overview" | "tools" | "apps" | "admin" | "" (hidden)
     nav_section: str = "apps"
+    #: Who can access this tool.
+    #: "public" = no login | "user" = logged-in | "admin" = site admin
+    #: "site_owner" = site owner only
+    access_level: str = "user"
 
 
 class BaseTool(ABC):
@@ -80,3 +86,27 @@ class ToolRegistry:
             t.manifest.id: all(s in granted_set for s in t.manifest.required_scopes)
             for t in self._tools
         }
+
+    def check_access(
+        self,
+        *,
+        is_logged_in: bool = False,
+        is_admin: bool = False,
+        is_site_owner: bool = False,
+    ) -> dict[str, bool]:
+        """Return tool_id → bool indicating whether the current session may see this tool."""
+        result: dict[str, bool] = {}
+        for t in self._tools:
+            level = t.manifest.access_level
+            if level == "public":
+                ok = True
+            elif level == "user":
+                ok = is_logged_in
+            elif level == "admin":
+                ok = is_admin or is_site_owner
+            elif level == "site_owner":
+                ok = is_site_owner
+            else:
+                ok = False
+            result[t.manifest.id] = ok
+        return result

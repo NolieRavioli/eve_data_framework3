@@ -1,5 +1,5 @@
 # applications/admin_panel/routes.py
-"""Admin panel blueprint — live logs, DB stats, user management, DuckDB browser, ESI Explorer."""
+"""Admin panel blueprint — live logs, DB stats, user management."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ import time
 from flask import (
     Blueprint,
     Response,
-    abort,
     jsonify,
     render_template,
     request,
@@ -21,12 +20,11 @@ from flask import (
     stream_with_context,
 )
 
-import core.db.publicDB as sde_store
-from core.esi.registry import get_registry_status
-from core.web.auth import require_admin
+from applications._base import require_admin, base_ctx
+from applications._adapters import db_admin, esi_registry
 
 logger = logging.getLogger(__name__)
-admin_bp = Blueprint("admin", __name__)
+admin_bp = Blueprint("admin", __name__, template_folder="templates", static_folder="static")
 
 
 # ── In-process log buffer ─────────────────────────────────────────────────────
@@ -65,12 +63,12 @@ logging.getLogger().addHandler(_handler)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_site_owner(owner_id: int) -> bool:
-    row = sde_store.get_site_admin(owner_id)
+    row = db_admin.get_site_admin(owner_id)
     return bool(row and row.get("is_site_owner"))
 
 
 def _db_stats() -> dict[str, int]:
-    counts = sde_store.public_table_counts()
+    counts = db_admin.table_counts()
     return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
 
 
@@ -88,7 +86,7 @@ def _normalize_user_row(row: dict) -> dict:
 
 
 def _user_list() -> list[dict]:
-    return [_normalize_user_row(row) for row in sde_store.list_public_users()]
+    return [_normalize_user_row(row) for row in db_admin.list_users()]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -98,8 +96,8 @@ def _user_list() -> list[dict]:
 def index():
     users        = _user_list()
     table_counts = _db_stats()
-    sde_status   = sde_store.get_warehouse_status()
-    esi_status   = get_registry_status()
+    sde_status   = db_admin.get_warehouse_status()
+    esi_status   = esi_registry.get_status()
     stats = {
         "table_counts":     table_counts,
         "table_count":      len(table_counts),
@@ -113,6 +111,7 @@ def index():
     }
     return render_template(
         "admin.html",
+        **base_ctx("admin_panel"),
         stats=stats,
         owner_id=session.get("owner_id"),
         is_site_owner=_is_site_owner(session.get("owner_id", 0)),
@@ -159,11 +158,11 @@ def promote():
         return jsonify({"error": "owner_id required"}), 400
 
     current_owner = session.get("owner_id")
-    existing      = sde_store.get_site_admin(int(target_id))
+    existing      = db_admin.get_site_admin(int(target_id))
     if existing:
         return jsonify({"ok": True, "note": "already admin"})
 
-    sde_store.upsert_site_admin(
+    db_admin.upsert_site_admin(
         owner_id=int(target_id),
         is_site_owner=False,
         granted_by=current_owner,
@@ -181,173 +180,13 @@ def demote():
     if not target_id:
         return jsonify({"error": "owner_id required"}), 400
 
-    row = sde_store.get_site_admin(int(target_id))
+    row = db_admin.get_site_admin(int(target_id))
     if not row:
         return jsonify({"ok": True, "note": "not an admin"})
     if row.get("is_site_owner"):
         return jsonify({"error": "Cannot demote the site owner."}), 403
 
     current_owner = session.get("owner_id")
-    sde_store.delete_site_admin(int(target_id))
+    db_admin.delete_site_admin(int(target_id))
     logger.info("[Admin] Owner %s demoted by %s.", target_id, current_owner)
     return jsonify({"ok": True})
-
-
-@admin_bp.route("/db_browser")
-@require_admin
-def db_browser():
-    target_owner_id = request.args.get("owner_id", type=int)
-    try:
-        if target_owner_id is not None:
-            tables   = sde_store.list_private_browser_tables(target_owner_id)
-            db_label = f"owner {target_owner_id} private db"
-        else:
-            tables   = sde_store.list_browser_tables()
-            db_label = "public.duckdb"
-    except FileNotFoundError:
-        abort(404)
-    return render_template(
-        "db_browser.html",
-        tables=tables,
-        db_label=db_label,
-        browser_owner_id=target_owner_id,
-    )
-
-
-@admin_bp.route("/db_browser/query", methods=["POST"])
-@require_admin
-def db_browser_query():
-    data    = request.get_json(force=True, silent=True) or {}
-    raw_sql = (data.get("sql") or "").strip()
-    target_owner_id = data.get("owner_id")
-    if not raw_sql:
-        return jsonify({"error": "No SQL provided"}), 400
-
-    try:
-        if target_owner_id is not None:
-            return jsonify(
-                sde_store.query_private_browser_sql(
-                    int(target_owner_id),
-                    raw_sql,
-                    row_limit=500,
-                )
-            )
-        return jsonify(sde_store.query_browser_sql(raw_sql, row_limit=500))
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-
-# ── ESI Explorer ─────────────────────────────────────────────────────────────
-
-@admin_bp.route("/esi")
-@require_admin
-def esi_catalog():
-    """Searchable catalog of all ESI operations."""
-    from core.esi.generated.manifest import OPERATIONS, COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
-    from core.db.privateDB import get_private_session
-    from core.db.models import Character
-
-    ops = sorted(
-        OPERATIONS.values(),
-        key=lambda o: ((o.get("tags") or [""])[0], o.get("operation_id", "")),
-    )
-
-    char_name: str | None = None
-    character_id = session.get("character_id")
-    owner_id     = session.get("owner_id")
-    if character_id and owner_id:
-        db = get_private_session(owner_id)
-        try:
-            char = db.get(Character, character_id)
-            if char:
-                char_name = char.name
-        finally:
-            db.close()
-
-    return render_template(
-        "admin_esi.html",
-        operations=ops,
-        compatibility_date=COMPATIBILITY_DATE,
-        operation_count=OPERATION_COUNT,
-        scope_count=len(ALL_SCOPES),
-        active_character_id=character_id,
-        active_character_name=char_name,
-    )
-
-
-@admin_bp.route("/esi/<operation_id>")
-@require_admin
-def esi_detail(operation_id: str):
-    """JSON detail for a single operation — used by the explorer JS."""
-    from core.esi.generated.manifest import OPERATIONS
-    op = OPERATIONS.get(operation_id)
-    if not op:
-        abort(404)
-    return jsonify(op)
-
-
-@admin_bp.route("/esi/<operation_id>/run", methods=["POST"])
-@require_admin
-def esi_run(operation_id: str):
-    """Execute an ESI operation and return the response as JSON."""
-    from core.esi.generated.manifest import OPERATIONS
-    from core.esi.generated.client import execute_operation, fetch_all_pages
-
-    op = OPERATIONS.get(operation_id)
-    if not op:
-        return jsonify({"error": f"Unknown operation: {operation_id!r}"}), 404
-
-    data          = request.get_json(force=True, silent=True) or {}
-    path_params   = data.get("path_params") or {}
-    query_params  = data.get("query_params") or {}
-    all_pages     = bool(data.get("all_pages", False))
-
-    token = None
-    if op.get("requires_auth"):
-        from core.esi.auth import get_token
-        owner_id     = session.get("owner_id")
-        character_id = session.get("character_id")
-        if owner_id and character_id:
-            try:
-                tokens = get_token(owner_id, character_ids=[character_id])
-                row    = tokens.get(character_id)
-                if row:
-                    token = row["access_token"]
-            except Exception:
-                pass
-        if not token:
-            return jsonify({"error": "Authentication required but no valid token is available for your session."}), 401
-
-    try:
-        if all_pages and op.get("pagination", {}).get("has_page_param"):
-            result = fetch_all_pages(
-                operation_id,
-                path_params=path_params or None,
-                query_params=query_params or None,
-                token=token,
-            )
-            return jsonify({
-                "ok":           True,
-                "operation_id": operation_id,
-                "all_pages":    True,
-                "count":        len(result) if isinstance(result, list) else None,
-                "data":         result,
-            })
-        else:
-            r = execute_operation(
-                operation_id,
-                path_params=path_params or None,
-                query_params=query_params or None,
-                token=token,
-            )
-            return jsonify({
-                "ok":           True,
-                "operation_id": operation_id,
-                "status_code":  r["status_code"],
-                "headers":      {k: v for k, v in r["headers"].items()
-                                 if k.lower().startswith(("x-", "content-", "expires", "etag"))},
-                "data":         r["body"],
-            })
-    except Exception as exc:
-        logger.exception("[ESI Explorer] Error running %s", operation_id)
-        return jsonify({"error": str(exc)}), 500

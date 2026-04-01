@@ -15,11 +15,9 @@ import logging
 import time
 from datetime import datetime
 
-from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
-from core.queue.esi_req import esi_get
-from core.sde import region_id_from_system_id
+from core.plugin.adapters import raw_esi, sde, token_resolution
 from config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
@@ -79,7 +77,7 @@ def _cfg_enrich_authorized_cooldown() -> int:
 def _fetch_public_structure_ids() -> list[int]:
     url = f"{ESI_BASE}/universe/structures/"
     try:
-        resp = esi_get(url, params=DATASOURCE)
+        resp = raw_esi.get(url, params=DATASOURCE)
         if resp.ok:
             return [int(x) for x in resp.json()]
         logger.warning("[DiscoverStructures] /universe/structures/ returned %s", resp.status_code)
@@ -92,7 +90,7 @@ def _fetch_structure_details(structure_id: int, token: str) -> tuple[dict | None
     url = f"{ESI_BASE}/universe/structures/{structure_id}/"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
-        resp = esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
+        resp = raw_esi.get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
         logger.warning("[DiscoverStructures] Request error for %s: %s", structure_id, exc)
         return None, "error"
@@ -113,7 +111,7 @@ def _fetch_structure_details(structure_id: int, token: str) -> tuple[dict | None
 def discover_structures(owner_id: int | None = None) -> None:
     """Discover public structures and enrich them with metadata."""
     if owner_id is None:
-        owner_id = resolve_default_owner_id()
+        owner_id = token_resolution.resolve_default_owner_id()
     if owner_id is None:
         logger.error("[DiscoverStructures] No owner available for authentication; aborting.")
         return
@@ -152,7 +150,7 @@ def discover_structures(owner_id: int | None = None) -> None:
         logger.info("[DiscoverStructures] Nothing left to enrich; done.")
         return
 
-    _char_id, token_data = pick_token(owner_id)
+    _char_id, token_data = token_resolution.pick_token(owner_id)
     token = token_data["access_token"]
 
     succeeded = failed_403 = failed_404 = errors = 0
@@ -161,7 +159,7 @@ def discover_structures(owner_id: int | None = None) -> None:
 
     for count, structure_id in enumerate(sorted(needs_enrichment), start=1):
         try:
-            _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
+            _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             data, status = _fetch_structure_details(structure_id, token)
@@ -176,7 +174,7 @@ def discover_structures(owner_id: int | None = None) -> None:
                     "last_seen": datetime.utcnow(),
                 }
                 if row.get("solar_system_id"):
-                    row["region_id"] = region_id_from_system_id(row["solar_system_id"])
+                    row["region_id"] = sde.region_id_from_system_id(row["solar_system_id"])
                 sde_store.upsert_structures([row])
                 sde_store.mark_structures_enrich_refreshed(
                     [structure_id], _cfg_enrich_authorized_cooldown()

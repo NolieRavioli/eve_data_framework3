@@ -20,7 +20,7 @@ The codebase is organised into clean architectural layers:
 | **Core** | `core/` | Infrastructure: DB connections, ESI wrappers, SDE caches, task queue, plugin framework |
 | **Collectors** | `collectors/` | Data-collection workers: market, structures, SDE pipeline, auto-generated ESI accessors |
 | **Applications** | `applications/` | User-facing tools (market browser, industry calc, ISK/hr) — auto-discovered via pkgutil |
-| **Web** | `webUI/` | Flask blueprints, SSE streaming, Jinja2 templates |
+| **Web** | `core/web/` | Flask app factory, SSO auth, Jinja2 templates |
 | **Config** | `config.py` / `config.yaml` | Runtime settings, environment variables, SDE toggles |
 | **Entry** | `main.py` | Startup: load SDE, ensure public DB, start Flask |
 | **Codegen** | `codegen/` | ESI client codegen + domain collector codegen |
@@ -80,13 +80,16 @@ core/                    # ── INFRASTRUCTURE ──────────�
     cache.py             # in-memory SDE caches: name_from_type_id, region_id_from_system_id, etc.
   plugin/
     __init__.py
-    base.py              # BaseTool, ToolManifest (nav_section field), ToolRegistry
+    base.py              # BaseTool, ToolManifest (access_level, nav_section), ToolRegistry
+    ports.py             # Protocol interfaces: ESIPort, TokenPort, StoragePort, TaskPort, SDEPort, etc.
+    adapters.py          # _Live*Adapter singletons: esi, tokens, storage, tasks, raw_esi, sde, etc.
+    web.py               # re-exports: base_ctx, require_login, require_admin
   web/                   # ── WEB FRAMEWORK ───────────────────────────────────
     __init__.py          # Flask app factory: create_app() — registers auth_bp + tool_registry
     app.py               # start_webUI(settings) — entry point called by main.py
     auth.py              # EVE SSO OAuth2 flow (auth_bp) + require_login / require_admin decorators
     context.py           # base_ctx(active_page) — sidebar template context helper
-    templates/           # Jinja2 templates (base.html, admin.html, dashboard.html, etc.)
+    templates/           # Shared base template only (base.html)
 
 collectors/              # ── DATA COLLECTION ─────────────────────────────────
   __init__.py
@@ -104,15 +107,17 @@ collectors/              # ── DATA COLLECTION ──────────
 
 applications/            # ── USER-FACING TOOLS ───────────────────────────────
   __init__.py            # pkgutil auto-discovery of Tool instances
-  _base.py               # → core.plugin.base (shim)
-  _adapters.py           # storage adapter for applications
-  _ports.py              # port interface definitions
-  dashboard/             # nav_section="overview" — character overview (Blueprint: "dashboard", prefix "")
-  task_queue/            # nav_section="tools"    — task progress + ESI rate SSE (Blueprint: "tasks", prefix "/tasks")
-  admin_panel/           # nav_section="admin"    — logs, DB browser, user mgmt (Blueprint: "admin", prefix "/admin")
-  market_browser/        # nav_section="apps"     — browse live market orders by region
-  industry_calculator/   # nav_section="apps"     — manufacturing cost calculator
-  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings — owns isk_per_hour_results table
+  _base.py               # re-exports: BaseTool, ToolManifest, base_ctx, require_login, require_admin
+  _adapters.py           # re-exports adapter singletons from core.plugin.adapters
+  _ports.py              # re-exports Protocol interfaces from core.plugin.ports
+  dashboard/             # nav_section="overview" — character overview; templates/ has dashboard.html
+  queue_viewer/          # nav_section="tools"    — task progress + ESI rate SSE; templates/ + static/ (task_list.js, task_progress.js)
+  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; templates/ + static/ (admin.js)
+  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; templates/ + static/ (db_browser.js)
+  esi_browser/           # nav_section="admin"    — ESI operation explorer; templates/ + static/ (admin_esi.js)
+  market_browser/        # nav_section="apps"     — browse live market orders; templates/ has market_browser.html
+  industry_calculator/   # nav_section="apps"     — manufacturing cost calculator; templates/ has industry_calculator.html
+  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; templates/ has isk_per_hour.html
 
 codegen/                 # ── CODE GENERATION ─────────────────────────────────
   esi_codegen.py         # generates core/esi/generated/ package from ESI OpenAPI spec
@@ -170,7 +175,7 @@ def ensure_columns(con) -> None:
 1. Create `collectors/<domain>/` with `__init__.py` and worker modules.
 2. Add `ensure_tables(con)` — idempotent DDL using `CREATE TABLE IF NOT EXISTS`.
 3. Call `ensure_tables` at the top of each worker function before any writes.
-4. Use `core.queue.esi_req` for all ESI HTTP — never raw `requests`.
+4. Use `core.plugin.adapters` for shared operations — `raw_esi` for ESI HTTP, `sde` for SDE lookups, `token_resolution` for auth. Only use `core.db.publicDB` directly for owned-table DDL and writes.
 5. Enqueue via `core.queue.manager.enqueue("Task Name", worker_fn, ...)`.
 
 ---
@@ -408,24 +413,49 @@ Two FIFO queues (public + private) run concurrently. `logging` and `print()` ins
 
 Applications are auto-discovered via `pkgutil` in `applications/__init__.py`. Each sub-package exposes a `Tool` attribute (an instance of `BaseTool`) and a Flask `Blueprint`.
 
-### `nav_section` values
+### `access_level` values
 
-The `ToolManifest.nav_section` field controls where the tool appears in the sidebar:
+The `ToolManifest.access_level` field controls **who can see and use** this tool:
 
 | Value | Visibility |
 |-------|-----------|
-| `"overview"` | Always visible (e.g. Dashboard) |
-| `"tools"` | Logged-in users only (e.g. Task Queue) |
-| `"apps"` | Logged-in users; scope-gated if `required_scopes` is set |
-| `"admin"` | Admin users only |
+| `"public"` | No login required |
+| `"user"` | Logged-in users (default) |
+| `"admin"` | Site admin or site owner |
+| `"site_owner"` | Site owner only |
+
+### `nav_section` values
+
+The `ToolManifest.nav_section` field controls **where** the tool appears in the sidebar:
+
+| Value | Sidebar group |
+|-------|-----------|
+| `"overview"` | Overview group (e.g. Dashboard) |
+| `"tools"` | Tools group (e.g. Task Queue) |
+| `"apps"` | Apps group; scope-gated if `required_scopes` is set |
+| `"admin"` | Admin group |
 | `""` | Hidden from nav (background workers, no UI entry point) |
+
+`access_level` and `nav_section` are independent — an app can be in any nav group with any access level.
+
+### Import Discipline
+
+Applications must **never** import from `core.*` directly. All framework access goes through:
+
+- **`applications._base`** — `BaseTool`, `ToolManifest`, `base_ctx`, `require_login`, `require_admin`
+- **`applications._adapters`** — adapter singletons: `esi`, `tokens`, `storage`, `tasks`, `raw_esi`, `sde`, `token_resolution`, `char_data`, `esi_registry`, `db_admin`, `esi_manifest`, `queue_info`
+- **`applications._ports`** — Protocol interfaces for type-checking
+
+This keeps a clean architectural boundary between the application and infrastructure layers.
 
 ### Adding a new application
 
-1. Create `applications/<name>/` with `__init__.py`, `routes.py`, optional `worker.py`.
+1. Create `applications/<name>/` with `__init__.py`, `routes.py`, `templates/`, `static/`, optional `worker.py`.
 2. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`.
-3. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
-4. The application will be auto-registered on import.
+3. Put your Jinja2 templates in `applications/<name>/templates/`. They inherit from `base.html` (shared in `core/web/templates/`).
+4. Put JavaScript in `applications/<name>/static/`. Reference via `{{ url_for('<bp_name>.static', filename='<name>.js') }}` in a `{% block scripts %}` block.
+5. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
+6. The application will be auto-registered on import.
 
 ```python
 # applications/my_tool/__init__.py
@@ -437,9 +467,10 @@ class MyTool(BaseTool):
         id="my_tool", name="My Tool", icon="★",
         description="Does something useful.",
         url_prefix="/tools/my_tool",
-        required_scopes=[],          # empty = public
+        required_scopes=[],
         nav_weight=10,
         nav_section="apps",
+        access_level="user",
     )
     def create_blueprint(self):
         return routes.my_bp
@@ -447,10 +478,40 @@ class MyTool(BaseTool):
 Tool = MyTool()
 ```
 
+```python
+# applications/my_tool/routes.py
+from flask import Blueprint, render_template
+from applications._base import base_ctx, require_login
+from applications._adapters import storage, sde
+
+my_bp = Blueprint("my_tool", __name__, template_folder="templates", static_folder="static")
+
+@my_bp.route("/")
+@require_login
+def index():
+    return render_template("my_tool.html", **base_ctx("my_tool"))
+```
+
+```html
+{# applications/my_tool/templates/my_tool.html #}
+{% extends "base.html" %}
+{% block title %}My Tool{% endblock %}
+{% block content %}
+  <div class="pg-hd"><h1>My Tool</h1></div>
+  <div class="pg-body">...</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('my_tool.static', filename='my_tool.js') }}"></script>
+{% endblock %}
+```
+
+JavaScript goes in `applications/<name>/static/` — never inline in templates. For Jinja2 data the JS needs,
+use `data-*` attributes on a DOM element and read them in the external `.js` file.
+
 ### Access-control decorators
 
 ```python
-from core.web.auth import require_login, require_admin
+from applications._base import require_login, require_admin
 
 @my_bp.route("/")
 @require_login
@@ -478,7 +539,9 @@ python build.py --collectors # only regenerate collector packages
 
 ## Code Conventions
 
-- **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** (via `core.queue.esi_req`)
+- **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** (via `core.queue.esi_req` or `raw_esi` adapter)
+- **Applications import from `applications._base` / `applications._adapters`** — never `core.*` directly
+- **Collectors use adapters for shared ops** — ESI HTTP (`raw_esi`), SDE lookups (`sde`), auth/token resolution (`token_resolution`) go through `core.plugin.adapters`; only owned-table DDL and writes use `core.db.publicDB` directly
 - **New code imports from `core.*` / `collectors.*`** — not from legacy shim paths
 - **Logging**: `logger = logging.getLogger(__name__)` — not bare `print()` in production
 - **Token handling**: 401 = expired token (stop); 403 = no permission (not retryable)

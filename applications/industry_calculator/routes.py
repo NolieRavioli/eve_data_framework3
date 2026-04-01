@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, render_template, request
 
 from applications._adapters import storage
-from core.web.context import base_ctx
+from applications._base import base_ctx
 
 logger = logging.getLogger(__name__)
 
-industry_bp = Blueprint("industry_calculator", __name__)
+industry_bp = Blueprint("industry_calculator", __name__, template_folder="templates", static_folder="static")
 
 # Jita region id default
 _DEFAULT_REGION = 10000002
@@ -22,7 +22,7 @@ _DEFAULT_REGION = 10000002
 def index():
     ctx = base_ctx("industry_calculator")
     ctx.update({"result": None, "type_id": None, "region_id": _DEFAULT_REGION, "regions": _get_regions()})
-    return render_template("tools/industry_calculator.html", **ctx)
+    return render_template("industry_calculator.html", **ctx)
 
 
 @industry_bp.route("/calc")
@@ -56,7 +56,7 @@ def calc():
         "region_id": region_id,
         "regions": _get_regions(),
     })
-    return render_template("tools/industry_calculator.html", **ctx)
+    return render_template("industry_calculator.html", **ctx)
 
 
 def _get_regions() -> list[dict]:

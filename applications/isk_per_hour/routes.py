@@ -8,11 +8,11 @@ import logging
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from applications._adapters import storage, tasks
-from core.web.context import base_ctx
+from applications._base import base_ctx
 
 logger = logging.getLogger(__name__)
 
-isk_bp = Blueprint("isk_per_hour", __name__)
+isk_bp = Blueprint("isk_per_hour", __name__, template_folder="templates", static_folder="static")
 
 _DEFAULT_REGION = 10000002  # The Forge (Jita)
 
@@ -27,7 +27,7 @@ def index():
         "region_id": _DEFAULT_REGION,
         "category_id": None,
     })
-    return render_template("tools/isk_per_hour.html", **ctx)
+    return render_template("isk_per_hour.html", **ctx)
 
 
 @isk_bp.route("/compute", methods=["POST"])
@@ -51,7 +51,7 @@ def compute():
         owner_id=0,
         queue="public",
     )
-    return redirect(url_for("tasks.task_progress", task_id=task_id))
+    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
 
 
 @isk_bp.route("/results")
@@ -101,7 +101,7 @@ def results():
         "region_id": region_id,
         "category_id": category_id,
     })
-    return render_template("tools/isk_per_hour.html", **ctx)
+    return render_template("isk_per_hour.html", **ctx)
 
 
 def _get_regions() -> list[dict]:
