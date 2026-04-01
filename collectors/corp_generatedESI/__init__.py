@@ -1,0 +1,5 @@
+"""esi/corp/ — AUTO-GENERATED collector package. Do not edit.
+Regenerate: python build.py --collectors --force
+"""
+# ruff: noqa
+COLLECTOR_COMPATIBILITY_DATE: str = '2025-12-16'

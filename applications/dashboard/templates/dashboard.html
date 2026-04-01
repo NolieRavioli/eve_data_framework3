@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Overview - EVE Data Framework{% endblock %}
+
+{% block content %}
+{% if not base_logged_in %}
+<div class="login-wrap">
+  <div class="login-panel">
+    <div class="logo">ED</div>
+    <h1>Keep the data dense. Keep the clicks low.</h1>
+    <p>Track wallet flow, assets, jobs, skills, and sync activity across linked characters in one compact surface.</p>
+    <div class="pill-row" style="margin-top:1rem">
+      <span class="pill">Wallet flow</span>
+      <span class="pill">Asset coverage</span>
+      <span class="pill">Industry pressure</span>
+      <span class="pill">Background task tracking</span>
+    </div>
+    <div style="margin-top:1.25rem">
+      <a href="{{ url_for('auth.login') }}" class="btn btn-a">Login with EVE Online</a>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ base_char_name or 'Overview' }}</h1>
+    <div class="pg-sub">Owner {{ owner_id }} · character {{ character_id }}</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">Tasks</a>
+    <a href="{{ url_for('esi_browser.index') }}" class="btn btn-a">ESI Explorer</a>
+  </div>
+</div>
+
+<div class="pg-body">
+
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v ok">{{ granted_scope_count }}</span>
+      <span class="l">Granted Scopes</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ esi_status.operation_count or '—' }}</span>
+      <span class="l">ESI Operations</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ esi_status.compatibility_date or '—' }}</span>
+      <span class="l">Spec Date</span>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card stack">
+      <div class="section-head">
+        <div class="ct" style="margin:0">ESI Spec Status</div>
+      </div>
+      {% if esi_status %}
+      <div class="stack">
+        <div class="pill-row">
+          <span class="pill">{{ esi_status.compatibility_date or 'unknown' }}</span>
+          <span class="pill">{{ esi_status.operation_count or 0 }} operations</span>
+          {% if esi_status.source_etag %}<span class="pill mono">{{ esi_status.source_etag[:16] }}…</span>{% endif %}
+        </div>
+        {% if esi_status.source_last_modified %}
+        <div class="pg-sub">Last modified: {{ esi_status.source_last_modified }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="ei">~</div>
+        <p>ESI spec not loaded yet.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card stack">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Granted Scopes</div>
+        <span class="pill">{{ granted_scope_count }} active</span>
+      </div>
+      {% if granted_scopes %}
+      <div class="pill-row" style="flex-wrap:wrap;gap:0.35rem">
+        {% for scope in granted_scopes %}
+        <span class="pill" style="font-size:0.7rem">{{ scope }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="ei">*</div>
+        <p>No scopes decoded from token.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card stack">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Quick Links</div>
+      </div>
+      <div class="pill-row" style="flex-wrap:wrap">
+        <a href="{{ url_for('esi_browser.index') }}" class="btn btn-a">ESI Explorer</a>
+        <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">Task Queue</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+{% endblock %}

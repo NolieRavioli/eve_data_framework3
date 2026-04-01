@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel - EVE Data Framework{% endblock %}
+
+{% block extra_css %}
+    .admin-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .console {
+      background: rgba(3, 11, 18, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1rem;
+      height: 420px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      line-height: 1.62;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log-line { display: block; color: #bcd1e5; }
+    .log-line.ERROR { color: var(--bad); }
+    .log-line.WARNING { color: var(--warn); }
+    .log-line.INFO { color: var(--accent); }
+    .log-line.DEBUG { color: var(--muted); }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.62rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(7, 18, 29, 0.58);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--good);
+    }
+
+    .status-dot.offline {
+      background: var(--bad);
+    }
+
+    .input {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 0.85rem;
+      background: rgba(7, 18, 29, 0.66);
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: rgba(105, 210, 255, 0.32);
+      box-shadow: 0 0 0 3px rgba(105, 210, 255, 0.08);
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 520px;
+    }
+
+    .table-wrap table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table-wrap th, .table-wrap td {
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(117, 157, 195, 0.08);
+      font-size: 0.78rem;
+    }
+
+    .table-wrap th {
+      position: sticky;
+      top: 0;
+      background: rgba(6, 16, 27, 0.95);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.62rem;
+      font-weight: 800;
+      z-index: 1;
+    }
+
+    .table-wrap tr:hover td {
+      background: rgba(105, 210, 255, 0.035);
+    }
+
+    .table-wrap tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid transparent;
+    }
+
+    .badge-admin {
+      background: rgba(105, 210, 255, 0.12);
+      border-color: rgba(105, 210, 255, 0.18);
+      color: var(--accent);
+    }
+
+    .badge-owner {
+      background: rgba(244, 181, 76, 0.12);
+      border-color: rgba(244, 181, 76, 0.18);
+      color: var(--gold);
+    }
+
+    .badge-none {
+      background: rgba(117, 157, 195, 0.12);
+      border-color: rgba(117, 157, 195, 0.18);
+      color: var(--muted);
+    }
+
+    .admin-msg {
+      display: none;
+      padding: 0.65rem 0.85rem;
+      border-radius: 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .admin-msg.ok {
+      display: block;
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+      color: var(--good);
+    }
+
+    .admin-msg.err {
+      display: block;
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
+      color: var(--bad);
+    }
+
+    .card h2 {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    @media (max-width: 1100px) {
+      .admin-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>! Operations Console</h1>
+    <div class="pg-sub">Live logs, privilege management, and public database overview.</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">DB Browser</a>
+  </div>
+</div>
+
+<div class="pg-body">
+    <div id="msg-bar" class="admin-msg"></div>
+
+    <div class="stat-row">
+      <div class="stat"><span class="v">{{ stats.total_owners }}</span><span class="l">Owners</span></div>
+      <div class="stat"><span class="v">{{ stats.admin_count }}</span><span class="l">Admins</span></div>
+      <div class="stat"><span class="v">{{ stats.table_count }}</span><span class="l">Public Tables</span></div>
+      <div class="stat"><span class="v">{{ stats.table_total_rows }}</span><span class="l">Total Rows</span></div>
+      <div class="stat"><span class="v">{{ stats.sde_status.manifest.universe_system_count if stats.sde_status.available and stats.sde_status.manifest else 0 }}</span><span class="l">SDE Systems</span></div>
+      <div class="stat"><span class="v">{{ stats.esi_status.compatibility_date if stats.esi_status.available else 'Missing' }}</span><span class="l">ESI Spec</span></div>
+    </div>
+
+    <div class="admin-grid">
+      <section class="card">
+        <div class="section-head" style="margin-bottom:0.75rem">
+          <div>
+            <h2 style="margin-bottom:0.35rem">Live Console</h2>
+            <div class="muted" style="font-size:0.8rem">Server logs stream here continuously. The feed keeps the newest 500 lines.</div>
+          </div>
+          <div class="toolbar">
+            <span class="pill"><span id="status-dot" class="status-dot"></span><span id="sse-status">Connecting</span></span>
+            <button class="btn btn-g" type="button" onclick="toggleScroll()">Auto-scroll <span id="scroll-label">ON</span></button>
+            <button class="btn btn-g" type="button" onclick="clearConsole()">Clear</button>
+          </div>
+        </div>
+        <div id="console-output" class="console"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head" style="margin-bottom:0.75rem">
+          <div>
+            <h2 style="margin-bottom:0.35rem">User Management</h2>
+            <div class="muted" style="font-size:0.8rem">Site owner is protected. Regular admins can be promoted or demoted here.</div>
+          </div>
+          <span class="pill">{{ stats.users | length }} accounts</span>
+        </div>
+
+        <input id="user-filter" class="input" type="search" placeholder="Filter by owner id or role" oninput="filterUsers(this.value)">
+
+        <div class="table-wrap" style="margin-top:0.8rem">
+          <table id="user-table">
+            <thead>
+              <tr><th>Owner</th><th>Characters</th><th>Role</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for user in stats.users %}
+              <tr data-owner="{{ user.owner_id }}" data-role="{% if user.is_site_owner %}site owner{% elif user.is_admin %}admin{% else %}user{% endif %}">
+                <td class="mono">
+                  <a href="{{ url_for('db_browser.index', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
+                </td>
+                <td>{{ user.character_count }}</td>
+                <td>
+                  {% if user.is_site_owner %}
+                  <span class="badge badge-owner">Site Owner</span>
+                  {% elif user.is_admin %}
+                  <span class="badge badge-admin">Admin</span>
+                  {% else %}
+                  <span class="badge badge-none">User</span>
+                  {% endif %}
+                </td>
+                <td style="white-space:nowrap">
+                  {% if not user.is_site_owner %}
+                    {% if user.is_admin %}
+                      {% if is_site_owner %}
+                      <button class="btn btn-danger" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="demote({{ user.owner_id }})">Demote</button>
+                      {% endif %}
+                    {% else %}
+                    <button class="btn btn-ok" type="button" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="promote({{ user.owner_id }})">Promote</button>
+                    {% endif %}
+                  {% else %}
+                  <span class="muted">Locked</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="section-head" style="margin-bottom:0.75rem">
+        <div>
+          <h2 style="margin-bottom:0.35rem">Warehouse Status</h2>
+          <div class="muted" style="font-size:0.8rem">DuckDB SDE manifest and generated ESI spec metadata.</div>
+        </div>
+      </div>
+
+      <div class="stat-row" style="margin-bottom:0.9rem">
+        <div class="stat">
+          <span class="v">{{ 'Ready' if stats.sde_status.available else 'Missing' }}</span>
+          <span class="l">SDE Warehouse</span>
+        </div>
+        <div class="stat">
+          <span class="v mono">{{ stats.sde_status.manifest.sde_version if stats.sde_status.available and stats.sde_status.manifest else '-' }}</span>
+          <span class="l">SDE Version</span>
+        </div>
+        <div class="stat">
+          <span class="v">{{ stats.sde_status.file_size_bytes if stats.sde_status.file_size_bytes else 0 }}</span>
+          <span class="l">DuckDB Bytes</span>
+        </div>
+        <div class="stat">
+          <span class="v">{{ stats.esi_status.route_count if stats.esi_status.available else 0 }}</span>
+          <span class="l">ESI Routes</span>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="max-height:none">
+        <table>
+          <thead>
+            <tr><th>Artifact</th><th>Status</th><th>Details</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SDE Warehouse</td>
+              <td>{{ 'Ready' if stats.sde_status.available else 'Missing' }}</td>
+              <td class="mono">
+                {{ stats.sde_status.database_file }}<br>
+                {% if stats.sde_status.manifest %}
+                built {{ stats.sde_status.manifest.build_finished_at }}<br>
+                source {{ stats.sde_status.manifest.source_hash }}
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td>ESI Spec Registry</td>
+              <td>{{ 'Ready' if stats.esi_status.available else 'Missing' }}</td>
+              <td class="mono">
+                {{ stats.esi_status.compatibility_date if stats.esi_status.available else '-' }}<br>
+                {{ stats.esi_status.routes_json if stats.esi_status.available else stats.esi_status.latest_pointer }}<br>
+                {% if stats.esi_status.available %}
+                generated {{ stats.esi_status.generated_at }}
+                {% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head" style="margin-bottom:0.75rem">
+        <div>
+          <h2 style="margin-bottom:0.35rem">Public Database Table Counts</h2>
+          <div class="muted" style="font-size:0.8rem">Fast snapshot of row counts in the shared database.</div>
+        </div>
+        <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">Open SQL Browser</a>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Table</th><th>Rows</th></tr>
+          </thead>
+          <tbody>
+            {% for table_name, row_count in stats.table_counts.items() %}
+            <tr>
+              <td>{{ table_name }}</td>
+              <td class="mono">{{ row_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('admin.static', filename='admin.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}ISK / hr Rankings{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>💰 ISK / hr Rankings</h1>
+  <p class="muted">Rank manufacturing blueprints by ISK earned per hour of build time.</p>
+</div>
+
+{% if not results %}
+<div class="card" style="margin-bottom:1rem;padding:.6rem .9rem;background:rgba(244,181,76,.08);border-color:var(--warn)">
+  <b style="color:var(--warn)">Blueprint data required</b> —
+  ensure <code>load_blueprints: true</code> is set in <code>config.yaml</code> and the SDE has been bootstrapped before computing rankings.
+</div>
+{% endif %}
+
+{# ── Filters ──────────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:1.25rem">
+  <form method="get" action="{{ url_for('isk_per_hour.results') }}" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+    <div style="flex:1;min-width:14rem">
+      <label class="form-label">Region</label>
+      <select name="region_id" class="form-control" style="width:100%">
+        {% for r in regions %}
+        <option value="{{ r.id }}" {{ 'selected' if r.id == region_id else '' }}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="flex:1;min-width:14rem">
+      <label class="form-label">Category</label>
+      <select name="category_id" class="form-control" style="width:100%">
+        <option value="">— All —</option>
+        {% for c in categories %}
+        <option value="{{ c.id }}" {{ 'selected' if c.id == category_id else '' }}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">View Results</button>
+  </form>
+</div>
+
+{# ── Compute trigger ──────────────────────────────────────────────── #}
+<form method="post" action="{{ url_for('isk_per_hour.compute') }}" style="margin-bottom:1.25rem;display:flex;gap:.5rem;flex-wrap:wrap">
+  <input type="hidden" name="region_id" value="{{ region_id }}">
+  <input type="hidden" name="category_id" value="{{ category_id or '' }}">
+  <button type="submit" class="btn btn-a"
+    {% if not category_id %}disabled title="Select a category first"{% endif %}>
+    ↻ Recompute rankings
+  </button>
+  <span class="muted" style="align-self:center;font-size:.8rem">Runs as a background task — may take a few minutes.</span>
+</form>
+
+{# ── Results table ────────────────────────────────────────────────── #}
+{% if results is not none %}
+  {% if results %}
+  <div class="tw tw-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Product</th>
+          <th class="text-right">ISK / run</th>
+          <th class="text-right">ISK / hr</th>
+          <th class="text-right">Margin %</th>
+          <th class="muted">Computed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in results %}
+        <tr>
+          <td class="muted">{{ loop.index }}</td>
+          <td>
+            <a href="{{ url_for('industry_calculator.calc', type_id=row.type_id, region_id=region_id) }}" style="color:var(--accent)">
+              {{ row.type_name }}
+            </a>
+          </td>
+          <td class="text-right" style="color:{{ 'var(--good)' if row.isk_per_run >= 0 else 'var(--bad)' }}">
+            {{ "{:,.0f}".format(row.isk_per_run) }}
+          </td>
+          <td class="text-right" style="color:{{ 'var(--good)' if row.isk_per_hour >= 0 else 'var(--bad)' }}">
+            {{ "{:,.0f}".format(row.isk_per_hour) }}
+          </td>
+          <td class="text-right" style="color:{{ 'var(--good)' if row.margin_pct >= 0 else 'var(--bad)' }}">
+            {{ "{:.1f}".format(row.margin_pct) }}%
+          </td>
+          <td class="muted" style="font-size:.8rem">{{ row.computed_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No results yet. Select a category and click "Recompute rankings".</div>
+  {% endif %}
+{% endif %}
+{% endblock %}

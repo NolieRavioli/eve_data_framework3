@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Market Browser{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>📊 Market Browser</h1>
+  <p class="muted">Browse live sell &amp; buy orders by region and item type.</p>
+</div>
+
+{# ── Search form ──────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:1.25rem">
+  <form method="get" action="{{ url_for('market_browser.orders') }}" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+    <div style="flex:1;min-width:12rem">
+      <label class="form-label" for="type_id">Type ID</label>
+      <input id="type_id" name="type_id" type="number" min="1"
+             value="{{ type_id or '' }}" placeholder="e.g. 34 (Tritanium)"
+             class="form-control" style="width:100%">
+    </div>
+    <div style="flex:1;min-width:14rem">
+      <label class="form-label" for="region_id">Region</label>
+      <select id="region_id" name="region_id" class="form-control" style="width:100%">
+        {% for r in regions %}
+        <option value="{{ r.id }}" {{ 'selected' if r.id == region_id else '' }}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+</div>
+
+{# ── Refresh trigger ──────────────────────────────────────────────── #}
+{% if region_id %}
+<form method="post" action="{{ url_for('market_browser.refresh') }}" style="margin-bottom:1.25rem">
+  <input type="hidden" name="region_id" value="{{ region_id }}">
+  <button type="submit" class="btn btn-a">↻ Refresh market data for this region</button>
+</form>
+{% endif %}
+
+{# ── Summary cards ────────────────────────────────────────────────── #}
+{% if type_name %}
+<h2 style="margin-bottom:.5rem">{{ type_name }} <span class="muted" style="font-size:.85rem">— type id {{ type_id }}</span></h2>
+{% endif %}
+
+{% if orders is not none %}
+  {% if best_sell is not none or best_buy is not none %}
+  <div style="display:flex;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap">
+    {% if best_sell is not none %}
+    <div class="stat">
+      <div class="stat-label">Best Sell</div>
+      <div class="stat-value" style="color:var(--bad)">{{ "{:,.2f}".format(best_sell) }} ISK</div>
+    </div>
+    {% endif %}
+    {% if best_buy is not none %}
+    <div class="stat">
+      <div class="stat-label">Best Buy</div>
+      <div class="stat-value" style="color:var(--good)">{{ "{:,.2f}".format(best_buy) }} ISK</div>
+    </div>
+    {% endif %}
+    {% if best_sell is not none and best_buy is not none %}
+    <div class="stat">
+      <div class="stat-label">Spread</div>
+      <div class="stat-value">{{ "{:,.2f}".format(best_sell - best_buy) }} ISK</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if orders %}
+  <div class="tw tw-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th class="text-right">Price (ISK)</th>
+          <th class="text-right">Volume Remain</th>
+          <th class="text-right">Volume Total</th>
+          <th>Range</th>
+          <th>Issued</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td>
+            {% if o.is_buy %}
+            <span class="bdg bdg-ok">BUY</span>
+            {% else %}
+            <span class="bdg bdg-bad">SELL</span>
+            {% endif %}
+          </td>
+          <td class="text-right">{{ "{:,.2f}".format(o.price) }}</td>
+          <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
+          <td class="text-right">{{ "{:,}".format(o.volume_total) }}</td>
+          <td>{{ o.range }}</td>
+          <td class="muted" style="font-size:.8rem">{{ o.issued }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No orders found. Try refreshing market data for this region.</div>
+  {% endif %}
+{% endif %}
+{% endblock %}

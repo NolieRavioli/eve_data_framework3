@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ task.name }} - EVE Data Framework{% endblock %}
+
+{% block extra_css %}
+.task-console {
+  background: rgba(3, 11, 18, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1rem;
+  height: 560px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-console .ln {
+  display: block;
+  color: #bcd1e5;
+}
+
+.task-console .ln.err {
+  color: var(--bad);
+}
+
+.task-console .ln.ok {
+  color: var(--good);
+}
+
+.task-console .ln.head {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.task-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.task-status.pending {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--warn);
+}
+
+.task-status.running {
+  background: rgba(105, 210, 255, 0.12);
+  border-color: rgba(105, 210, 255, 0.2);
+  color: var(--accent);
+}
+
+.task-status.complete {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.2);
+  color: var(--good);
+}
+
+.task-status.failed {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.2);
+  color: var(--bad);
+}
+
+.task-status.cancelled {
+  background: rgba(117, 157, 195, 0.12);
+  border-color: rgba(117, 157, 195, 0.2);
+  color: var(--muted);
+}
+
+.esi-rate-bar-wrap {
+  background: rgba(0,0,0,0.3);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+  margin-top: 0.4rem;
+}
+.esi-rate-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+  width: 0%;
+}
+.esi-rate-bar.warn { background: var(--warn); }
+.esi-rate-bar.danger { background: var(--bad); }
+.esi-rate-stats { font-size: 0.74rem; color: var(--muted); margin-top: 0.3rem; display: flex; gap: 1.2rem; flex-wrap: wrap; }
+.esi-rate-stats .hi { color: var(--txt); font-variant-numeric: tabular-nums; }
+{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ task.name }}</h1>
+    <div class="pg-sub">Task ID <span class="mono">{{ task.task_id }}</span></div>
+  </div>
+  <span id="status-badge" class="task-status {{ task.status }}">{{ task.status }}</span>
+</div>
+
+<div id="task-app" class="pg-body" data-task-id="{{ task.task_id }}">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v mono">{{ task.task_id }}</span>
+      <span class="l">Task ID</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task.status }}</span>
+      <span class="l">Current Status</span>
+    </div>
+    <div class="stat">
+      <span class="v mono">{{ task.created_at or '-' }}</span>
+      <span class="l">Queued</span>
+    </div>
+    <div class="stat">
+      <span class="v mono">{{ task.finished_at or task.started_at or '-' }}</span>
+      <span class="l">Latest Timestamp</span>
+    </div>
+  </div>
+
+  <div id="esi-rate-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">ESI Rate Limit</div>
+    <div class="esi-rate-bar-wrap"><div id="esi-rate-bar" class="esi-rate-bar"></div></div>
+    <div class="esi-rate-stats">
+      <span>Tokens&nbsp;<span id="esi-tokens-used" class="hi">—</span>&nbsp;/&nbsp;<span id="esi-tokens-limit" class="hi">—</span></span>
+      <span>Remaining&nbsp;<span id="esi-tokens-remaining" class="hi">—</span></span>
+      <span>Window&nbsp;<span id="esi-window" class="hi">—</span>s</span>
+      <span>Requests&nbsp;<span id="esi-requests-total" class="hi">—</span></span>
+    </div>
+  </div>
+
+  <div class="card stack">
+    <div class="section-head">
+      <div>
+        <div class="ct" style="margin-bottom:0.35rem">Live Output</div>
+        <div class="muted" style="font-size:0.78rem">Logs stream in via SSE and remain available after the task finishes.</div>
+      </div>
+      <div class="toolbar">
+        {% if task.status == 'pending' %}
+        <button id="cancel-btn" class="btn btn-g" onclick="cancelTask()">Cancel</button>
+        {% endif %}
+        <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">All Tasks</a>
+        <a href="{{ url_for('dashboard.home') }}" class="btn btn-a">Dashboard</a>
+      </div>
+    </div>
+
+    <div id="console" class="task-console"></div>
+
+    <div class="pill-row">
+      {% if task.created_at %}<span class="pill">Queued {{ task.created_at }}</span>{% endif %}
+      {% if task.started_at %}<span class="pill">Started {{ task.started_at }}</span>{% endif %}
+      {% if task.finished_at %}<span class="pill">Finished {{ task.finished_at }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('queue_viewer.static', filename='task_progress.js') }}"></script>
+{% endblock %}

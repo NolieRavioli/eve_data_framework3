@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}ESI Explorer — Admin{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>ESI Explorer</h1>
+    <p class="pg-sub">{{ operation_count }} operations · {{ scope_count }} scopes · spec {{ compatibility_date }}</p>
+  </div>
+  <div style="display:flex;gap:.6rem;align-items:center;">
+    {% if active_character_name %}
+    <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;
+                 color:var(--good);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);
+                 border-radius:.6rem;padding:.3rem .65rem;">
+      🔑 {{ active_character_name }}
+    </span>
+    {% else %}
+    <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;
+                 color:var(--warn);background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);
+                 border-radius:.6rem;padding:.3rem .65rem;">
+      ⚠ Not logged in — authenticated routes will fail
+    </span>
+    {% endif %}
+    <a href="{{ url_for('admin.index') }}" class="btn-sm">← Admin</a>
+  </div>
+</div>
+
+<div class="pg-body" style="gap:.8rem;">
+
+  <!-- Filter bar -->
+  <div class="card" style="padding:.75rem 1rem;">
+    <div style="display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;">
+      <input id="q" type="search" placeholder="Filter by operation, path, tag, scope…"
+             style="flex:1;min-width:220px;background:rgba(7,18,29,.7);border:1px solid var(--border);
+                    border-radius:.7rem;padding:.52rem .85rem;color:var(--text-strong);
+                    font-family:var(--font-mono);font-size:.82rem;outline:none;"
+             oninput="filterOps(this.value)">
+      <select id="method-filter" onchange="filterOps(document.getElementById('q').value)"
+              style="background:rgba(7,18,29,.7);border:1px solid var(--border);border-radius:.7rem;
+                     padding:.52rem .85rem;color:var(--text);font-size:.82rem;cursor:pointer;">
+        <option value="">All methods</option>
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+        <option value="PUT">PUT</option>
+        <option value="DELETE">DELETE</option>
+      </select>
+      <select id="auth-filter" onchange="filterOps(document.getElementById('q').value)"
+              style="background:rgba(7,18,29,.7);border:1px solid var(--border);border-radius:.7rem;
+                     padding:.52rem .85rem;color:var(--text);font-size:.82rem;cursor:pointer;">
+        <option value="">All</option>
+        <option value="auth">Authenticated</option>
+        <option value="public">Public</option>
+      </select>
+      <span id="match-count" style="font-size:.75rem;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 400px;gap:.8rem;align-items:start;" id="layout">
+
+    <!-- Operation table -->
+    <div class="card" style="padding:0;">
+      <div class="tw">
+        <table id="ops-table">
+          <thead>
+            <tr>
+              <th style="width:60px;">Method</th>
+              <th>Operation ID</th>
+              <th>Path</th>
+              <th style="width:90px;">Tag</th>
+              <th style="width:50px;">Auth</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for op in operations %}
+            <tr class="op-row" data-id="{{ op.operation_id }}"
+                data-method="{{ op.method }}"
+                data-auth="{{ 'auth' if op.requires_auth else 'public' }}"
+                data-text="{{ op.operation_id|lower }} {{ op.path|lower }} {{ (op.tags or [''])|join(' ')|lower }} {{ (op.scopes or [])|join(' ')|lower }}"
+                onclick="selectOp('{{ op.operation_id }}')"
+                style="cursor:pointer;">
+              <td><span class="method-badge method-{{ op.method|lower }}">{{ op.method }}</span></td>
+              <td style="font-family:var(--font-mono);font-size:.78rem;color:var(--text-strong);">{{ op.operation_id }}</td>
+              <td style="font-family:var(--font-mono);font-size:.75rem;color:var(--muted);">{{ op.path }}</td>
+              <td><span style="font-size:.7rem;color:var(--accent);">{{ (op.tags or ['—'])[0] }}</span></td>
+              <td>{% if op.requires_auth %}<span style="color:var(--gold);font-size:.75rem;">🔑</span>{% else %}<span style="color:var(--good);font-size:.75rem;">○</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div id="detail-panel" class="card" style="position:sticky;top:1rem;display:none;">
+      <div class="ct" id="dp-tag"></div>
+      <div style="margin-bottom:.6rem;">
+        <span id="dp-method" class="method-badge"></span>
+        <span id="dp-op" style="font-family:var(--font-mono);font-size:.88rem;font-weight:700;color:var(--text-strong);margin-left:.5rem;"></span>
+      </div>
+      <div id="dp-path" style="font-family:var(--font-mono);font-size:.78rem;color:var(--muted);margin-bottom:.7rem;word-break:break-all;"></div>
+      <div id="dp-summary" style="font-size:.82rem;color:var(--text);margin-bottom:.85rem;"></div>
+
+      <div id="dp-scopes-wrap" style="margin-bottom:.85rem;display:none;">
+        <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.35rem;">Scopes</div>
+        <div id="dp-scopes" style="display:flex;flex-wrap:wrap;gap:.3rem;"></div>
+      </div>
+
+      <!-- Path param inputs (auto-generated) -->
+      <div id="dp-params-wrap" style="display:none;margin-bottom:.85rem;">
+        <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.45rem;">Path Parameters</div>
+        <div id="dp-params" style="display:grid;gap:.45rem;"></div>
+      </div>
+
+      <!-- Extra query params -->
+      <div id="dp-query-wrap" style="margin-bottom:.85rem;">
+        <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.45rem;">Query Params <span style="opacity:.5;">(key=value, one per line)</span></div>
+        <textarea id="dp-query" rows="3" placeholder="character_id=12345678"
+                  style="width:100%;background:rgba(7,18,29,.7);border:1px solid var(--border);
+                         border-radius:.7rem;padding:.52rem .7rem;color:var(--text-strong);
+                         font-family:var(--font-mono);font-size:.78rem;resize:vertical;"></textarea>
+      </div>
+
+      <div id="dp-pages-wrap" style="margin-bottom:.85rem;display:none;">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;">
+          <input type="checkbox" id="dp-all-pages" style="cursor:pointer;"> Fetch all pages
+        </label>
+      </div>
+
+      <button onclick="runOp()" id="dp-run-btn"
+              style="width:100%;padding:.6rem;border:1px solid var(--accent);border-radius:.85rem;
+                     background:var(--accent-soft);color:var(--accent);font-weight:700;
+                     font-size:.82rem;cursor:pointer;transition:background .14s;">
+        ▶ Run
+      </button>
+
+      <!-- Response area -->
+      <div id="dp-response" style="margin-top:.85rem;display:none;">
+        <div id="dp-resp-status" style="font-size:.75rem;margin-bottom:.4rem;"></div>
+        <pre id="dp-resp-body"
+             style="background:rgba(7,18,29,.8);border:1px solid var(--border);border-radius:.7rem;
+                    padding:.65rem .75rem;font-family:var(--font-mono);font-size:.73rem;
+                    max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--text);"></pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .method-badge {
+    display:inline-block;padding:.15rem .42rem;border-radius:.4rem;
+    font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  }
+  .method-get  { background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.28); }
+  .method-post { background:rgba(105,210,255,.14);color:#69d2ff;border:1px solid rgba(105,210,255,.28); }
+  .method-put  { background:rgba(244,181,76,.14);color:#f4b54c;border:1px solid rgba(244,181,76,.28); }
+  .method-delete { background:rgba(248,113,113,.14);color:#f87171;border:1px solid rgba(248,113,113,.28); }
+  .scope-chip {
+    display:inline-block;padding:.18rem .5rem;background:rgba(105,210,255,.1);
+    border:1px solid rgba(105,210,255,.2);border-radius:.4rem;
+    font-size:.66rem;font-family:var(--font-mono);color:var(--muted);
+  }
+  .op-row:hover td { background:rgba(105,210,255,.06); }
+  .op-row.selected td { background:rgba(105,210,255,.1); }
+
+  .btn-sm {
+    display:inline-flex;align-items:center;padding:.42rem .85rem;
+    border:1px solid var(--border);border-radius:.7rem;
+    background:rgba(11,24,39,.8);color:var(--text);font-size:.8rem;
+    font-weight:600;text-decoration:none;transition:background .14s;
+  }
+  .btn-sm:hover { background:rgba(105,210,255,.08);color:var(--accent); }
+
+  @media (max-width: 900px) {
+    #layout { grid-template-columns: 1fr; }
+    #detail-panel { position:relative; }
+  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('esi_browser.static', filename='admin_esi.js') }}"></script>
+{% endblock %}
