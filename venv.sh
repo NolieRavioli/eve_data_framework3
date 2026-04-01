@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # venv.sh — create and/or activate the project virtual environment.
 #
-# This script must be SOURCED, not executed directly:
+# Must be SOURCED so the activation applies to the calling shell:
 #   source venv.sh
 #   . venv.sh
-#
-# Running it directly (bash venv.sh / ./venv.sh) will create the venv and
-# install dependencies but the activation will have no effect on your shell.
+
+# Detect direct execution and bail out with a clear message.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "[venv] ERROR: this script must be sourced, not executed directly."
+    echo "  Run:  source venv.sh"
+    echo "   or:  . venv.sh"
+    exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv"
