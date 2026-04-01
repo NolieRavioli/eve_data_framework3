@@ -24,9 +24,9 @@ SDE:
   load_categories: true      # item categories                 (~0.1 MB, fast)
   load_market_groups: true   # market group tree               (~0.3 MB, fast)
   load_universe: true        # solar-system -> region map      (8,400+ files, ~15s)
-  load_blueprints: false     # manufacturing blueprints        (~4 MB, ~8s)
-  load_type_materials: false # reprocessing materials          (~2 MB, ~3s)
-  load_type_dogma: false     # item dogma attributes           (~26 MB, ~60s+)
+  load_blueprints: true      # manufacturing blueprints        (~4 MB, ~8s)
+  load_type_materials: true  # reprocessing materials          (~2 MB, ~3s)
+  load_type_dogma: true      # item dogma attributes           (~26 MB, ~60s+)
 
 Structures:
   forbidden_cooldown_days: 21           # days to skip transiently-inaccessible structures (404/network)

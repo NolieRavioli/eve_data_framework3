@@ -46,7 +46,7 @@ def calc():
 
     result = None
     if type_id:
-        from tools.industry_calculator.worker import calculate
+        from applications.industry_calculator.worker import calculate
         result = calculate(type_id, quantity=quantity, me=me, te=te, region_id=region_id)
 
     ctx.update({

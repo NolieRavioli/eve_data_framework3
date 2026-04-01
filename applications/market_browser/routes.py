@@ -125,7 +125,7 @@ def refresh():
     if not region_id:
         return redirect(url_for("market_browser.index"))
 
-    from tools.market_browser.worker import refresh_region
+    from applications.market_browser.worker import refresh_region
     task_id = tasks.enqueue(
         f"Market refresh — region {region_id}",
         refresh_region,

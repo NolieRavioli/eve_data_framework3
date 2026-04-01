@@ -636,21 +636,16 @@ def upsert_market_orders(rows: list[dict], database_file: str | Path | None = No
         for row in rows
         if row.get("order_id") is not None
     ]
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        return _executemany_if_rows(
-            con,
-            """
-            INSERT OR REPLACE INTO market_orders (
-                order_id, type_id, location_id, region_id, is_buy_order, issued, duration,
-                price, order_range, volume_remain, volume_total, min_volume, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            payload,
-        )
-    finally:
-        con.close()
+    from core.queue.writer import db_executemany
+    return db_executemany(
+        """
+        INSERT OR REPLACE INTO market_orders (
+            order_id, type_id, location_id, region_id, is_buy_order, issued, duration,
+            price, order_range, volume_remain, volume_total, min_volume, last_seen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        payload,
+    )
 
 
 def upsert_public_contracts(rows: list[dict], database_file: str | Path | None = None) -> int:
@@ -678,22 +673,17 @@ def upsert_public_contracts(rows: list[dict], database_file: str | Path | None =
         for row in rows
         if row.get("contract_id") is not None
     ]
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        return _executemany_if_rows(
-            con,
-            """
-            INSERT OR REPLACE INTO public_contracts (
-                contract_id, region_id, issuer_id, issuer_corporation_id, contract_type,
-                date_issued, date_expired, title, volume, price, buyout, collateral, reward,
-                days_to_complete, start_location_id, end_location_id, for_corporation, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            payload,
-        )
-    finally:
-        con.close()
+    from core.queue.writer import db_executemany
+    return db_executemany(
+        """
+        INSERT OR REPLACE INTO public_contracts (
+            contract_id, region_id, issuer_id, issuer_corporation_id, contract_type,
+            date_issued, date_expired, title, volume, price, buyout, collateral, reward,
+            days_to_complete, start_location_id, end_location_id, for_corporation, last_seen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        payload,
+    )
 
 
 def seed_structures(structure_ids: Iterable[int], database_file: str | Path | None = None) -> int:
@@ -792,20 +782,15 @@ def upsert_structures(rows: list[dict], database_file: str | Path | None = None)
         for row in rows
         if row.get("structure_id") is not None
     ]
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        return _executemany_if_rows(
-            con,
-            """
-            INSERT OR REPLACE INTO structures (
-                structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen, forbidden_until
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            payload,
-        )
-    finally:
-        con.close()
+    from core.queue.writer import db_executemany
+    return db_executemany(
+        """
+        INSERT OR REPLACE INTO structures (
+            structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen, forbidden_until
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        payload,
+    )
 
 
 def mark_structures_forbidden(
@@ -822,17 +807,13 @@ def mark_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
+    from core.queue.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute(
-            f"UPDATE structures SET forbidden_until = ? WHERE structure_id IN ({placeholders}) AND name IS NULL",
-            [forbidden_until, *structure_ids],
-        )
-    finally:
-        con.close()
+    db_write(
+        f"UPDATE structures SET forbidden_until = ? WHERE structure_id IN ({placeholders}) AND name IS NULL",
+        [forbidden_until, *structure_ids],
+    )
 
 
 def mark_structures_enrich_refreshed(
@@ -848,17 +829,13 @@ def mark_structures_enrich_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
+    from core.queue.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute(
-            f"UPDATE structures SET enrich_refreshed_until = ? WHERE structure_id IN ({placeholders})",
-            [refreshed_until, *structure_ids],
-        )
-    finally:
-        con.close()
+    db_write(
+        f"UPDATE structures SET enrich_refreshed_until = ? WHERE structure_id IN ({placeholders})",
+        [refreshed_until, *structure_ids],
+    )
 
 
 def mark_market_structures_forbidden(
@@ -874,17 +851,13 @@ def mark_market_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
+    from core.queue.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute(
-            f"UPDATE structures SET market_forbidden_until = ? WHERE structure_id IN ({placeholders})",
-            [forbidden_until, *structure_ids],
-        )
-    finally:
-        con.close()
+    db_write(
+        f"UPDATE structures SET market_forbidden_until = ? WHERE structure_id IN ({placeholders})",
+        [forbidden_until, *structure_ids],
+    )
 
 
 def mark_structures_market_refreshed(
@@ -900,17 +873,13 @@ def mark_structures_market_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
+    from core.queue.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute(
-            f"UPDATE structures SET market_refreshed_until = ? WHERE structure_id IN ({placeholders})",
-            [refreshed_until, *structure_ids],
-        )
-    finally:
-        con.close()
+    db_write(
+        f"UPDATE structures SET market_refreshed_until = ? WHERE structure_id IN ({placeholders})",
+        [refreshed_until, *structure_ids],
+    )
 
 
 def list_market_region_ids(
@@ -953,20 +922,16 @@ def mark_region_market_refreshed(
 ) -> None:
     """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
     from datetime import timedelta
+    from core.queue.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute(
-            """
-            INSERT INTO market_region_cooldowns (region_id, refreshed_until)
-            VALUES (?, ?)
-            ON CONFLICT (region_id) DO UPDATE SET refreshed_until = excluded.refreshed_until
-            """,
-            [region_id, refreshed_until],
-        )
-    finally:
-        con.close()
+    db_write(
+        """
+        INSERT INTO market_region_cooldowns (region_id, refreshed_until)
+        VALUES (?, ?)
+        ON CONFLICT (region_id) DO UPDATE SET refreshed_until = excluded.refreshed_until
+        """,
+        [region_id, refreshed_until],
+    )
 
 
 def upsert_market_structures(rows: list[dict], database_file: str | Path | None = None) -> int:
@@ -984,20 +949,15 @@ def upsert_market_structures(rows: list[dict], database_file: str | Path | None 
         for row in rows
         if row.get("structure_id") is not None
     ]
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        return _executemany_if_rows(
-            con,
-            """
-            INSERT OR REPLACE INTO market_structures (
-                structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            payload,
-        )
-    finally:
-        con.close()
+    from core.queue.writer import db_executemany
+    return db_executemany(
+        """
+        INSERT OR REPLACE INTO market_structures (
+            structure_id, solar_system_id, region_id, owner_id, name, type_id, position_json, last_seen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        payload,
+    )
 
 
 def search_market_orders(

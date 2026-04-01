@@ -44,7 +44,7 @@ def compute():
     if not category_id:
         return redirect(url_for("isk_per_hour.index"))
 
-    from tools.isk_per_hour.worker import compute_rankings
+    from applications.isk_per_hour.worker import compute_rankings
     task_id = tasks.enqueue(
         f"ISK/hr — region {region_id}, category {category_id}",
         compute_rankings,
