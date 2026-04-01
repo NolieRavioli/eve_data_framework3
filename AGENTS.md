@@ -18,7 +18,7 @@ The codebase is organised into clean architectural layers:
 | Layer | Package | Purpose |
 |---|---|---|
 | **Core** | `core/` | Infrastructure: DB connections, ESI wrappers, SDE caches, task queue, plugin framework |
-| **Collectors** | `collectors/` | Data-collection workers: market, structures, SDE pipeline, auto-generated ESI accessors |
+| **Analysis** | `analysis/` | Data-collection workers: market, structures, SDE pipeline, character data ingestion |
 | **Applications** | `applications/` | User-facing tools (market browser, industry calc, ISK/hr) — auto-discovered via pkgutil |
 | **Web** | `core/web/` | Flask app factory, SSO auth, Jinja2 templates |
 | **Config** | `config.py` / `config.yaml` | Runtime settings, environment variables, SDE toggles |
@@ -27,7 +27,7 @@ The codebase is organised into clean architectural layers:
 
 ### Forwarding Shims
 
-Legacy import paths (`db/`, `esi/`, `sde.py`, `tasks/`, `workers/`) are thin forwarding shims that re-export from `core/` or `collectors/`. New code should import from `core.*` or `collectors.*` directly.
+Legacy import paths (`db/`, `esi/`, `sde.py`, `tasks/`, `workers/`) are thin forwarding shims that re-export from `core/` or `analysis/`. New code should import from `core.*` or `analysis.*` directly.
 
 ### Tech Stack
 
@@ -91,9 +91,12 @@ core/                    # ── INFRASTRUCTURE ──────────�
     context.py           # base_ctx(active_page) — sidebar template context helper
     templates/           # Shared base template only (base.html)
 
-collectors/              # ── DATA COLLECTION ─────────────────────────────────
+analysis/                # ── DATA COLLECTION ─────────────────────────────────
   __init__.py
   sde_loader.py          # SDE pipeline: download → unzip → prune → build DuckDB warehouse
+  character/
+    __init__.py           # re-exports: populate_all
+    populate.py           # per-character ESI → private SQLite (skills, wallet, assets)
   market/
     __init__.py           # re-exports: fetch_all_market_data, update_structure_market_orders
     publicRegions.py      # NPC station market orders — owns market_orders, market_region_cooldowns
@@ -101,9 +104,6 @@ collectors/              # ── DATA COLLECTION ──────────
   structures/
     __init__.py           # re-exports: discover_structures
     publicDiscovery.py    # discover + enrich public structures — owns structures table
-  personal_generatedESI/  # AUTO-GENERATED — character-scoped ESI wrappers
-  corp_generatedESI/      # AUTO-GENERATED — corporation-scoped ESI wrappers
-  public_generatedESI/    # AUTO-GENERATED — unauthenticated ESI wrappers
 
 applications/            # ── USER-FACING TOOLS ───────────────────────────────
   __init__.py            # pkgutil auto-discovery of Tool instances
@@ -121,14 +121,14 @@ applications/            # ── USER-FACING TOOLS ─────────�
 
 codegen/                 # ── CODE GENERATION ─────────────────────────────────
   esi_codegen.py         # generates core/esi/generated/ package from ESI OpenAPI spec
-  domain_codegen.py      # generates collectors/*_generatedESI/ packages
+  domain_codegen.py      # generates core/esi/personal|corp|public/ packages
 
 # ── FORWARDING SHIMS (legacy import paths — all removed) ────────────────────
 db/                      # DELETED — use core.db
 esi/                     # DELETED — use core.esi / core.queue
 sde.py                   # DELETED — use core.sde
 tasks/                   # DELETED — use core.queue
-workers/                 # DELETED — use core.esi.auth + collectors
+workers/                 # DELETED — use core.esi.auth + analysis
 web/                     # DELETED — use core.web
 utils/build/             # → codegen
 
@@ -152,12 +152,13 @@ Each collector (or application) **owns** the DDL for its tables via an `ensure_t
 | Table | Owner |
 |---|---|
 | `users`, `site_admins`, `user_roles` | `core/db/publicDB.py` |
-| `structures` | `collectors/structures/publicDiscovery.py` |
-| `market_orders`, `market_region_cooldowns` | `collectors/market/publicRegions.py` |
-| `market_structures` | `collectors/market/privateStructures.py` |
-| `structures` cooldown columns | `collectors/market/privateStructures.ensure_columns()` |
+| `structures` | `analysis/structures/publicDiscovery.py` |
+| `market_orders`, `market_region_cooldowns` | `analysis/market/publicRegions.py` |
+| `market_structures` | `analysis/market/privateStructures.py` |
+| `structures` cooldown columns | `analysis/market/privateStructures.ensure_columns()` |
 | `isk_per_hour_results` | `applications/isk_per_hour/worker.py` |
-| SDE dimension tables | `collectors/sde_loader.py` (_bootstrap_schema) |
+| `character_skills`, `character_wallet`, `character_assets` | `analysis/character/populate.py` |
+| SDE dimension tables | `analysis/sde_loader.py` (_bootstrap_schema) |
 
 ### Enrichment Pattern
 
@@ -165,14 +166,14 @@ When a collector needs to add columns to a table it doesn't own, it uses `ensure
 
 ```python
 def ensure_columns(con) -> None:
-    from collectors.structures.publicDiscovery import ensure_tables as _ensure_structures
+    from analysis.structures.publicDiscovery import ensure_tables as _ensure_structures
     _ensure_structures(con)
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS forbidden_until TIMESTAMP")
 ```
 
-### Adding a New Collector Domain
+### Adding a New Analysis Domain
 
-1. Create `collectors/<domain>/` with `__init__.py` and worker modules.
+1. Create `analysis/<domain>/` with `__init__.py` and worker modules.
 2. Add `ensure_tables(con)` — idempotent DDL using `CREATE TABLE IF NOT EXISTS`.
 3. Call `ensure_tables` at the top of each worker function before any writes.
 4. Use `core.plugin.adapters` for shared operations — `raw_esi` for ESI HTTP, `sde` for SDE lookups, `token_resolution` for auth. Only use `core.db.publicDB` directly for owned-table DDL and writes.
@@ -582,13 +583,13 @@ Prefer `@require_role` over `@require_login` for all new routes — it enforces 
 ## Regenerate the ESI Client
 
 ```powershell
-python build.py              # fetch spec + regenerate core/esi/generated/ + collectors
+python build.py              # fetch spec + regenerate core/esi/generated/ + domain wrappers
 python build.py --force      # force regenerate
 python build.py --spec-only  # only fetch spec
-python build.py --collectors # only regenerate collector packages
+python build.py --collectors # only regenerate core/esi/personal|corp|public/ packages
 ```
 
-**Do not hand-edit `core/esi/generated/` or `collectors/*_generatedESI/`** — changes are overwritten on next codegen run.
+**Do not hand-edit `core/esi/generated/` or `core/esi/personal|corp|public/`** — changes are overwritten on next codegen run.
 
 ---
 
@@ -596,14 +597,14 @@ python build.py --collectors # only regenerate collector packages
 
 - **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** (via `core.queue.esi_req` or `raw_esi` adapter)
 - **Applications import from `applications._base` / `applications._adapters`** — never `core.*` directly
-- **Collectors use adapters for shared ops** — ESI HTTP (`raw_esi`), SDE lookups (`sde`), auth/token resolution (`token_resolution`) go through `core.plugin.adapters`; only owned-table DDL and writes use `core.db.publicDB` directly
-- **New code imports from `core.*` / `collectors.*`** — not from legacy shim paths
+- **Analysis workers use adapters for shared ops** — ESI HTTP (`raw_esi`), SDE lookups (`sde`), auth/token resolution (`token_resolution`) go through `core.plugin.adapters`; only owned-table DDL and writes use `core.db.publicDB` directly
+- **New code imports from `core.*` / `analysis.*`** — not from legacy shim paths
 - **Logging**: `logger = logging.getLogger(__name__)` — not bare `print()` in production
 - **Token handling**: 401 = expired token (stop); 403 = no permission (not retryable)
 - **Thread safety**: `threading.Lock()` for shared state; fresh `connect()` per thread
 - **No raw SQL with user input** — parameterised `con.execute("WHERE id = ?", [val])`
-- **Do not edit auto-generated packages** — `core/esi/generated/`, `collectors/*_generatedESI/`
-- **Table DDL belongs to collectors** — never add domain table DDL to `core/db/publicDB.py`
+- **Do not edit auto-generated packages** — `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, `core/esi/public/`
+- **Table DDL belongs to analysis workers** — never add domain table DDL to `core/db/publicDB.py`
 - **Access control via `@require_role`** — prefer `@require_role("role")` over `@require_login` for any route gated on a named role; use `@require_admin` only for admin-only routes; never use bare `@require_login` for new application routes
 - **Do not set `access_level` or `required_role` in `ToolManifest` directly** — define them in `auth.json` and let `BaseTool._load_auth_config()` read them on instantiation
 

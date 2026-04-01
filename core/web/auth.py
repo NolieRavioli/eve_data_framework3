@@ -321,10 +321,10 @@ def callback():
         # so the collector can fetch it; this runs in the background and does not
         # block the redirect.
         from core.queue.scheduler import enqueue as _enqueue
-        from collectors.character.onboarding import initialize_character
+        from analysis.character.populate import populate_all
         _enqueue(
-            "Initialize Character",
-            initialize_character,
+            "Populate Character",
+            populate_all,
             owner_id,
             owner_id=owner_id,
             queue="private",

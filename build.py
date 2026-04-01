@@ -36,9 +36,9 @@ from config import load_config, CONFIG_PATH
 # Directories that are entirely auto-generated and safe to delete outright.
 _GENERATED_PACKAGES = [
     "core/esi/generated",
-    "collectors/personal_generatedESI",
-    "collectors/corp_generatedESI",
-    "collectors/public_generatedESI",
+    "core/esi/personal",
+    "core/esi/corp",
+    "core/esi/public",
 ]
 
 # Individual data files / directories to remove (auth files are preserved).

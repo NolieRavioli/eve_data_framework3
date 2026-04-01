@@ -60,7 +60,7 @@ def ensure_columns(con) -> None:
     Cross-calls :func:`collectors.structures.publicDiscovery.ensure_tables`
     first to guarantee the base table exists.
     """
-    from collectors.structures.publicDiscovery import ensure_tables as _ensure_structures
+    from analysis.structures.publicDiscovery import ensure_tables as _ensure_structures
     _ensure_structures(con)
 
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS forbidden_until TIMESTAMP")
@@ -275,7 +275,7 @@ def update_structure_market_orders() -> None:
         con.close()
 
     # Also ensure market_orders table from publicRegions exists
-    from collectors.market.publicRegions import ensure_tables as _ensure_market
+    from analysis.market.publicRegions import ensure_tables as _ensure_market
     con = public_connect(read_only=False)
     try:
         _ensure_market(con)

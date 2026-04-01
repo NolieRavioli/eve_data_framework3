@@ -1,4 +1,4 @@
-"""esi/corp/ — AUTO-GENERATED collector package. Do not edit.
+"""core/esi/corp/ — AUTO-GENERATED ESI domain wrappers. Do not edit.
 Regenerate: python build.py --collectors --force
 """
 # ruff: noqa

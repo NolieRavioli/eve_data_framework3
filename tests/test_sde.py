@@ -41,7 +41,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
         cls._db_file = str(Path(cls._tmp_dir.name) / "test_sde.duckdb")
 
-        from collectors.sde_loader import build_sde_warehouse
+        from analysis.sde_loader import build_sde_warehouse
         build_sde_warehouse(
             database_file=cls._db_file,
             source_root=str(SDE_ROOT),

@@ -34,7 +34,7 @@ def _build_catalog() -> list[dict]:
     jobs = []
 
     try:
-        from collectors.market.publicRegions import fetch_all_market_data
+        from analysis.market.publicRegions import fetch_all_market_data
         jobs.append({
             "job_id": "market_refresh",
             "label": "Market Data Refresh",
@@ -46,7 +46,7 @@ def _build_catalog() -> list[dict]:
         logger.warning("[SchedulerJobs] Could not import market collector — skipping job")
 
     try:
-        from collectors.structures.publicDiscovery import discover_structures
+        from analysis.structures.publicDiscovery import discover_structures
         jobs.append({
             "job_id": "structure_discovery",
             "label": "Structure Discovery",
@@ -58,7 +58,7 @@ def _build_catalog() -> list[dict]:
         logger.warning("[SchedulerJobs] Could not import structure collector — skipping job")
 
     try:
-        from collectors.character.onboarding import initialize_character
+        from analysis.character.populate import populate_all  # noqa: F401  verify importable
         jobs.append({
             "job_id": "character_refresh",
             "label": "Character Data Refresh (all owners)",
@@ -83,10 +83,10 @@ def _refresh_all_characters() -> None:
     finally:
         con.close()
 
-    from collectors.character.onboarding import initialize_character
+    from analysis.character.populate import populate_all
     for owner_id in owner_ids:
         try:
-            initialize_character(owner_id)
+            populate_all(owner_id)
         except Exception:
             logger.exception("[SchedulerJobs] character_refresh failed for owner %s", owner_id)
 
