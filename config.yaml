@@ -5,6 +5,15 @@ Environment Variables:
   EVE_PRIVATE_DATABASE_FOLDER: "_privateData/"
   SDE_PATH: "_sde/"
 
+# Role-based access control.
+# default_roles are granted to every new user on their first login
+# (site owner is exempt — they have full access already).
+# Role names must match the "role" field in each application's auth.json.
+Auth:
+  default_roles:
+    - dashboard
+    - queue
+
 # SDE section toggles — set false to skip a dataset at startup.
 # Disabled sections will lazy-load on first use (or return defaults if they're
 # expensive enough that you never want them).

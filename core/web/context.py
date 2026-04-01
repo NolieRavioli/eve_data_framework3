@@ -43,6 +43,7 @@ def base_ctx(active_page: str = "") -> dict:
                 is_logged_in=True,
                 is_admin=is_admin,
                 is_site_owner=is_site_owner,
+                roles=session.get("roles", []),
             ),
         })
     finally:

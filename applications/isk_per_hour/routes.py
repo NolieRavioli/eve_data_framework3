@@ -8,7 +8,7 @@ import logging
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from applications._adapters import storage, tasks
-from applications._base import base_ctx
+from applications._base import base_ctx, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ _DEFAULT_REGION = 10000002  # The Forge (Jita)
 
 
 @isk_bp.route("/")
+@require_role("isk_per_hour")
 def index():
     ctx = base_ctx("isk_per_hour")
     ctx.update({
@@ -31,6 +32,7 @@ def index():
 
 
 @isk_bp.route("/compute", methods=["POST"])
+@require_role("isk_per_hour")
 def compute():
     try:
         region_id = int(request.form.get("region_id", _DEFAULT_REGION))
@@ -55,6 +57,7 @@ def compute():
 
 
 @isk_bp.route("/results")
+@require_role("isk_per_hour")
 def results():
     ctx = base_ctx("isk_per_hour")
 

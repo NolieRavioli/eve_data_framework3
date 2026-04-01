@@ -6,21 +6,13 @@ from __future__ import annotations
 from collections import Counter
 import logging
 
-from flask import Blueprint, Response, abort, jsonify, redirect, render_template, session, url_for
+from flask import Blueprint, Response, abort, jsonify, render_template, session
 
-from applications._base import base_ctx
+from applications._base import base_ctx, require_role
 from applications._adapters import queue_info
 
 logger = logging.getLogger(__name__)
 tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")
-
-
-def _logged_in() -> bool:
-    return "owner_id" in session
-
-
-def _login_redirect():
-    return redirect(url_for("auth.login"))
 
 
 def _owns_task(task) -> bool:
@@ -29,10 +21,9 @@ def _owns_task(task) -> bool:
 
 
 @tasks_bp.route("/rate_stats")
+@require_role("queue")
 def rate_stats():
     """Return current ESI rate-limiter snapshot as JSON."""
-    if not _logged_in():
-        abort(403)
     stats = queue_info.get_esi_rate_stats()
     running = [
         {"task_id": t.task_id, "name": t.name, "esi_rate": t.esi_rate}
@@ -43,10 +34,9 @@ def rate_stats():
 
 
 @tasks_bp.route("/rate_stream")
+@require_role("queue")
 def rate_stream():
     """SSE endpoint that streams ESI rate-limiter stats on every request."""
-    if not _logged_in():
-        abort(403)
     return Response(
         queue_info.rate_stream(),
         mimetype="text/event-stream",
@@ -55,10 +45,8 @@ def rate_stream():
 
 
 @tasks_bp.route("/")
+@require_role("queue")
 def task_list():
-    if not _logged_in():
-        return _login_redirect()
-
     is_admin = bool(session.get("is_admin"))
     owner_id = session["owner_id"]
     tasks    = queue_info.get_all_tasks() if is_admin else queue_info.get_tasks_for_owner(owner_id)
@@ -82,10 +70,8 @@ def task_list():
 
 
 @tasks_bp.route("/<task_id>")
+@require_role("queue")
 def task_progress(task_id: str):
-    if not _logged_in():
-        return _login_redirect()
-
     task = queue_info.get_task(task_id)
     if not task:
         abort(404)
@@ -100,11 +86,9 @@ def task_progress(task_id: str):
 
 
 @tasks_bp.route("/<task_id>/stream")
+@require_role("queue")
 def task_stream(task_id: str):
     """SSE endpoint that streams log lines for a task."""
-    if not _logged_in():
-        abort(403)
-
     task = queue_info.get_task(task_id)
     if not task:
         abort(404)
@@ -119,10 +103,8 @@ def task_stream(task_id: str):
 
 
 @tasks_bp.route("/<task_id>/cancel", methods=["POST"])
+@require_role("queue")
 def cancel_task(task_id: str):
-    if not _logged_in():
-        abort(403)
-
     task = queue_info.get_task(task_id)
     if not task:
         abort(404)
@@ -138,10 +120,8 @@ def cancel_task(task_id: str):
 
 
 @tasks_bp.route("/clear", methods=["POST"])
+@require_role("queue")
 def clear_tasks():
-    if not _logged_in():
-        abort(403)
-
     owner_id = session["owner_id"]
     is_admin = bool(session.get("is_admin"))
     cleared  = queue_info.clear_tasks(None if is_admin else owner_id)

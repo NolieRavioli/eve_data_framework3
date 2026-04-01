@@ -5,6 +5,6 @@ instead of reaching into core.web.* directly.
 """
 
 from core.web.context import base_ctx
-from core.web.auth import require_login, require_admin
+from core.web.auth import require_login, require_admin, require_role
 
-__all__ = ["base_ctx", "require_login", "require_admin"]
+__all__ = ["base_ctx", "require_login", "require_admin", "require_role"]

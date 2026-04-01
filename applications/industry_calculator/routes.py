@@ -8,7 +8,7 @@ import logging
 from flask import Blueprint, render_template, request
 
 from applications._adapters import storage
-from applications._base import base_ctx
+from applications._base import base_ctx, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ _DEFAULT_REGION = 10000002
 
 
 @industry_bp.route("/")
+@require_role("industry")
 def index():
     ctx = base_ctx("industry_calculator")
     ctx.update({"result": None, "type_id": None, "region_id": _DEFAULT_REGION, "regions": _get_regions()})
@@ -26,6 +27,7 @@ def index():
 
 
 @industry_bp.route("/calc")
+@require_role("industry")
 def calc():
     ctx = base_ctx("industry_calculator")
 

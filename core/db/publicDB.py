@@ -346,6 +346,17 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
         )
         """
     )
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_roles (
+            owner_id BIGINT NOT NULL,
+            role_name VARCHAR NOT NULL,
+            granted_by BIGINT,
+            granted_at TIMESTAMP,
+            PRIMARY KEY (owner_id, role_name)
+        )
+        """
+    )
 
     main_tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
     if "dim_systems" in main_tables and "dim_regions" in main_tables:
@@ -385,6 +396,7 @@ def reset_public_operational_tables(
         con.execute("DELETE FROM market_structures")
         con.execute("DELETE FROM structures")
         if clear_users:
+            con.execute("DELETE FROM user_roles")
             con.execute("DELETE FROM site_admins")
             con.execute("DELETE FROM users")
     finally:
@@ -494,6 +506,79 @@ def list_public_users(database_file: str | Path | None = None) -> list[dict]:
             GROUP BY u.owner_id, a.owner_id, a.is_site_owner, a.granted_at
             ORDER BY is_site_owner DESC, is_admin DESC, u.owner_id
             """,
+        )
+    finally:
+        con.close()
+
+
+# ── Role management ──────────────────────────────────────────────────────────
+
+
+def get_user_roles(owner_id: int, database_file: str | Path | None = None) -> list[str]:
+    """Return the list of named role strings assigned to an owner."""
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        rows = con.execute(
+            "SELECT role_name FROM user_roles WHERE owner_id = ? ORDER BY role_name",
+            [owner_id],
+        ).fetchall()
+        return [row[0] for row in rows]
+    finally:
+        con.close()
+
+
+def grant_user_roles(
+    owner_id: int,
+    roles: list[str],
+    granted_by: int | None = None,
+    database_file: str | Path | None = None,
+) -> None:
+    """Grant one or more named roles to an owner. Silently no-ops for already-held roles."""
+    if not roles:
+        return
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        now = _utc_now()
+        for role in roles:
+            con.execute(
+                """
+                INSERT INTO user_roles (owner_id, role_name, granted_by, granted_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (owner_id, role_name) DO NOTHING
+                """,
+                [owner_id, role, granted_by, now],
+            )
+    finally:
+        con.close()
+
+
+def revoke_user_role(
+    owner_id: int,
+    role_name: str,
+    database_file: str | Path | None = None,
+) -> None:
+    """Remove a named role from an owner. No-op if the role was not held."""
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        con.execute(
+            "DELETE FROM user_roles WHERE owner_id = ? AND role_name = ?",
+            [owner_id, role_name],
+        )
+    finally:
+        con.close()
+
+
+def list_all_user_roles(database_file: str | Path | None = None) -> list[dict]:
+    """Return every (owner_id, role_name, granted_by, granted_at) row."""
+    con = connect(database_file or get_database_path(), read_only=False)
+    try:
+        _ensure_public_schema(con)
+        return _query_to_dicts(
+            con,
+            "SELECT owner_id, role_name, granted_by, granted_at FROM user_roles ORDER BY owner_id, role_name",
         )
     finally:
         con.close()

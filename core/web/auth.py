@@ -57,6 +57,53 @@ def require_admin(fn):
     return _inner
 
 
+def require_role(role: str):
+    """Require an authenticated session with the named role (or admin privilege).
+
+    - site_owner / site_admin bypass the role check entirely.
+    - Users must hold *role* in their session roles to proceed.
+    - Page requests (Accept: text/html) are redirected to login when unauthenticated;
+      API/SSE requests receive HTTP 401.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def _inner(*args, **kwargs):
+            if "owner_id" not in session:
+                from flask import request as _req
+                if "text/html" in _req.headers.get("Accept", ""):
+                    return redirect(url_for("auth.login"))
+                abort(401)
+            # site_admin and site_owner bypass named-role checks
+            if session.get("is_admin"):
+                return fn(*args, **kwargs)
+            # Lazy-load roles from DB for sessions predating this system
+            if "roles" not in session:
+                session["roles"] = sde_store.get_user_roles(session["owner_id"])
+            if not role or role in session.get("roles", []):
+                return fn(*args, **kwargs)
+            abort(403)
+        return _inner
+    return decorator
+
+
+# ── Default-role helper ───────────────────────────────────────────────────────
+
+_cached_default_roles: list[str] | None = None
+
+
+def _get_default_roles() -> list[str]:
+    """Return the default roles for new users, read once from config.yaml."""
+    global _cached_default_roles
+    if _cached_default_roles is None:
+        try:
+            from config import load_config, CONFIG_PATH
+            cfg = load_config(CONFIG_PATH)
+            _cached_default_roles = list(cfg.get("Auth", {}).get("default_roles", ["dashboard", "queue"]))
+        except Exception:
+            _cached_default_roles = ["dashboard", "queue"]
+    return _cached_default_roles
+
+
 # ── OAuth state cache ────────────────────────────────────────────────────────
 
 @dataclass
@@ -255,12 +302,20 @@ def callback():
         session["access_token"]  = token["access_token"]
         session["refresh_token"] = token["refresh_token"]
 
+        # Grant default roles to brand-new non-site-owner users
+        if not is_add_toon and not is_first_owner:
+            if not sde_store.get_user_roles(owner_id):
+                sde_store.grant_user_roles(owner_id, _get_default_roles())
+
         if is_first_owner:
             sde_store.upsert_site_admin(owner_id=owner_id, is_site_owner=True, granted_by=None)
             logger.info("[Auth] Owner %s assigned as site owner (first login).", owner_id)
 
         if not is_add_toon:
-            session["is_admin"] = sde_store.get_site_admin(owner_id) is not None
+            admin_record = sde_store.get_site_admin(owner_id)
+            session["is_admin"]      = admin_record is not None
+            session["is_site_owner"] = bool(admin_record and admin_record.get("is_site_owner"))
+            session["roles"]         = sde_store.get_user_roles(owner_id)
 
         if _settings.debug_mode:
             print(

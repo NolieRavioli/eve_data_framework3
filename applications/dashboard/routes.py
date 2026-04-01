@@ -8,7 +8,7 @@ import logging
 import jwt
 from flask import Blueprint, redirect, render_template, session, url_for
 
-from applications._base import base_ctx
+from applications._base import base_ctx, require_role
 from applications._adapters import char_data, esi_registry
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ def _decode_scope(access_token: str) -> str:
 
 
 @dashboard_bp.route("/")
+@require_role("dashboard")
 def home():
     owner_id = session.get("owner_id")
     if not owner_id or owner_id <= 0:
