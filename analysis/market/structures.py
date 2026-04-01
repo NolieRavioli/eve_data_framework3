@@ -8,7 +8,7 @@ ESI response code so stale or inaccessible structures are skipped on future runs
 
 - ``market_structures`` — owned by this collector via :func:`ensure_tables`
 - ``structures`` cooldown columns — enrichment via :func:`ensure_columns`
-  (cross-calls :func:`collectors.structures.publicDiscovery.ensure_tables`)
+  (cross-calls :func:`analysis.structures.discover.ensure_tables`)
 """
 
 import logging
@@ -20,7 +20,7 @@ import requests
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.plugin.adapters import raw_esi, sde, token_resolution
-from config import CONFIG_PATH, load_config
+from core.config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -57,16 +57,14 @@ def ensure_tables(con) -> None:
 def ensure_columns(con) -> None:
     """Add cooldown columns to the structures table (enrichment pattern).
 
-    Cross-calls :func:`collectors.structures.publicDiscovery.ensure_tables`
+    Cross-calls :func:`analysis.structures.discover.ensure_tables`
     first to guarantee the base table exists.
     """
-    from analysis.structures.publicDiscovery import ensure_tables as _ensure_structures
+    from analysis.structures.discover import ensure_tables as _ensure_structures
     _ensure_structures(con)
 
-    con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS forbidden_until TIMESTAMP")
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS market_forbidden_until TIMESTAMP")
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS market_refreshed_until TIMESTAMP")
-    con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS enrich_refreshed_until TIMESTAMP")
 
 
 # ── config helpers ────────────────────────────────────────────────────────────
@@ -274,8 +272,8 @@ def update_structure_market_orders() -> None:
     finally:
         con.close()
 
-    # Also ensure market_orders table from publicRegions exists
-    from analysis.market.publicRegions import ensure_tables as _ensure_market
+    # Also ensure market_orders table from regions exists
+    from analysis.market.regions import ensure_tables as _ensure_market
     con = public_connect(read_only=False)
     try:
         _ensure_market(con)

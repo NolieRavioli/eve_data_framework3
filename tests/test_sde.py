@@ -33,7 +33,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Patch config so SDELoader uses our temp dir rather than the live DB.
-        import config as _config
+        import core.config as _config
         cls._orig_env = {k: os.environ.get(k) for k in ("PUBLIC_DATA_FOLDER",)}
         cls._tmp_dir = tempfile.TemporaryDirectory()
         os.environ["PUBLIC_DATA_FOLDER"] = cls._tmp_dir.name

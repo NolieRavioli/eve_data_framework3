@@ -1,5 +1,5 @@
 var activeTableEl = null;
-var BROWSER_OWNER_ID = document.getElementById('db-app').dataset.ownerId;
+var BROWSER_OWNER_ID = document.getElementById('db-app').dataset.ownerId || null;
 
 function selectTable(name, el) {
     var cols = document.getElementById('cols-' + name);

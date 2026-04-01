@@ -8,7 +8,7 @@ Schema:
     label           TEXT NOT NULL
     fn_path         TEXT NOT NULL        -- importable dotted path to the worker fn
     interval_seconds INTEGER NOT NULL
-    enabled         BOOLEAN NOT NULL DEFAULT TRUE
+    enabled         BOOLEAN NOT NULL DEFAULT FALSE
     last_run        TIMESTAMP
     next_run        TIMESTAMP NOT NULL
 """
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS scheduler_jobs (
     label            TEXT NOT NULL,
     fn_path          TEXT NOT NULL,
     interval_seconds INTEGER NOT NULL,
-    enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled          BOOLEAN NOT NULL DEFAULT FALSE,
     last_run         TIMESTAMP,
     next_run         TIMESTAMP NOT NULL
 );
@@ -75,8 +75,8 @@ def upsert_job_registration(
     now = datetime.now(timezone.utc)
     con.execute(
         """
-        INSERT INTO scheduler_jobs (job_id, label, fn_path, interval_seconds, next_run)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO scheduler_jobs (job_id, label, fn_path, interval_seconds, enabled, next_run)
+        VALUES (?, ?, ?, ?, FALSE, ?)
         ON CONFLICT (job_id) DO UPDATE SET
             label            = excluded.label,
             fn_path          = excluded.fn_path,
@@ -93,10 +93,10 @@ def mark_job_ran(con, job_id: str, interval_seconds: int) -> None:
         """
         UPDATE scheduler_jobs
         SET last_run = ?,
-            next_run = TIMESTAMPADD('second', ?, ?)
+            next_run = ? + INTERVAL (?) SECOND
         WHERE job_id = ?
         """,
-        [now, interval_seconds, now, job_id],
+        [now, now, interval_seconds, job_id],
     )
 
 

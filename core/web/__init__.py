@@ -12,7 +12,7 @@ from typing import Optional
 
 from flask import Flask, redirect, request, url_for
 
-from config import RuntimeSettings, get_runtime_settings
+from core.config import RuntimeSettings, get_runtime_settings
 from core.web.auth import auth_bp
 from core.web.home import home_bp
 from core.web.setup import setup_bp

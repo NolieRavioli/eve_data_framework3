@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from applications._adapters import storage
+from applications._adapters import db
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def calculate(
     me_factor = 1.0 - (_ME_REDUCTION[me] / 100.0)
     te_factor = 1.0 - (_TE_REDUCTION[te] / 100.0)
 
-    con = storage.connect()
+    con = db.connect()
     try:
         # Find the blueprint that produces this type_id via manufacturing
         bp_row = con.execute(
@@ -93,7 +93,7 @@ def calculate(
     total_material_cost = 0.0
     for mat_type_id, base_qty, mat_name in mat_rows:
         required_qty = max(1, round(base_qty * quantity * me_factor))
-        price = storage.market_price(mat_type_id, region_id, buy=False)
+        price = db.market_price(mat_type_id, region_id, buy=False)
         subtotal = price * required_qty if price is not None else None
         if subtotal is not None:
             total_material_cost += subtotal
@@ -107,7 +107,7 @@ def calculate(
 
     # Sell price of the produced item
     total_units = units_per_run * quantity
-    sell_price = storage.market_price(type_id, region_id, buy=False)
+    sell_price = db.market_price(type_id, region_id, buy=False)
     sell_value = sell_price * total_units if sell_price is not None else None
     margin_isk = (sell_value - total_material_cost) if sell_value is not None else None
     margin_pct = (margin_isk / total_material_cost * 100.0) if (margin_isk is not None and total_material_cost > 0) else None

@@ -7,7 +7,7 @@ import logging
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from applications._adapters import storage, tasks
+from applications._adapters import db, tasks
 from applications._base import base_ctx
 
 logger = logging.getLogger(__name__)
@@ -20,16 +20,11 @@ def index():
     ctx = base_ctx("market_browser")
 
     # Pull region list — fall back gracefully if SDE isn't loaded
-    con = storage.connect()
     try:
-        rows = con.execute(
-            "SELECT region_id, region_name FROM dim_regions ORDER BY region_name"
-        ).fetchall()
-        regions = [{"id": r[0], "name": r[1] or f"Region {r[0]}"} for r in rows]
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        regions = [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
     except Exception:
         regions = []
-    finally:
-        con.close()
 
     ctx.update({"regions": regions, "orders": None, "type_id": None, "region_id": None})
     return render_template("market_browser.html", **ctx)
@@ -46,62 +41,36 @@ def orders():
         type_id = 0
         region_id = 0
 
-    con = storage.connect()
     order_rows = []
     best_buy = None
     best_sell = None
     type_name = ""
     regions = []
     try:
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        regions = [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
+    except Exception:
+        regions = []
+
+    if type_id and region_id:
         try:
-            regions = [
-                {"id": r[0], "name": r[1] or f"Region {r[0]}"}
-                for r in con.execute(
-                    "SELECT region_id, region_name FROM dim_regions ORDER BY region_name"
-                ).fetchall()
-            ]
-        except Exception:
-            regions = []
-
-        if type_id and region_id:
-            try:
-                name_row = con.execute(
-                    "SELECT name_en FROM dim_types WHERE type_id = ?", [type_id]
-                ).fetchone()
-                type_name = name_row[0] if name_row and name_row[0] else f"Type {type_id}"
-
-                raw = con.execute(
-                    """
-                    SELECT order_id, is_buy_order, price, volume_remain, volume_total,
-                           order_range, location_id, issued
-                    FROM market_orders
-                    WHERE type_id = ? AND region_id = ?
-                    ORDER BY is_buy_order DESC, price ASC
-                    """,
-                    [type_id, region_id],
-                ).fetchall()
-                order_rows = [
-                    {
-                        "order_id": r[0],
-                        "is_buy": r[1],
-                        "price": r[2],
-                        "volume_remain": r[3],
-                        "volume_total": r[4],
-                        "range": r[5],
-                        "location_id": r[6],
-                        "issued": r[7],
-                    }
-                    for r in raw
-                ]
-
-                sells = [o["price"] for o in order_rows if not o["is_buy"]]
-                buys = [o["price"] for o in order_rows if o["is_buy"]]
-                best_sell = min(sells) if sells else None
-                best_buy = max(buys) if buys else None
-            except Exception as exc:
-                logger.warning("Market orders query failed: %s", exc)
-    finally:
-        con.close()
+            type_name = db.scalar("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
+            order_rows = db.query(
+                """
+                SELECT order_id, is_buy_order AS is_buy, price, volume_remain, volume_total,
+                       order_range AS range, location_id, issued
+                FROM market_orders
+                WHERE type_id = ? AND region_id = ?
+                ORDER BY is_buy_order DESC, price ASC
+                """,
+                [type_id, region_id],
+            )
+            sells = [o["price"] for o in order_rows if not o["is_buy"]]
+            buys = [o["price"] for o in order_rows if o["is_buy"]]
+            best_sell = min(sells) if sells else None
+            best_buy = max(buys) if buys else None
+        except Exception as exc:
+            logger.warning("Market orders query failed: %s", exc)
 
     ctx.update({
         "regions": regions,

@@ -34,7 +34,7 @@ def _build_catalog() -> list[dict]:
     jobs = []
 
     try:
-        from analysis.market.publicRegions import fetch_all_market_data
+        from analysis.market.regions import fetch_all_market_data
         jobs.append({
             "job_id": "market_refresh",
             "label": "Market Data Refresh",
@@ -46,7 +46,7 @@ def _build_catalog() -> list[dict]:
         logger.warning("[SchedulerJobs] Could not import market collector — skipping job")
 
     try:
-        from analysis.structures.publicDiscovery import discover_structures
+        from analysis.structures.discover import discover_structures
         jobs.append({
             "job_id": "structure_discovery",
             "label": "Structure Discovery",

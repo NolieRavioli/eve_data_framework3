@@ -652,7 +652,7 @@ def _cli() -> None:
 
 
 
-    from config import load_config, CONFIG_PATH
+    from core.config import load_config, CONFIG_PATH
 
     load_config(CONFIG_PATH)
 

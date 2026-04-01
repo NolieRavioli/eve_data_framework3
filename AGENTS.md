@@ -81,8 +81,8 @@ core/                    # ── INFRASTRUCTURE ──────────�
   plugin/
     __init__.py
     base.py              # BaseTool, ToolManifest (access_level, required_role, nav_section), ToolRegistry
-    ports.py             # Protocol interfaces: ESIPort, TokenPort, StoragePort, TaskPort, SDEPort, etc.
-    adapters.py          # _Live*Adapter singletons: esi, tokens, storage, tasks, raw_esi, sde, etc.
+    ports.py             # DELETED — Protocol stubs removed; adapters are the interface
+    adapters.py          # singletons: db, sde, raw_esi, token_resolution, esi, tokens, tasks, etc.
     web.py               # re-exports: base_ctx, require_login, require_admin, require_role
   web/                   # ── WEB FRAMEWORK ───────────────────────────────────
     __init__.py          # Flask app factory: create_app() — registers auth_bp + tool_registry
@@ -109,7 +109,7 @@ applications/            # ── USER-FACING TOOLS ─────────�
   __init__.py            # pkgutil auto-discovery of Tool instances
   _base.py               # re-exports: BaseTool, ToolManifest, base_ctx, require_login, require_admin
   _adapters.py           # re-exports adapter singletons from core.plugin.adapters
-  _ports.py              # re-exports Protocol interfaces from core.plugin.ports
+  _ports.py              # DELETED — no production usage
   dashboard/             # nav_section="overview" — character overview; templates/ has dashboard.html; auth.json: role="dashboard"
   queue_viewer/          # nav_section="tools"    — task progress + ESI rate SSE; auth.json: role="queue"
   admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; auth.json: minimum_level="admin"
@@ -484,8 +484,8 @@ The `ToolManifest.nav_section` field controls **where** the tool appears in the 
 Applications must **never** import from `core.*` directly. All framework access goes through:
 
 - **`applications._base`** — `BaseTool`, `ToolManifest`, `base_ctx`, `require_login`, `require_admin`, `require_role`
-- **`applications._adapters`** — adapter singletons: `esi`, `tokens`, `storage`, `tasks`, `raw_esi`, `sde`, `token_resolution`, `char_data`, `esi_registry`, `db_admin`, `esi_manifest`, `queue_info`
-- **`applications._ports`** — Protocol interfaces for type-checking
+- **`applications._adapters`** — adapter singletons: `db`, `sde`, `raw_esi`, `token_resolution`, `esi`, `tokens`, `tasks`, `char_data`, `esi_registry`, `db_admin`, `esi_manifest`, `queue_info`, `scheduler`
+- **`applications._ports`** — DELETED
 
 This keeps a clean architectural boundary between the application and infrastructure layers.
 
@@ -532,7 +532,7 @@ Tool = MyTool()
 # applications/my_tool/routes.py
 from flask import Blueprint, render_template
 from applications._base import base_ctx, require_login
-from applications._adapters import storage, sde
+from applications._adapters import db, sde
 
 my_bp = Blueprint("my_tool", __name__, template_folder="templates", static_folder="static")
 

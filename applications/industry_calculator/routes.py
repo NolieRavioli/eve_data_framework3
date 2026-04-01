@@ -7,7 +7,7 @@ import logging
 
 from flask import Blueprint, render_template, request
 
-from applications._adapters import storage
+from applications._adapters import db
 from applications._base import base_ctx, require_role
 
 logger = logging.getLogger(__name__)
@@ -62,14 +62,9 @@ def calc():
 
 
 def _get_regions() -> list[dict]:
-    con = storage.connect()
     try:
-        rows = con.execute(
-            "SELECT region_id, region_name FROM dim_regions ORDER BY region_name"
-        ).fetchall()
-        return [{"id": r[0], "name": r[1] or f"Region {r[0]}"} for r in rows]
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
     except Exception:
         return []
-    finally:
-        con.close()
 

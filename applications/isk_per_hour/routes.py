@@ -7,7 +7,7 @@ import logging
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from applications._adapters import storage, tasks
+from applications._adapters import db, tasks
 from applications._base import base_ctx, require_role
 
 logger = logging.getLogger(__name__)
@@ -70,9 +70,8 @@ def results():
 
     rows = []
     if region_id and category_id:
-        con = storage.connect()
         try:
-            raw = con.execute(
+            rows = db.query(
                 """
                 SELECT type_id, type_name, isk_per_run, isk_per_hour, margin_pct, computed_at
                 FROM isk_per_hour_results
@@ -80,22 +79,9 @@ def results():
                 ORDER BY isk_per_hour DESC
                 """,
                 [region_id, category_id],
-            ).fetchall()
-            rows = [
-                {
-                    "type_id": r[0],
-                    "type_name": r[1],
-                    "isk_per_run": r[2],
-                    "isk_per_hour": r[3],
-                    "margin_pct": r[4],
-                    "computed_at": r[5],
-                }
-                for r in raw
-            ]
+            )
         except Exception as exc:
             logger.warning("ISK/hr results query failed: %s", exc)
-        finally:
-            con.close()
 
     ctx.update({
         "regions": _get_regions(),
@@ -108,27 +94,17 @@ def results():
 
 
 def _get_regions() -> list[dict]:
-    con = storage.connect()
     try:
-        rows = con.execute(
-            "SELECT region_id, region_name FROM dim_regions ORDER BY region_name"
-        ).fetchall()
-        return [{"id": r[0], "name": r[1] or f"Region {r[0]}"} for r in rows]
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
     except Exception:
         return []
-    finally:
-        con.close()
 
 
 def _get_categories() -> list[dict]:
-    con = storage.connect()
     try:
-        rows = con.execute(
-            "SELECT category_id, name_en FROM dim_categories WHERE published = TRUE ORDER BY name_en"
-        ).fetchall()
-        return [{"id": r[0], "name": r[1] or f"Cat {r[0]}"} for r in rows]
+        rows = db.query("SELECT category_id, name_en FROM dim_categories WHERE published = TRUE ORDER BY name_en")
+        return [{"id": r["category_id"], "name": r["name_en"] or f"Cat {r['category_id']}"} for r in rows]
     except Exception:
         return []
-    finally:
-        con.close()
 
