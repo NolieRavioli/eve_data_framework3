@@ -10,7 +10,9 @@ import requests
 
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
-from core.plugin.adapters import raw_esi
+from core.queue.esi_req import esi_get as raw_esi_get
+import types as _types
+raw_esi = _types.SimpleNamespace(get=raw_esi_get)
 
 logger = logging.getLogger(__name__)
 

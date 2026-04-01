@@ -43,9 +43,11 @@ class RuntimeSettings:
     web_host: str = "127.0.0.1"
     web_port: int = 5000
     session_secret: str = DEFAULT_SECRET
-    log_level: str = "INFO"
     trace_esi: bool = False
-    console_log_level: str = "INFO"
+    # Python Console logging (console StreamHandler + per-logger overrides)
+    global_log_level: str = "INFO"
+    werkzeug_log_level: str = "INFO"
+    # Web Console logging (admin panel in-browser live log)
     admin_panel_log_level: str = "DEBUG"
 
 
@@ -70,11 +72,16 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             return _runtime_settings
 
         cfg = load_config(config_path)
-        runtime_cfg = cfg.get("Runtime", {}) if isinstance(cfg, dict) else {}
+        if not isinstance(cfg, dict):
+            cfg = {}
 
-        debug_mode = _as_bool(runtime_cfg.get("debug") or os.getenv("EVE_DEBUG"))
+        runtime_cfg   = cfg.get("Runtime", {}) or {}
+        py_console    = cfg.get("Python Console", {}) or {}
+        web_console   = cfg.get("Web Console", {}) or {}
+
+        debug_mode   = _as_bool(runtime_cfg.get("debug") or os.getenv("EVE_DEBUG"))
         auto_install = _as_bool(runtime_cfg.get("auto_install") or os.getenv("EVE_AUTO_INSTALL"))
-        trace_esi = _as_bool(runtime_cfg.get("trace_esi") or os.getenv("EVE_TRACE_ESI"))
+        trace_esi    = _as_bool(runtime_cfg.get("trace_esi") or os.getenv("EVE_TRACE_ESI"))
 
         web_host = runtime_cfg.get("host") or os.getenv("EVE_WEB_HOST", "127.0.0.1")
         web_port = int(runtime_cfg.get("port") or os.getenv("EVE_WEB_PORT", "5000"))
@@ -85,18 +92,32 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             or DEFAULT_SECRET
         )
 
-        log_level = (runtime_cfg.get("log_level") or os.getenv("EVE_LOG_LEVEL") or "INFO").upper()
-        console_log_level = (runtime_cfg.get("console_log_level") or os.getenv("EVE_CONSOLE_LOG_LEVEL") or "INFO").upper()
-        admin_panel_log_level = (runtime_cfg.get("admin_panel_log_level") or os.getenv("EVE_ADMIN_LOG_LEVEL") or "DEBUG").upper()
+        # ── Logging levels ────────────────────────────────────────────────────
+        def _level(value, env_var: str, default: str) -> str:
+            return (value or os.getenv(env_var) or default).upper()
 
+        global_log_level      = _level(py_console.get("global_log_level"),      "EVE_LOG_LEVEL",         "INFO")
+        werkzeug_log_level    = _level(py_console.get("werkzeug_log_level"),    "EVE_WERKZEUG_LOG_LEVEL", "INFO")
+        admin_panel_log_level = _level(web_console.get("admin_panel_global_log_level"), "EVE_ADMIN_LOG_LEVEL", "DEBUG")
+
+        # Extra per-logger overrides from "Python Console" — any key that isn't
+        # a known builtin is treated as "<logger_name>: LEVEL".
+        _BUILTIN_KEYS = {"global_log_level", "werkzeug_log_level"}
+        extra_loggers: dict[str, str] = {
+            k: v.upper()
+            for k, v in py_console.items()
+            if k not in _BUILTIN_KEYS and isinstance(v, str)
+        }
+
+        # ── Root logger + console StreamHandler ───────────────────────────────
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
-        # Use the real stdout so the StreamHandler bypasses _ThreadRoutedWriter.
-        # This prevents log records from being double-captured in the task log
-        # (once by _TaskLogHandler and again via StreamHandler->_ThreadRoutedWriter).
+        root_logger.setLevel(logging.DEBUG)  # root accepts everything; handler filters
+
+        # Use the real stdout so the StreamHandler bypasses _ThreadRoutedWriter,
+        # preventing double-capture in task logs.
         _real_stdout = getattr(sys.stdout, "_original", sys.stdout)
         _console_handler = logging.StreamHandler(_real_stdout)
-        _console_handler.setLevel(getattr(logging, console_log_level, logging.INFO))
+        _console_handler.setLevel(getattr(logging, global_log_level, logging.INFO))
         _console_handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         )
@@ -107,8 +128,19 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         ):
             root_logger.addHandler(_console_handler)
 
+        # ── Per-logger level overrides ─────────────────────────────────────────
+        # werkzeug is chatty; silence it to its own configured level.
+        logging.getLogger("werkzeug").setLevel(
+            getattr(logging, werkzeug_log_level, logging.INFO)
+        )
+        # Any extra loggers declared in the "Python Console" section.
+        for logger_name, level_str in extra_loggers.items():
+            logging.getLogger(logger_name).setLevel(
+                getattr(logging, level_str, logging.DEBUG)
+            )
+
         if debug_mode:
-            print(f"[Runtime] Debug mode enabled. Log level={log_level}")
+            print(f"[Runtime] Debug mode enabled. Console log level={global_log_level}")
         if trace_esi:
             print("[Runtime] ESI tracing is active. HTTP requests will be printed.")
 
@@ -118,9 +150,9 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             web_host=web_host,
             web_port=web_port,
             session_secret=session_secret,
-            log_level=log_level,
             trace_esi=trace_esi,
-            console_log_level=console_log_level,
+            global_log_level=global_log_level,
+            werkzeug_log_level=werkzeug_log_level,
             admin_panel_log_level=admin_panel_log_level,
         )
 
