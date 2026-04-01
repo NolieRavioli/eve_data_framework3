@@ -1,2 +1,4 @@
-# Ensure shell scripts always have LF line endings on all platforms.
+# Ensure shell scripts and YAML config always have LF line endings on all platforms.
 *.sh   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
