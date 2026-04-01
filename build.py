@@ -30,15 +30,15 @@ from pathlib import Path
 
 
 
-from config import load_config, CONFIG_PATH
+from core.config import load_config, CONFIG_PATH
 
 
 # Directories that are entirely auto-generated and safe to delete outright.
 _GENERATED_PACKAGES = [
     "core/esi/generated",
-    "collectors/personal_generatedESI",
-    "collectors/corp_generatedESI",
-    "collectors/public_generatedESI",
+    "core/esi/personal",
+    "core/esi/corp",
+    "core/esi/public",
 ]
 
 # Individual data files / directories to remove (auth files are preserved).
@@ -77,6 +77,11 @@ def _fullclean() -> None:
             shutil.rmtree(esi_specs)
             print(f"[fullclean] Removed {esi_specs}/")
 
+    # Remove all __pycache__ directories.
+    for cache_dir in sorted(Path(".").rglob("__pycache__"), reverse=True):
+        shutil.rmtree(cache_dir)
+        print(f"[fullclean] Removed {cache_dir}/")
+
     print("[fullclean] Done.")
 
 
@@ -97,7 +102,7 @@ def main() -> None:
 
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="Pin to a specific compatibility date.")
 
-    parser.add_argument("--fullclean", action="store_true", help="Delete all data and generated files, then do a full build.")
+    parser.add_argument("--fullclean", action="store_true", help="Delete all data and generated files (including __pycache__), then exit.")
 
     args = parser.parse_args()
 
@@ -113,7 +118,7 @@ def main() -> None:
 
         _fullclean()
 
-        # Fall through to a full build (all three steps).
+        sys.exit(0)
 
 
 

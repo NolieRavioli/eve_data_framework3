@@ -12,7 +12,7 @@ from typing import Optional
 
 from flask import Flask, redirect, request, url_for
 
-from config import RuntimeSettings, get_runtime_settings
+from core.config import RuntimeSettings, get_runtime_settings
 from core.web.auth import auth_bp
 from core.web.home import home_bp
 from core.web.setup import setup_bp
@@ -41,6 +41,14 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     # registers itself via the shared ToolRegistry.
     from applications import tool_registry
     tool_registry.register_blueprints(app)
+
+    # Start the background scheduler engine and register all catalog jobs.
+    # Import is deferred so collectors are importable at this point.
+    from core.scheduler import get_engine
+    from core.scheduler.jobs import register_all_jobs
+    _scheduler = get_engine()
+    register_all_jobs(_scheduler)
+    _scheduler.start()
 
     @app.before_request
     def _check_setup():

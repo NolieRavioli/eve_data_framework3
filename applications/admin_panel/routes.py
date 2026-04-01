@@ -20,7 +20,7 @@ from flask import (
     stream_with_context,
 )
 
-from applications._base import require_admin, base_ctx
+from applications._base import require_admin, base_ctx, get_runtime_settings
 from applications._adapters import db_admin, esi_registry
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ class _AdminLogHandler(logging.Handler):
 
 _handler = _AdminLogHandler()
 _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+_handler.setLevel(getattr(logging, get_runtime_settings().admin_panel_log_level, logging.DEBUG))
 logging.getLogger().addHandler(_handler)
 
 

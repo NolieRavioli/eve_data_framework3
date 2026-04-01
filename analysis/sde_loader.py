@@ -53,8 +53,6 @@ SDE_URL = "https://eve-static-data-export.s3-eu-west-1.amazonaws.com/tranquility
 SDE_PATH = Path(os.getenv("SDE_PATH", "_sde"))
 SDE_ZIP_PATH = Path("_sde_tmp.zip")
 
-RAW_BATCH_SIZE = 1000
-
 FIELDS_TO_CLEAN = [
     "name",
     "description",
@@ -153,26 +151,6 @@ def compute_source_tree_hash(source_root: str | Path) -> str:
 def _load_yaml_file(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return yaml.load(handle, Loader=_yaml_loader())
-
-
-def _insert_batches(
-    con: duckdb.DuckDBPyConnection,
-    sql: str,
-    rows: Iterable[tuple],
-    batch_size: int = RAW_BATCH_SIZE,
-) -> int:
-    batch: list[tuple] = []
-    total = 0
-    for row in rows:
-        batch.append(row)
-        if len(batch) >= batch_size:
-            con.executemany(sql, batch)
-            total += len(batch)
-            batch.clear()
-    if batch:
-        con.executemany(sql, batch)
-        total += len(batch)
-    return total
 
 
 def _copy_rows(
@@ -616,6 +594,10 @@ def _insert_dim_inv_positions(con: duckdb.DuckDBPyConnection, data: list[dict]) 
 # ---------------------------------------------------------------------------
 
 def _insert_universe(con: duckdb.DuckDBPyConnection, universe_root: Path) -> dict[str, int]:
+    inv_names: dict[int, str] = {
+        row[0]: row[1]
+        for row in con.execute("SELECT item_id, item_name FROM dim_inv_names").fetchall()
+    }
     region_rows: list[tuple] = []
     constellation_rows: list[tuple] = []
     system_rows: list[tuple] = []
@@ -637,7 +619,7 @@ def _insert_universe(con: duckdb.DuckDBPyConnection, universe_root: Path) -> dic
         x_min, y_min, z_min = _xyz(data.get("min"))
         x_max, y_max, z_max = _xyz(data.get("max"))
         region_rows.append((
-            region_id, region_dir.name, _as_int(data.get("factionID")),
+            region_id, inv_names.get(region_id), _as_int(data.get("factionID")),
             x, y, z, x_min, y_min, z_min, x_max, y_max, z_max, _to_json(data),
         ))
 
@@ -651,7 +633,7 @@ def _insert_universe(con: duckdb.DuckDBPyConnection, universe_root: Path) -> dic
         x_min, y_min, z_min = _xyz(data.get("min"))
         x_max, y_max, z_max = _xyz(data.get("max"))
         constellation_rows.append((
-            constellation_id, constellation_dir.name,
+            constellation_id, inv_names.get(constellation_id),
             region_dir_to_id.get(region_dir),
             x, y, z, x_min, y_min, z_min, x_max, y_max, z_max, _to_json(data),
         ))
@@ -670,7 +652,7 @@ def _insert_universe(con: duckdb.DuckDBPyConnection, universe_root: Path) -> dic
         x_min, y_min, z_min = _xyz(data.get("min"))
         x_max, y_max, z_max = _xyz(data.get("max"))
         system_rows.append((
-            system_id, system_dir.name, constellation_id, region_id,
+            system_id, inv_names.get(system_id), constellation_id, region_id,
             _as_float(data.get("security")), _as_int(data.get("sunTypeID")),
             _as_bool(data.get("border")), _as_bool(data.get("corridor")),
             _as_bool(data.get("fringe")), _as_bool(data.get("hub")),
@@ -876,13 +858,12 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
         _progress_print("[SDE] pruning language maps skipped (no yaml files)", final=True)
         return
     _progress_print(f"[SDE] pruning language maps 0/{len(yaml_paths)}")
-    loader = getattr(yaml, "CLoader", yaml.SafeLoader)
     for index, path in enumerate(yaml_paths, start=1):
         relative_path = path.relative_to(fsd_dir).as_posix()
         _progress_print(f"[SDE] pruning language maps {index}/{len(yaml_paths)} {relative_path}")
         try:
             with path.open("r", encoding="utf-8") as handle:
-                data = yaml.load(handle, Loader=loader)
+                data = yaml.load(handle, Loader=_yaml_loader())
             cleaned = clean_multilang_fields(data)
             with path.open("w", encoding="utf-8") as handle:
                 yaml.safe_dump(cleaned, handle, allow_unicode=True)

@@ -45,6 +45,8 @@ class RuntimeSettings:
     session_secret: str = DEFAULT_SECRET
     log_level: str = "INFO"
     trace_esi: bool = False
+    console_log_level: str = "INFO"
+    admin_panel_log_level: str = "DEBUG"
 
 
 _runtime_settings: Optional[RuntimeSettings] = None
@@ -84,6 +86,8 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         )
 
         log_level = (runtime_cfg.get("log_level") or os.getenv("EVE_LOG_LEVEL") or "INFO").upper()
+        console_log_level = (runtime_cfg.get("console_log_level") or os.getenv("EVE_CONSOLE_LOG_LEVEL") or "INFO").upper()
+        admin_panel_log_level = (runtime_cfg.get("admin_panel_log_level") or os.getenv("EVE_ADMIN_LOG_LEVEL") or "DEBUG").upper()
 
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
@@ -92,7 +96,7 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         # (once by _TaskLogHandler and again via StreamHandler->_ThreadRoutedWriter).
         _real_stdout = getattr(sys.stdout, "_original", sys.stdout)
         _console_handler = logging.StreamHandler(_real_stdout)
-        _console_handler.setLevel(logging.DEBUG)
+        _console_handler.setLevel(getattr(logging, console_log_level, logging.INFO))
         _console_handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         )
@@ -116,6 +120,8 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             session_secret=session_secret,
             log_level=log_level,
             trace_esi=trace_esi,
+            console_log_level=console_log_level,
+            admin_panel_log_level=admin_panel_log_level,
         )
 
         return _runtime_settings

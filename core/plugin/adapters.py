@@ -1,7 +1,19 @@
-"""Concrete adapters that wire the port interfaces to the live project infrastructure.
+"""Concrete adapters that wire the live project infrastructure to the plugin layer.
 
-Module-level singletons (esi, tokens, storage, tasks, raw_esi, sde, token_resolution,
-char_data, esi_registry, db_admin, esi_manifest, queue_info) are imported by tool modules.
+Module-level singletons imported by application and analysis modules:
+    db              — parameterised DuckDB + SQLite query helpers
+    sde             — in-memory SDE cache (the core.sde module itself)
+    raw_esi         — direct ESI HTTP (rate-limited)
+    token_resolution — token refresh helpers for collectors
+    esi             — typed ESI client (auto-generated)
+    tokens          — raw token map access
+    tasks           — background task enqueue
+    char_data       — per-character private SQLite reads
+    esi_registry    — ESI spec registry status
+    db_admin        — administrative DuckDB/SQLite operations
+    esi_manifest    — auto-generated ESI operation manifest
+    queue_info      — task queue state + SSE streams
+    scheduler       — background job scheduler control
 """
 
 from __future__ import annotations
@@ -15,9 +27,117 @@ from core.db import publicDB
 from core.queue.scheduler import enqueue as _enqueue
 from core.esi.auth import get_token
 
+# The SDE module is its own clean API — expose it directly.
+import core.sde as sde  # noqa: F401 — re-exported as singleton below
+
 
 # ---------------------------------------------------------------------------
-# ESI adapter (typed client)
+# DB adapter — connection-lifecycle-aware query helpers
+# ---------------------------------------------------------------------------
+
+class _LiveDBAdapter:
+    """Parameterised query helpers that own the connection lifecycle.
+
+    Use ``query``, ``query_one``, or ``scalar`` for straightforward reads.
+    Use ``connect()`` as an escape hatch for complex/transactional work.
+    """
+
+    def connect(self) -> Any:
+        """Return a fresh DuckDB connection. Caller is responsible for closing."""
+        return publicDB.connect()
+
+    def query(self, sql: str, params: list | None = None) -> list[dict]:
+        """Execute *sql* against the public DuckDB and return rows as dicts."""
+        con = publicDB.connect()
+        try:
+            cur = con.execute(sql, params or [])
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            con.close()
+
+    def query_one(self, sql: str, params: list | None = None) -> dict | None:
+        """Return the first row as a dict, or None if no results."""
+        rows = self.query(sql, params)
+        return rows[0] if rows else None
+
+    def scalar(self, sql: str, params: list | None = None) -> Any:
+        """Return the first column of the first row, or None."""
+        con = publicDB.connect()
+        try:
+            row = con.execute(sql, params or []).fetchone()
+            return row[0] if row is not None else None
+        finally:
+            con.close()
+
+    def private_query(self, owner_id: int, sql: str, params: list | None = None) -> list[dict]:
+        """Execute *sql* against the owner's private SQLite and return rows as dicts."""
+        from core.db.privateDB import get_private_session
+        import sqlalchemy as sa
+        session = get_private_session(owner_id)
+        try:
+            with session.bind.connect() as con:
+                cur = con.execute(sa.text(sql), params or {})
+                cols = list(cur.keys())
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            session.close()
+
+    def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
+        """Best current price for *type_id* in *region_id*.
+
+        buy=False → cheapest sell order; buy=True → highest buy order.
+        Returns None when no orders exist.
+        """
+        if buy:
+            return self.scalar(
+                "SELECT MAX(price) FROM market_orders WHERE type_id = ? AND region_id = ? AND is_buy_order = TRUE",
+                [type_id, region_id],
+            )
+        return self.scalar(
+            "SELECT MIN(price) FROM market_orders WHERE type_id = ? AND region_id = ? AND is_buy_order = FALSE",
+            [type_id, region_id],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Raw ESI adapter (direct HTTP, rate-limited)
+# ---------------------------------------------------------------------------
+
+class _LiveRawESIAdapter:
+    def get(self, url: str, **kwargs) -> requests.Response:
+        from core.queue.esi_req import esi_get
+        return esi_get(url, **kwargs)
+
+    def post(self, url: str, **kwargs) -> requests.Response:
+        from core.queue.esi_req import esi_post
+        return esi_post(url, **kwargs)
+
+    def request(self, method: str, url: str, **kwargs) -> requests.Response:
+        from core.queue.esi_req import esi_request
+        return esi_request(method, url, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Token resolution adapter (collector auth helpers)
+# ---------------------------------------------------------------------------
+
+class _LiveTokenResolutionAdapter:
+    def resolve_default_owner_id(self) -> int | None:
+        from core.esi.auth import resolve_default_owner_id
+        return resolve_default_owner_id()
+
+    def pick_token(self, owner_id: int) -> tuple[int, dict]:
+        from core.esi.auth import pick_token
+        return pick_token(owner_id)
+
+    def fresh_token(self, owner_id: int, char_id: int, token_data: dict) -> tuple[int, dict]:
+        from core.esi.auth import fresh_token
+        return fresh_token(owner_id, char_id, token_data)
+
+
+# ---------------------------------------------------------------------------
+# ESI adapter (typed auto-generated client)
 # ---------------------------------------------------------------------------
 
 class _LiveESIAdapter:
@@ -55,7 +175,7 @@ class _LiveESIAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Token adapter
+# Token adapter (raw token map access)
 # ---------------------------------------------------------------------------
 
 class _LiveTokenAdapter:
@@ -64,168 +184,12 @@ class _LiveTokenAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Storage adapter
-# ---------------------------------------------------------------------------
-
-class _LiveStorageAdapter:
-    def connect(self) -> Any:
-        return publicDB.connect()
-
-    def market_price(
-        self,
-        type_id: int,
-        region_id: int,
-        buy: bool = False,
-    ) -> float | None:
-        con = publicDB.connect()
-        try:
-            if buy:
-                row = con.execute(
-                    """
-                    SELECT MAX(price) FROM market_orders
-                    WHERE type_id = ? AND region_id = ? AND is_buy_order = TRUE
-                    """,
-                    [type_id, region_id],
-                ).fetchone()
-            else:
-                row = con.execute(
-                    """
-                    SELECT MIN(price) FROM market_orders
-                    WHERE type_id = ? AND region_id = ? AND is_buy_order = FALSE
-                    """,
-                    [type_id, region_id],
-                ).fetchone()
-            return row[0] if row and row[0] is not None else None
-        finally:
-            con.close()
-
-    def type_name(self, type_id: int) -> str:
-        con = publicDB.connect()
-        try:
-            row = con.execute(
-                "SELECT name_en FROM dim_types WHERE type_id = ?",
-                [type_id],
-            ).fetchone()
-            return row[0] if row and row[0] else f"Type {type_id}"
-        except Exception:
-            return f"Type {type_id}"
-        finally:
-            con.close()
-
-    def region_name(self, region_id: int) -> str:
-        con = publicDB.connect()
-        try:
-            row = con.execute(
-                "SELECT region_name FROM dim_regions WHERE region_id = ?",
-                [region_id],
-            ).fetchone()
-            return row[0] if row and row[0] else f"Region {region_id}"
-        except Exception:
-            return f"Region {region_id}"
-        finally:
-            con.close()
-
-
-# ---------------------------------------------------------------------------
 # Task adapter
 # ---------------------------------------------------------------------------
 
 class _LiveTaskAdapter:
-    def enqueue(
-        self,
-        name: str,
-        fn,
-        *args,
-        owner_id: int = 0,
-        queue: str = "public",
-    ) -> str:
+    def enqueue(self, name: str, fn, *args, owner_id: int = 0, queue: str = "public") -> str:
         return _enqueue(name, fn, *args, owner_id=owner_id, queue=queue)
-
-
-# ---------------------------------------------------------------------------
-# Raw ESI adapter (direct HTTP)
-# ---------------------------------------------------------------------------
-
-class _LiveRawESIAdapter:
-    def get(self, url: str, **kwargs) -> requests.Response:
-        from core.queue.esi_req import esi_get
-        return esi_get(url, **kwargs)
-
-    def post(self, url: str, **kwargs) -> requests.Response:
-        from core.queue.esi_req import esi_post
-        return esi_post(url, **kwargs)
-
-    def request(self, method: str, url: str, **kwargs) -> requests.Response:
-        from core.queue.esi_req import esi_request
-        return esi_request(method, url, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# SDE cache adapter
-# ---------------------------------------------------------------------------
-
-class _LiveSDEAdapter:
-    def name_from_type_id(self, type_id: int) -> str:
-        from core.sde import name_from_type_id
-        return name_from_type_id(type_id)
-
-    def type_id_from_name(self, name: str) -> int | None:
-        from core.sde import type_id_from_name
-        return type_id_from_name(name)
-
-    def region_id_from_system_id(self, system_id: int) -> int | None:
-        from core.sde import region_id_from_system_id
-        return region_id_from_system_id(system_id)
-
-    def system_name_from_id(self, system_id: int) -> str:
-        from core.sde import system_name_from_id
-        return system_name_from_id(system_id)
-
-    def region_name_from_id(self, region_id: int) -> str:
-        from core.sde import region_name_from_id
-        return region_name_from_id(region_id)
-
-    def security_from_system_id(self, system_id: int) -> float | None:
-        from core.sde import security_from_system_id
-        return security_from_system_id(system_id)
-
-    def suggest_type_names(self, prefix: str, limit: int = 10) -> list[str]:
-        from core.sde import suggest_type_names
-        return suggest_type_names(prefix, limit)
-
-    def blueprint_for_type(self, type_id: int) -> dict | None:
-        from core.sde import blueprint_for_type
-        return blueprint_for_type(type_id)
-
-    def reprocess_materials(self, type_id: int) -> list[dict]:
-        from core.sde import reprocess_materials
-        return reprocess_materials(type_id)
-
-    def group_id_from_type_id(self, type_id: int) -> int | None:
-        from core.sde import group_id_from_type_id
-        return group_id_from_type_id(type_id)
-
-    def category_id_from_type(self, type_id: int) -> int | None:
-        from core.sde import category_id_from_type
-        return category_id_from_type(type_id)
-
-
-# ---------------------------------------------------------------------------
-# Token resolution adapter
-# ---------------------------------------------------------------------------
-
-class _LiveTokenResolutionAdapter:
-    def resolve_default_owner_id(self) -> int | None:
-        from core.esi.auth import resolve_default_owner_id
-        return resolve_default_owner_id()
-
-    def pick_token(self, owner_id: int) -> tuple[int, dict]:
-        from core.esi.auth import pick_token
-        return pick_token(owner_id)
-
-    def fresh_token(self, owner_id: int, char_id: int, token_data: dict) -> tuple[int, dict]:
-        from core.esi.auth import fresh_token
-        return fresh_token(owner_id, char_id, token_data)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +232,7 @@ class _LiveESIRegistryAdapter:
 
 
 # ---------------------------------------------------------------------------
-# DB admin adapter
+# DB admin adapter (for db_browser and admin_panel)
 # ---------------------------------------------------------------------------
 
 class _LiveDBAdminAdapter:
@@ -320,11 +284,7 @@ class _LiveESIManifestAdapter:
         return OPERATIONS.get(op_id)
 
     def get_meta(self) -> dict:
-        from core.esi.generated.manifest import (
-            COMPATIBILITY_DATE,
-            OPERATION_COUNT,
-            ALL_SCOPES,
-        )
+        from core.esi.generated.manifest import COMPATIBILITY_DATE, OPERATION_COUNT, ALL_SCOPES
         return {
             "compatibility_date": COMPATIBILITY_DATE,
             "operation_count": OPERATION_COUNT,
@@ -372,18 +332,40 @@ class _LiveQueueInfoAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singletons — import these in tool modules
+# Scheduler adapter
 # ---------------------------------------------------------------------------
 
+class _LiveSchedulerAdapter:
+    def list_jobs(self) -> list[dict]:
+        from core.scheduler import get_engine
+        return get_engine().list_jobs()
+
+    def set_enabled(self, job_id: str, enabled: bool) -> None:
+        from core.scheduler import get_engine
+        get_engine().set_enabled(job_id, enabled)
+
+    def run_now(self, job_id: str) -> str:
+        from core.scheduler import get_engine
+        return get_engine().run_now(job_id)
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons
+# ---------------------------------------------------------------------------
+
+db: _LiveDBAdapter = _LiveDBAdapter()
+# sde is the core.sde module itself (imported at top) — identical public API, zero indirection
+raw_esi: _LiveRawESIAdapter = _LiveRawESIAdapter()
+token_resolution: _LiveTokenResolutionAdapter = _LiveTokenResolutionAdapter()
 esi: _LiveESIAdapter = _LiveESIAdapter()
 tokens: _LiveTokenAdapter = _LiveTokenAdapter()
-storage: _LiveStorageAdapter = _LiveStorageAdapter()
 tasks: _LiveTaskAdapter = _LiveTaskAdapter()
-raw_esi: _LiveRawESIAdapter = _LiveRawESIAdapter()
-sde: _LiveSDEAdapter = _LiveSDEAdapter()
-token_resolution: _LiveTokenResolutionAdapter = _LiveTokenResolutionAdapter()
 char_data: _LiveCharacterDataAdapter = _LiveCharacterDataAdapter()
 esi_registry: _LiveESIRegistryAdapter = _LiveESIRegistryAdapter()
 db_admin: _LiveDBAdminAdapter = _LiveDBAdminAdapter()
 esi_manifest: _LiveESIManifestAdapter = _LiveESIManifestAdapter()
 queue_info: _LiveQueueInfoAdapter = _LiveQueueInfoAdapter()
+scheduler: _LiveSchedulerAdapter = _LiveSchedulerAdapter()
+
+# Backward-compat alias — migrate callers to `db`, then remove
+storage = db

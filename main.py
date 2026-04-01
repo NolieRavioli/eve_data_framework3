@@ -1,7 +1,7 @@
 import atexit
 import logging
 
-from config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
+from core.config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
 from core.db import initialize_all
 from core.queue.writer import start_writer, stop_writer
 from core.web.app import start_webUI

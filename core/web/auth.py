@@ -26,7 +26,7 @@ from core.db.privateDB import get_private_session
 from core.db.models import Character
 import core.db.publicDB as sde_store
 from core.esi.auth import CredentialManager, TokenDBManager
-from config import RuntimeSettings, get_runtime_settings
+from core.config import RuntimeSettings, get_runtime_settings
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
@@ -96,7 +96,7 @@ def _get_default_roles() -> list[str]:
     global _cached_default_roles
     if _cached_default_roles is None:
         try:
-            from config import load_config, CONFIG_PATH
+            from core.config import load_config, CONFIG_PATH
             cfg = load_config(CONFIG_PATH)
             _cached_default_roles = list(cfg.get("Auth", {}).get("default_roles", ["dashboard", "queue"]))
         except Exception:
@@ -316,6 +316,19 @@ def callback():
             session["is_admin"]      = admin_record is not None
             session["is_site_owner"] = bool(admin_record and admin_record.get("is_site_owner"))
             session["roles"]         = sde_store.get_user_roles(owner_id)
+
+        # Kick off async character data collection.  The token is already stored
+        # so the collector can fetch it; this runs in the background and does not
+        # block the redirect.
+        from core.queue.scheduler import enqueue as _enqueue
+        from analysis.character.populate import populate_all
+        _enqueue(
+            "Populate Character",
+            populate_all,
+            owner_id,
+            owner_id=owner_id,
+            queue="private",
+        )
 
         if _settings.debug_mode:
             print(

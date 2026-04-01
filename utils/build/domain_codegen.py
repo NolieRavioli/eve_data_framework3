@@ -432,7 +432,7 @@ def _render_init(date: str, scope: str) -> str:
 
     return (
 
-        f'"""esi/{scope}/ — AUTO-GENERATED collector package. Do not edit.\n'
+        f'"""core/esi/{scope}/ — AUTO-GENERATED ESI domain wrappers. Do not edit.\n'
 
         f"Regenerate: python build.py --collectors --force\n"
 
@@ -458,13 +458,11 @@ def _render_init(date: str, scope: str) -> str:
 
 def collectors_are_current(date: str) -> bool:
 
-    """Return True if all three collector packages match ``date``."""
+    """Return True if all three ESI domain packages match ``date``."""
 
-    _SCOPE_DIR = {"personal": "personal_generatedESI", "corp": "corp_generatedESI", "public": "public_generatedESI"}
+    for scope in ("personal", "corp", "public"):
 
-    for scope, dirname in _SCOPE_DIR.items():
-
-        init = Path(f"collectors/{dirname}/__init__.py")
+        init = Path(f"core/esi/{scope}/__init__.py")
 
         if not init.exists():
 
@@ -542,7 +540,7 @@ def generate_collectors(
 
         print(
 
-            f"[collector_codegen] collectors/personal_generatedESI|corp_generatedESI|public_generatedESI/ already at {date} — nothing to do. "
+            f"[collector_codegen] core/esi/personal|corp|public/ already at {date} — nothing to do. "
 
             "Use force=True to regenerate."
 
@@ -582,11 +580,9 @@ def generate_collectors(
 
 
 
-    _SCOPE_DIR = {"personal": "personal_generatedESI", "corp": "corp_generatedESI", "public": "public_generatedESI"}
-
     for scope, tags in buckets.items():
 
-        pkg_dir = Path(f"collectors/{_SCOPE_DIR[scope]}")
+        pkg_dir = Path(f"core/esi/{scope}")
 
         pkg_dir.mkdir(parents=True, exist_ok=True)
 
@@ -656,7 +652,7 @@ def _cli() -> None:
 
 
 
-    from config import load_config, CONFIG_PATH
+    from core.config import load_config, CONFIG_PATH
 
     load_config(CONFIG_PATH)
 

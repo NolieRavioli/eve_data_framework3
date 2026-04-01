@@ -18,7 +18,7 @@ from datetime import datetime
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.plugin.adapters import raw_esi, sde, token_resolution
-from config import CONFIG_PATH, load_config
+from core.config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +32,26 @@ def ensure_tables(con) -> None:
     """Idempotent DDL for the structures table."""
     con.execute("""
         CREATE TABLE IF NOT EXISTS structures (
-            structure_id BIGINT PRIMARY KEY,
+            structure_id    BIGINT PRIMARY KEY,
             solar_system_id BIGINT,
-            region_id BIGINT,
-            owner_id BIGINT,
-            name VARCHAR,
-            type_id BIGINT,
-            position_json VARCHAR,
-            last_seen TIMESTAMP
+            region_id       BIGINT,
+            owner_id        BIGINT,
+            name            VARCHAR,
+            type_id         BIGINT,
+            position_json   VARCHAR,
+            last_seen       TIMESTAMP
         )
     """)
+
+
+def ensure_columns(con) -> None:
+    """Add enrichment cooldown columns to the structures table.
+
+    Called before the enrichment phase so that these columns exist only
+    when the enrichment logic actually needs them.
+    """
+    con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS forbidden_until TIMESTAMP")
+    con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS enrich_refreshed_until TIMESTAMP")
 
 
 # ── config helpers ────────────────────────────────────────────────────────────
@@ -116,10 +126,11 @@ def discover_structures(owner_id: int | None = None) -> None:
         logger.error("[DiscoverStructures] No owner available for authentication; aborting.")
         return
 
-    # Ensure our table exists before any writes
+    # Ensure our table and enrichment columns exist before any writes
     con = public_connect(read_only=False)
     try:
         ensure_tables(con)
+        ensure_columns(con)
     finally:
         con.close()
 

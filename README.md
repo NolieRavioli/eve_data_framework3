@@ -227,7 +227,7 @@ The Flask app (`core/web/`) registers the `auth_bp` blueprint plus all auto-disc
 
 ## 13. Development Tips
 
-- **Running the app**: `python main.py` — default `http://127.0.0.1:5000`. Override host/port with `EVE_WEB_HOST` / `EVE_WEB_PORT`.
+- **Running the app**: `python main.py` — default `http://127.0.0.1:5000`. Override host/port with `EVE_WEB_HOST` / `EVE_WEB_PORT`, or set `host`/`port` under `Runtime:` in `config.yaml`. Replace `127.0.0.1` with `0.0.0.0` in `config.yaml` to accept remote connections.
 - **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
 - **Adding a collector**: create `collectors/<domain>/` — see AGENTS.md for the full pattern.
 - **Adding an application**: create `applications/<name>/` with an `auth.json` — see AGENTS.md for the full pattern.

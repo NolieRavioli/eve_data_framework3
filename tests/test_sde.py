@@ -33,7 +33,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Patch config so SDELoader uses our temp dir rather than the live DB.
-        import config as _config
+        import core.config as _config
         cls._orig_env = {k: os.environ.get(k) for k in ("PUBLIC_DATA_FOLDER",)}
         cls._tmp_dir = tempfile.TemporaryDirectory()
         os.environ["PUBLIC_DATA_FOLDER"] = cls._tmp_dir.name
@@ -41,7 +41,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
         cls._db_file = str(Path(cls._tmp_dir.name) / "test_sde.duckdb")
 
-        from collectors.sde_loader import build_sde_warehouse
+        from analysis.sde_loader import build_sde_warehouse
         build_sde_warehouse(
             database_file=cls._db_file,
             source_root=str(SDE_ROOT),

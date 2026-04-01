@@ -721,6 +721,7 @@ DungeonID = int
 class Error(TypedDict, total=False):
     details: list[Any]  # required=False
     error: str  # required=True
+    status: int  # required=True
 
 class ErrorDetail(TypedDict, total=False):
     location: str  # required=False

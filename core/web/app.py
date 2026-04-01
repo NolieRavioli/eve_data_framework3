@@ -3,7 +3,7 @@
 
 from typing import Optional
 
-from config import RuntimeSettings, get_runtime_settings
+from core.config import RuntimeSettings, get_runtime_settings
 from core.web import create_app
 
 
