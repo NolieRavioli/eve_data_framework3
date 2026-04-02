@@ -36,7 +36,7 @@ function runNow(btn) {
     .then(data => {
       if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Run Now'; return; }
       if (data.task_id) {
-        window.location.href = '/queue?' + new URLSearchParams({ task_id: data.task_id });
+        window.location.href = '/queue/' + data.task_id;
       } else {
         btn.disabled = false;
         btn.textContent = 'Run Now';

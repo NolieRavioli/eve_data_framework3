@@ -102,6 +102,15 @@
       gap: 0.75rem;
       padding: 0.25rem 0.1rem 0.6rem;
       border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+
+    a.sidebar-head:hover .brand-mark {
+      border-color: var(--accent);
+    }
+
+    a.sidebar-head:hover .brand-copy .name {
+      color: var(--accent);
     }
 
     .brand-mark {
@@ -886,13 +895,13 @@
   <button class="nav-overlay" type="button" aria-label="Close menu" data-nav-close></button>
 
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head">
+    <a class="sidebar-head" href="/" style="text-decoration:none">
       <div class="brand-mark">ED</div>
       <div class="brand-copy">
         <span class="kicker">EVE Data</span>
         <span class="name">Framework</span>
       </div>
-    </div>
+    </a>
 
     {% if base_logged_in %}
     <a class="sidebar-profile" href="{{ url_for('dashboard.home') }}">
@@ -922,18 +931,6 @@
       </div>
       {% endif %}
 
-      {% if base_logged_in and tools_nav %}
-      <div class="nav-group">
-        <div class="nav-label">Tools</div>
-        {% for tool in tools_nav %}
-        <a href="{{ tool.url_prefix }}/"
-           class="nav-link {{ 'active' if active_page == tool.id else '' }}">
-          <span class="nav-ic">{{ tool.icon }}</span><span>{{ tool.name }}</span>
-        </a>
-        {% endfor %}
-      </div>
-      {% endif %}
-
       {% if base_logged_in and apps_nav %}
       <div class="nav-group">
         <div class="nav-label">Apps</div>
@@ -946,6 +943,18 @@
           <span class="nav-ic">{{ tool.icon }}</span>
           <span>{{ tool.name }}</span>
           {% if not ok %}<span class="bdg bdg-warn" style="margin-left:auto;font-size:0.58rem">Scopes</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if base_logged_in and tools_nav %}
+      <div class="nav-group">
+        <div class="nav-label">Tools</div>
+        {% for tool in tools_nav %}
+        <a href="{{ tool.url_prefix }}/"
+           class="nav-link {{ 'active' if active_page == tool.id else '' }}">
+          <span class="nav-ic">{{ tool.icon }}</span><span>{{ tool.name }}</span>
         </a>
         {% endfor %}
       </div>

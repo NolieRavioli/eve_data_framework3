@@ -96,6 +96,7 @@ def _writer_loop(db_path: Path) -> None:
                     con.executemany(op.sql, op.rows)
             else:
                 con.execute(op.sql, op.params or [])
+            con.execute("CHECKPOINT")
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             op.error = exc
@@ -175,6 +176,7 @@ def _fallback_write(sql: str, params: list[Any] | None) -> None:
     con = connect(get_database_path())
     try:
         con.execute(sql, params or [])
+        con.execute("CHECKPOINT")
     finally:
         con.close()
 
@@ -186,6 +188,7 @@ def _fallback_executemany(sql: str, rows: list[Sequence[Any]]) -> None:
     try:
         if rows:
             con.executemany(sql, rows)
+            con.execute("CHECKPOINT")
     finally:
         con.close()
 

@@ -30,7 +30,9 @@ from __future__ import annotations
 import logging
 
 from core.db.privateDB import get_private_session, initialize_private_database
-from core.plugin.adapters import token_resolution
+from core.esi.auth import pick_token as _pick_token, fresh_token as _fresh_token
+import types as _types
+token_resolution = _types.SimpleNamespace(pick_token=_pick_token, fresh_token=_fresh_token)
 
 logger = logging.getLogger(__name__)
 

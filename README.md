@@ -1,254 +1,690 @@
-# EVE Data Framework 3
+# EVE Data Framework
 
-EVE Data Framework 3 is a self-hosted operations hub for EVE Online. It provisions a shared DuckDB warehouse and per-owner private SQLite databases, manages EVE SSO authentication, schedules background work through a live-streaming task queue, and renders a Flask web dashboard.
+A self-hosted web application and data platform for EVE Online. The framework provides:
 
-The codebase is layered into **core infrastructure** (`core/`), **data collectors** (`collectors/`), **user-facing applications** (`applications/`), and a **web layer** (`core/web/`). Legacy import paths (`db/`, `esi/`, `sde.py`, `tasks/`, `workers/`) are thin forwarding shims — new code should import from `core.*` or `collectors.*`.
-
----
-
-## 1. High-Level Workflow
-
-1. **Runtime bootstrap (`main.py`)**
-   - Loads `config.yaml`, configures logging, and surfaces runtime toggles via `config.initialize_runtime_environment`.
-   - Optionally auto-installs missing packages if `Runtime.auto_install` is set.
-   - Ensures the shared DuckDB warehouse is ready via `core.db.ensure_public_database()`.
-   - Loads SDE lookup caches into memory via `core.sde.startup_load_sde()`.
-   - Launches the Flask application created in `core.web.create_app`.
-
-2. **Web UI (`core/web/`)**
-   - Application blueprints are auto-discovered via `pkgutil` from `applications/` and registered automatically.
-   - The `auth_bp` (SSO) blueprint handles EVE SSO login, callback, and logout.
-   - The `ToolRegistry` handles sidebar visibility and access-level checks for each registered tool.
-
-3. **Background tasks (`core/queue/manager.py`)**
-   - Long-running work is submitted via `enqueue()` into two single-threaded executor queues (`queue="public"` and `queue="private"`).
-   - Both `logging` output and `print()` from worker threads are captured and streamed live to the browser via SSE (`/stream/<task_id>`).
-
-4. **ESI access**
-   - All HTTP to ESI goes through `core/queue/esi_req.py`, which enforces the floating-window token-bucket rate limit, handles caching, and fires SSE events that update the live rate card in the task view.
-   - `esi/client/` is an auto-generated typed client for all 208 ESI operations derived from the OpenAPI spec.
-
-5. **Storage**
-   - Shared public and SDE data live in `_publicData/public.duckdb`.
-   - Each account owner gets a dedicated SQLite database in `_privateData/<owner_id>/<owner_id>.db`.
+- **EVE SSO authentication** — multi-character OAuth 2.0 with Fernet-encrypted token storage
+- **Shared DuckDB warehouse** — SDE dimension tables, live market orders, structure data, and ESI spec metadata
+- **Per-character private SQLite databases** — skills, wallet, assets, and token credentials per owner
+- **Background task queue** — two FIFO executor queues with live SSE log streaming to the browser
+- **Cron-style scheduler** — recurring background jobs for market/structure/character data collection
+- **Auto-discovered Flask applications** — pluggable web tools with role-based access control
 
 ---
 
-## 2. Configuration
+## Table of Contents
 
-All runtime knobs live in `config.yaml`. The file has these sections:
-
-- **Environment Variables** — copied into `os.environ` on startup. Contains `LANGUAGE`, `SUPPORTED_LANGUAGES`, `PUBLIC_DATA_FOLDER`, `EVE_PRIVATE_DATABASE_FOLDER`, and `SDE_PATH`. Absent variables also accept env-var overrides.
-- **Runtime** — optional block that maps to `config.RuntimeSettings`. Keys include `debug`, `auto_install`, `host`, `port`, `log_level`, `trace_esi`, and `secret_key`. All fall back to sane defaults or the environment variables `EVE_DEBUG`, `EVE_WEB_PORT`, `EVE_LOG_LEVEL`, etc.
-- **SDE** — toggles for each SDE dataset loaded at startup. Set a flag to `false` to skip loading that dataset (it will lazy-load on first use). The `database_file` key sets the DuckDB path.
-- **Structures** — cooldown-day settings that control how long inaccessible structures are skipped during enrichment and market collection.
-- **Auth** — role configuration. `default_roles` is a list of role names automatically granted to every new user on their first login (e.g. `[dashboard, queue]`).
-
----
-
-## 3. Dependency Management
-
-`requirements.txt` lists the supported dependency set. On startup, `ensure_dependencies` checks that required modules are importable. If `auto_install` is true, a missing module triggers `pip install -r requirements.txt` in place.
-
----
-
-## 4. Database Architecture
-
-### 4.1 Shared Warehouse (`_publicData/public.duckdb`)
-
-This DuckDB file holds all public and SDE data:
-
-- **SDE marts**: `dim_types`, `dim_groups`, `dim_categories`, `dim_market_groups`, `dim_systems`, `dim_stargates`, `fact_blueprints`, dogma/material tables, and SDE manifest tables.
-- **Identity tables**: `users`, `site_admins`, `user_roles` — owned by `core/db/publicDB.py`.
-- **Domain tables**: `structures`, `market_orders`, `market_structures`, `market_region_cooldowns`, `isk_per_hour_results` — owned by their respective collectors/applications.
-- **ESI spec metadata**: `esi_routes`, `esi_schemas`, `esi_scopes` — populated by `core/esi/registry.py`.
-
-Access: `core.db.publicDB.connect()` returns a fresh `duckdb.DuckDBPyConnection`. Always get a new connection per thread; DuckDB connections are not thread-safe.
-
-#### Decentralised Table Ownership
-
-Each collector (or application) owns the DDL for its tables via an `ensure_tables(con)` function called before any writes. Core infrastructure only creates identity tables and views. See [AGENTS.md](AGENTS.md) for the full ownership table and enrichment pattern.
-
-### 4.2 Private Databases (`_privateData/<owner_id>/<owner_id>.db`)
-
-When a character first authenticates, `core.db.privateDB.initialize_private_database(owner_id)` provisions a dedicated SQLite database for that owner. It currently stores:
-
-- Character identity and OAuth tokens (`characters` table via `PrivateBase`).
-
-Future per-character data (assets, wallet, industry jobs, skills, etc.) will be added here as new `PrivateBase` models. Sessions are obtained via `core.db.privateDB.get_private_session(owner_id)`. SQLite is configured with WAL mode, `synchronous=NORMAL`, a 30 s busy timeout, and `foreign_keys=ON`.
+1. [Installation](#installation)
+2. [First-Run Setup](#first-run-setup)
+3. [Accessing the Dashboard](#accessing-the-dashboard)
+4. [Site Admin Guide](#site-admin-guide)
+5. [Configuration Reference](#configuration-reference)
+6. [Built-In Applications](#built-in-applications)
+7. [Background Scheduler](#background-scheduler)
+8. [Architecture Overview](#architecture-overview)
+9. [Developer Guide — Creating Applications](#developer-guide--creating-applications)
+10. [Developer Guide — Creating Analysis Collectors](#developer-guide--creating-analysis-collectors)
+11. [Developer Guide — Core Layer](#developer-guide--core-layer)
+12. [ESI Client & Code Generation](#esi-client--code-generation)
+13. [Security Notes](#security-notes)
+14. [Licensing](#licensing)
 
 ---
 
-## 5. Authentication, Roles, and Token Flow
+## Installation
 
-1. Characters authenticate through EVE SSO (OAuth 2.0 Authorization Code flow) via the routes in `core/web/auth.py`.
-2. A time-limited `OAuthStateCache` issues and consumes each CSRF `state` token exactly once.
-3. OAuth tokens are Fernet-encrypted at rest (`_publicData/key`) and stored in the owner's private SQLite database via `core/esi/auth.py`.
-4. On each request that needs an access token, token helpers in `core.esi.auth` load the character's stored token and refresh it if expired.
-5. Multiple characters can be attached to a single owner (add-toon flow); each character gets its own token row.
-6. On first login, new users are granted the `default_roles` from `config.yaml` (e.g. `dashboard`, `queue`). Site owners and site admins bypass all role checks automatically.
+### Prerequisites
 
-### Role-Based Access Control
+- Python 3.12 or later
+- `pip` (included with Python)
+- Network access to EVE Online ESI (`esi.evetech.net`) and SSO (`login.eveonline.com`)
+- An active EVE Online developer application (register at [developers.eveonline.com](https://developers.eveonline.com))
 
-Access to applications is controlled by named roles stored in the `user_roles` DuckDB table. Every application package contains an `auth.json` file declaring its `role` (string or null) and `minimum_level` (`"public"` | `"user"` | `"admin"` | `"site_owner"`). `BaseTool` reads this file automatically on startup.
+### Clone and install dependencies
 
-The `@require_role("role_name")` decorator (exported from `applications._base`) enforces named-role access on Flask routes. Site admins and site owners bypass role checks. New user roles can be granted via `core.db.publicDB.grant_user_roles()` or through the admin panel.
-
----
-
-## 6. ESI Access, Caching, and Rate Limiting
-
-`core/queue/esi_req.py` centralises all outbound ESI HTTP. Key behaviours:
-
-- **Floating-window token bucket** — tracks per `(rate_limit_group, applicationID:characterID)` pair. 2XX = 2 tokens, 4XX = 5 tokens; 3XX = 1; 5XX = 0 (server fault).
-- **Error-rate tracking** — monitors `X-ESI-Error-Limit-Remain` separately from the main bucket.
-- **ETag / `If-None-Match`** — responses are cached and re-requested with the ETag; unchanged data returns 304 (1 token) instead of a full response.
-- **Alternating gate** — when both `public` and `private` task queues are active, the gate interleaves their HTTP requests one-for-one to avoid one queue monopolising the rate budget.
-- **Post-request hook** — after each real HTTP call, a hook fires an `esi_rate` SSE event.
-- **Tracing** — when `RuntimeSettings.trace_esi` is true, each outbound call is printed.
-
----
-
-## 7. ESI Spec Registry & Auto-Generated Client
-
-### Spec Registry (`core/esi/registry.py`)
-
-Fetches the ESI OpenAPI spec for a given compatibility date and parses it into structured JSON files stored in `_publicData/esi_specs/<date>/`:
-
-- `routes.json` — all operations with parameters, scopes, pagination info, cache hints.
-- `schemas.json` — TypedDict-compatible schema definitions.
-- `scopes.json` — all unique OAuth scopes.
-- `latest.json` — records the most recently fetched date and counts.
-
-Spec metadata is also inserted into the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes`.
-
-### Code Generator (`codegen/`)
-
-Reads the spec snapshot and regenerates packages:
-
-```powershell
-python build.py              # fetch spec + regenerate esi/client/ + collectors
-python build.py --force      # force regenerate
-python build.py --spec-only  # only fetch spec
-python build.py --collectors # only regenerate collector packages
+```bash
+git clone https://github.com/NolieRavioli/eve_data_framework3.git
+cd eve_data_framework3
+pip install -r requirements.txt
 ```
 
-The generated `esi/client/` package provides 208 typed operations. Auto-generated domain collectors live in `collectors/personal_generatedESI/`, `collectors/corp_generatedESI/`, and `collectors/public_generatedESI/`. **Do not hand-edit generated packages.**
+### Configure
+
+Copy the example config and open it in your editor:
+
+```bash
+# Linux / macOS
+cp example.config.yaml config.yaml && nano config.yaml
+
+# Windows (PowerShell)
+Copy-Item example.config.yaml config.yaml ; notepad config.yaml
+```
+
+The minimum required change is to enter your EVE developer application credentials (see [First-Run Setup](#first-run-setup)).
+
+> **Note:** `config.yaml` is gitignored. It will never be committed. Keep your `client_id` and `client_secret` out of source control.
+
+### Start the server
+
+```bash
+python main.py
+```
+
+The server starts on `http://127.0.0.1:5000` by default. To accept connections from other machines on your network, change `host` in `config.yaml`:
+
+```yaml
+Runtime:
+  host: "0.0.0.0"
+  port: 5000
+```
 
 ---
 
-## 8. Static Data Export (SDE) Pipeline
+## First-Run Setup
 
-The SDE provides static game data (type names, market groups, universe geometry, blueprints, dogma). It is rebuilt whenever CCP patches the game.
+On the very first launch with a fresh database, the framework will display a **setup wizard** at `http://127.0.0.1:5000/setup`. This wizard walks through:
 
-Pipeline (`collectors/sde_loader.py`):
+1. **Registering your EVE developer application credentials** — paste in your `client_id` and `client_secret` from [developers.eveonline.com](https://developers.eveonline.com). The callback URL you register on CCP's portal should be `http://<your-host>/auth/callback`.
+2. **Logging in with your EVE character** — the first character to log in becomes the **site owner** and gains unconditional admin access.
+3. **Triggering the initial SDE load** — downloads and unpacks the Static Data Export from CCP's servers into `_sde/` and builds the DuckDB warehouse. This can take several minutes depending on which SDE sections are enabled.
 
-1. Download the SDE ZIP from CCP's S3 bucket.
-2. Extract YAML files into `_sde/`.
-3. Language-prune multilingual fields to only the languages in `SUPPORTED_LANGUAGES`.
-4. Rebuild the DuckDB warehouse.
-5. Refresh the ESI spec registry.
-6. Reload in-memory SDE caches.
-
-At normal startup, `startup_load_sde()` loads the SDE datasets that are toggled `true` in `config.yaml` (no download). The download pipeline is triggered manually or from a future admin route.
+After setup, subsequent starts skip directly to the login page.
 
 ---
 
-## 9. Data Collectors
+## Accessing the Dashboard
 
-Collectors live in `collectors/` and own their table DDL via `ensure_tables(con)`:
+Navigate to `http://<host>:<port>/` in a browser. If you are not logged in you will be redirected to the login page. Click **Login with EVE Online** to start the SSO flow.
 
-| Collector | Tables Owned | Entry Point |
-|---|---|---|
-| `collectors/sde_loader.py` | SDE dimension/fact tables | `update_sde()`, `build_sde_warehouse()` |
-| `collectors/structures/publicDiscovery.py` | `structures` | `discover_structures()` |
-| `collectors/market/publicRegions.py` | `market_orders`, `market_region_cooldowns` | `fetch_all_market_data()` |
-| `collectors/market/privateStructures.py` | `market_structures` + structures enrichment | `update_structure_market_orders()` |
-| `collectors/*_generatedESI/` | (varies) | Auto-generated per-endpoint wrappers |
+Once authenticated, you will land on the **Dashboard**, which shows your linked characters and quick-links to enabled applications.
+
+To add additional characters to your account, use the **Add Toon** link on the dashboard.
 
 ---
 
-## 10. Applications (Auto-Discovery)
+## Site Admin Guide
 
-User-facing tools live in `applications/` and are auto-discovered via `pkgutil`. Each sub-package exposes a `Tool` attribute (an instance of `BaseTool`) and a Flask `Blueprint`. Access is controlled by an `auth.json` file in each package.
+### User Management
 
-| Application | Access | Description |
-|---|---|---|
-| `market_browser` | Public (no login) | Browse live market orders by region and item type |
-| `dashboard` | Role: `dashboard` | Character overview and quick links |
-| `queue_viewer` | Role: `queue` | Live task progress and ESI rate monitor |
-| `industry_calculator` | Role: `industry` | Calculate manufacturing costs and margins |
-| `isk_per_hour` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
-| `admin_panel` | Admin only | Logs, stats, and user management |
-| `db_browser` | Admin only | DuckDB/SQLite schema and query browser |
-| `esi_browser` | Admin only | ESI operation explorer |
+Site admins can manage other users through the **Admin Panel** (`/admin`):
 
-To add a new application:
-1. Create `applications/<name>/` with `__init__.py`, `routes.py`, optional `worker.py`.
-2. Create `applications/<name>/auth.json` declaring the role and minimum access level.
-3. Define a class inheriting `BaseTool` with a `ToolManifest` and `create_blueprint()`. Do **not** set `access_level` or `required_role` in the manifest — they are loaded from `auth.json` automatically.
-4. Set `Tool = YourTool()` as a module-level attribute in `__init__.py`.
-5. The application will be auto-registered on import.
+- **Promote to site admin** — grants a user admin-level access across all applications.
+- **Grant / revoke roles** — control which applications each user can access. Roles map 1-to-1 to application `auth.json` role names.
+- **View logs** — the admin panel exposes a live log console streamed via SSE.
 
----
+### Default Roles
 
-## 11. Background Task Queue
+Every new user is automatically granted the roles listed under `Auth.default_roles` in `config.yaml`:
+
+```yaml
+Auth:
+  default_roles:
+    - dashboard
+    - queue
+```
+
+Change this list to grant or restrict access to applications for new users by default.
+
+### Granting Roles Programmatically
 
 ```python
-from core.queue.manager import enqueue
+from core.db.publicDB import grant_user_roles, revoke_user_role
 
-task_id = enqueue("My Task Name", worker_fn, arg1, arg2, owner_id=owner_id)
-# queue="public" for market/SDE tasks (default is "private")
+grant_user_roles(owner_id, ["industry", "isk_per_hour"], granted_by=admin_owner_id)
+revoke_user_role(owner_id, "isk_per_hour")
 ```
 
-- Two single-threaded `ThreadPoolExecutor` queues (`tq-pub`, `tq-prv`) run concurrently with each other but each queue is strictly serial (FIFO).
-- `logging` calls and `print()` inside worker threads are captured and streamed to the browser via SSE.
-- The `/stream/<task_id>` SSE endpoint and `task_progress.html` render the live view.
+### Triggering Manual Data Collection
+
+Data collection happens automatically on the scheduler (see [Background Scheduler](#background-scheduler)). To trigger a refresh manually, visit the **Scheduler** admin panel (`/admin/scheduler`) and click **Run Now** on any job. You can also use the **Task Queue Viewer** (`/tools/queue`) to monitor running tasks and stream their logs live.
+
+### Regenerating the ESI Spec
+
+If ESI adds new routes or changes its schema, regenerate the typed client:
+
+```powershell
+python build.py --force
+```
+
+This fetches the latest OpenAPI spec, regenerates the typed Python client in `core/esi/generated/`, and regenerates the domain-specific wrappers in `core/esi/personal/`, `core/esi/corp/`, and `core/esi/public/`.
 
 ---
 
-## 12. Web UI Overview
+## Configuration Reference
 
-The Flask app (`core/web/`) registers the `auth_bp` blueprint plus all auto-discovered application blueprints:
+All runtime settings live in `config.yaml` (gitignored). A fully annotated template is provided in `example.config.yaml`. Key sections:
 
-| Blueprint | Prefix | Purpose |
-|---|---|---|
-| `auth_bp` | `/auth` | EVE SSO login / callback / logout |
-| `dashboard_bp` | `/` | Character overview |
-| `queue_viewer_bp` | `/tools/queue` | Task list, task detail, SSE stream |
-| `admin_panel_bp` | `/admin` | Admin panel (logs, stats, user management) |
-| `db_browser_bp` | `/admin/db` | DuckDB/SQLite browser |
-| `esi_browser_bp` | `/admin/esi` | ESI operation explorer |
-| `market_browser_bp` | `/market` | Live market orders |
-| `industry_calculator_bp` | `/tools/industry` | Manufacturing cost calculator |
-| `isk_per_hour_bp` | `/tools/isk` | ISK/hr ranker |
+### `Runtime`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `host` | `"127.0.0.1"` | Flask bind address. Set to `"0.0.0.0"` to accept remote connections. |
+| `port` | `5000` | TCP port. |
+| `debug` | `false` | Enable Flask debug mode (never use in production). |
+| `auto_install` | `false` | Auto-run `pip install -r requirements.txt` if modules are missing. |
+| `trace_esi` | `false` | Print every outbound ESI HTTP call to stdout. |
+| `secret_key` | random | Flask session secret. Set a persistent value so sessions survive restarts. |
+
+### `Python Console`
+
+Controls what appears in the terminal/console output. The root `global_log_level` sets the console `StreamHandler` threshold; per-logger keys silence or amplify individual loggers.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `global_log_level` | `INFO` | Threshold for all console output. |
+| `werkzeug_log_level` | `INFO` | Werkzeug request log level (`WARNING` to silence per-request lines). |
+| *(any logger name)* | — | Override the level of any named logger, e.g. `core.queue.esi_req: WARNING`. |
+
+### `Web Console`
+
+Controls the in-browser live log in the admin panel.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `admin_panel_global_log_level` | `DEBUG` | Minimum level captured into the admin panel live console. |
+
+### `Environment Variables`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `LANGUAGE` | `"en"` | Primary language for SDE text fields. |
+| `SUPPORTED_LANGUAGES` | `"en"` | Comma-separated languages; SDE pruner keeps only these. |
+| `PUBLIC_DATA_FOLDER` | `"_publicData"` | Directory for DuckDB file and OAuth credentials. |
+| `EVE_PRIVATE_DATABASE_FOLDER` | `"_privateData/"` | Root directory for per-owner SQLite files. |
+| `SDE_PATH` | `"_sde/"` | Local SDE YAML file directory. |
+
+### `Auth`
+
+```yaml
+Auth:
+  default_roles:
+    - dashboard
+    - queue
+```
+
+### `SDE`
+
+Toggle which SDE datasets load at startup. Set a section to `false` to skip it (will lazy-load on first use):
+
+```yaml
+SDE:
+  database_file: "_publicData/public.duckdb"
+  load_types: true        # type ID <-> name maps          (~26 MB, ~4s)
+  load_groups: true       # item group hierarchy            (~0.3 MB, fast)
+  load_categories: true   # item categories                 (~0.1 MB, fast)
+  load_market_groups: true # market group tree              (~0.3 MB, fast)
+  load_universe: true     # solar-system -> region map      (~15s)
+  load_blueprints: true   # manufacturing blueprints        (~8s)
+  load_type_materials: true # reprocessing materials        (~3s)
+  load_type_dogma: true   # item dogma attributes           (~60s+)
+```
+
+### `Structures` and `Market`
+
+Cooldown settings that prevent re-fetching recently inaccessible structures. See `example.config.yaml` for full details.
 
 ---
 
-## 13. Development Tips
+## Built-In Applications
 
-- **Running the app**: `python main.py` — default `http://127.0.0.1:5000`. Override host/port with `EVE_WEB_HOST` / `EVE_WEB_PORT`, or set `host`/`port` under `Runtime:` in `config.yaml`. Replace `127.0.0.1` with `0.0.0.0` in `config.yaml` to accept remote connections.
-- **Quick syntax check**: `python -c "import main"` or `python -m py_compile <file>`.
-- **Adding a collector**: create `collectors/<domain>/` — see AGENTS.md for the full pattern.
-- **Adding an application**: create `applications/<name>/` with an `auth.json` — see AGENTS.md for the full pattern.
-- **Adding a private DB model**: subclass `PrivateBase` in `core/db/models/identity.py`.
-- **Regenerating the ESI client**: `python build.py --force`.
-- **Never call `requests` directly** — use `core.queue.esi_req`.
-- **New code imports from `core.*` / `collectors.*`** — not from legacy shim paths.
-- **Protect routes with `@require_role`** — prefer `@require_role("role")` over bare `@require_login` for named-role access; use `@require_admin` only for admin-only routes.
-
----
-
-## 14. Security Notes
-
-- `_publicData/key` — Fernet symmetric key. **Never commit.**
-- `_publicData/client_cred` — encrypted OAuth `client_id`/`client_secret`. **Never commit.**
-- `_privateData/` — per-user SQLite databases. **Never commit.**
-- CSRF is mitigated by the `OAuthStateCache` in `core/web/auth.py`, which consumes each state token exactly once within a 5-minute window.
-- All SQL uses parameterised DuckDB queries or the SQLAlchemy ORM — no string interpolation with user input.
+| Application | URL Prefix | Access | Description |
+|-------------|------------|--------|-------------|
+| `market_browser` | `/market` | Public (no login) | Browse live market orders by region and item type |
+| `dashboard` | `/` | Role: `dashboard` | Character overview and quick links |
+| `queue_viewer` | `/tools/queue` | Role: `queue` | Live task progress and ESI rate monitor |
+| `industry_calculator` | `/tools/industry` | Role: `industry` | Calculate manufacturing costs and margins |
+| `isk_per_hour` | `/tools/isk` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
+| `admin_panel` | `/admin` | Admin only | Logs, stats, and user management |
+| `db_browser` | `/admin/db` | Admin only | DuckDB/SQLite schema and query browser |
+| `esi_browser` | `/admin/esi` | ESI operation explorer | Browse all available ESI endpoints |
+| `scheduler` | `/admin/scheduler` | Admin only | Enable/disable jobs, set intervals, run on demand |
 
 ---
 
-## 15. Licensing
+## Background Scheduler
+
+The scheduler (`core/scheduler/`) runs a background thread that ticks every 30 seconds and fires registered jobs when their `next_run` is due. Job state (enabled, last run, next run, interval) is persisted in the DuckDB `scheduler_jobs` table so customizations survive restarts.
+
+### Default Jobs
+
+| Job | Default Interval | Worker |
+|-----|-----------------|--------|
+| Market Data Refresh | 1 hour | `analysis.market.regions.fetch_all_market_data` |
+| Structure Discovery | 24 hours | `analysis.structures.discover.discover_structures` |
+| Character Data Refresh | 24 hours | refreshes all owners via `analysis.character.populate.populate_all` |
+
+Manage jobs through the **Scheduler** admin panel (`/admin/scheduler`) or the `scheduler` adapter in code:
+
+```python
+from applications._adapters import scheduler
+
+scheduler.list_jobs()              # list[dict] — all registered jobs
+scheduler.set_enabled("market_refresh", True)
+scheduler.run_now("structure_discovery")  # returns task_id
+```
+
+---
+
+## Architecture Overview
+
+```
+main.py                  # startup: load config, init DB, start Flask
+config.yaml              # runtime configuration (gitignored)
+example.config.yaml      # annotated template — copy to config.yaml
+requirements.txt
+
+core/                    # infrastructure — never import from applications/
+  config.py              # load_config(), RuntimeSettings, ensure_dependencies()
+  db/
+    publicDB.py          # DuckDB connect(), CRUD helpers, identity-table DDL
+    privateDB.py         # SQLite per-owner: initialize, get_private_session()
+    models/identity.py   # User, SiteAdmin (DuckDB ORM), Character (SQLite ORM)
+  esi/
+    auth.py              # OAuth token storage (Fernet-encrypted), refresh helpers
+    registry.py          # ESI OpenAPI spec fetcher and DuckDB registry
+    generated/           # AUTO-GENERATED — do not edit by hand
+    personal/            # AUTO-GENERATED domain wrappers (character-scoped)
+    corp/                # AUTO-GENERATED domain wrappers (corporation-scoped)
+    public/              # AUTO-GENERATED domain wrappers (public)
+  queue/
+    esi_req.py           # esi_request(), esi_get(), esi_post() — ALL ESI HTTP
+    scheduler.py         # enqueue(), get_task(), cancel_task()
+    streams.py           # SSE rate_stream(), log_stream()
+    writer.py            # DuckDB write thread (serialises public DB writes)
+  sde/
+    cache.py             # in-memory SDE lookup caches
+  scheduler/
+    __init__.py          # SchedulerEngine, get_engine()
+    jobs.py              # job catalog — add new scheduled jobs here
+    db.py                # scheduler_jobs table DDL
+  plugin/
+    base.py              # BaseTool, ToolManifest, ToolRegistry
+    adapters.py          # live adapter singletons (db, sde, esi, tasks, —)
+    web.py               # base_ctx(), require_login/admin/role decorators
+  web/
+    __init__.py          # create_app() — Flask app factory
+    app.py               # start_webUI() entry point
+    auth.py              # EVE SSO blueprint + access-control decorators
+    context.py           # base_ctx() sidebar helper
+    home.py / setup.py   # home and setup wizard blueprints
+
+analysis/                # data collection workers
+  sde_loader.py          # SDE download ? unzip ? prune ? DuckDB warehouse
+  character/populate.py  # per-owner ESI ? private SQLite (skills, wallet, assets)
+  market/
+    regions.py           # NPC region market orders
+    structures.py        # player-structure market orders
+  structures/discover.py # discover + enrich public structures
+
+applications/            # user-facing web tools (auto-discovered)
+  _base.py               # re-exports: BaseTool, ToolManifest, require_*, base_ctx
+  _adapters.py           # core infrastructure singletons for the applications layer (db, sde, tasks, …)
+  dashboard/             # character overview
+  queue_viewer/          # live task queue + ESI rate monitor
+  market_browser/        # live market order browser
+  industry_calculator/   # manufacturing cost calculator
+  isk_per_hour/          # blueprint ISK/hr ranker
+  admin_panel/           # logs, stats, user management
+  db_browser/            # DuckDB/SQLite query browser
+  esi_browser/           # ESI operation explorer
+  scheduler/             # background job management UI
+
+utils/build/             # ESI client code generation (run via build.py)
+```
+
+### Layering Rules
+
+- `core/` — infrastructure. No imports from `applications/` or `analysis/`.
+- `analysis/` — data collectors. Import from `core.*` only.
+- `applications/` — web applications. Import from `applications._base` and `applications._adapters` **only** — never directly from `core.*`.
+
+---
+
+## Developer Guide — Creating Applications
+
+Each application lives in `applications/<name>/` and is auto-discovered by `pkgutil` on startup.
+
+### Required files
+
+```
+applications/my_tool/
+  __init__.py      # defines Tool = MyTool()
+  auth.json        # access control declaration
+  routes.py        # Flask blueprint
+  templates/       # Jinja2 templates
+  static/          # JavaScript, CSS (optional)
+```
+
+### `auth.json`
+
+```json
+{
+  "role": "my_tool",
+  "minimum_level": "user"
+}
+```
+
+`minimum_level` values: `"public"` | `"user"` | `"admin"` | `"site_owner"`
+
+Set `"role": null` if no named role is required (access_level check only).
+
+### `__init__.py`
+
+```python
+from applications._base import BaseTool, ToolManifest
+from applications.my_tool import routes
+
+class MyTool(BaseTool):
+    manifest = ToolManifest(
+        id="my_tool",
+        name="My Tool",
+        icon="?",
+        description="Does something useful.",
+        url_prefix="/tools/my_tool",
+        required_scopes=[],
+        nav_weight=50,
+        nav_section="apps",
+        # access_level and required_role loaded from auth.json — omit here
+    )
+
+    def create_blueprint(self):
+        return routes.my_bp
+
+Tool = MyTool()
+```
+
+`nav_section` values: `"overview"` | `"tools"` | `"apps"` | `"admin"` | `""` (hidden)
+
+### `routes.py`
+
+```python
+from flask import Blueprint, render_template
+from applications._base import base_ctx, require_role
+from applications._adapters import db, sde
+
+my_bp = Blueprint("my_tool", __name__,
+                  template_folder="templates",
+                  static_folder="static")
+
+@my_bp.route("/")
+@require_role("my_tool")
+def index():
+    rows = db.query("SELECT type_id, name FROM dim_types LIMIT 10")
+    return render_template("my_tool.html", rows=rows, **base_ctx("my_tool"))
+```
+
+Use `@require_role("role")` for named-role access (admins bypass automatically).
+Use `@require_admin` for admin-only routes. Avoid bare `@require_login` on new routes.
+
+### Template
+
+```html
+{% extends "base.html" %}
+{% block title %}My Tool{% endblock %}
+{% block content %}
+  <div class="pg-hd"><h1>My Tool</h1></div>
+  <div class="pg-body">...</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('my_tool.static', filename='my_tool.js') }}"></script>
+{% endblock %}
+```
+
+### Available adapters (`applications._adapters`)
+
+| Adapter | Type | Description |
+|---------|------|-------------|
+| `db` | `_LiveDBAdapter` | `query()`, `query_one()`, `scalar()`, `private_query()`, `market_price()` |
+| `sde` | `core.sde` module | All SDE lookup functions directly |
+| `raw_esi` | `_LiveRawESIAdapter` | `get()`, `post()`, `request()` — rate-limited HTTP |
+| `esi` | `_LiveESIAdapter` | `execute(op_id, ...)`, `fetch_pages(op_id, ...)` — typed client |
+| `tokens` | `_LiveTokenAdapter` | `get(owner_id)` — raw token map |
+| `token_resolution` | `_LiveTokenResolutionAdapter` | `pick_token()`, `fresh_token()` |
+| `tasks` | `_LiveTaskAdapter` | `enqueue(name, fn, *args, owner_id, queue)` |
+| `char_data` | `_LiveCharacterDataAdapter` | `get_character()`, `get_scopes()` |
+| `esi_registry` | `_LiveESIRegistryAdapter` | `get_status()` |
+| `db_admin` | `_LiveDBAdminAdapter` | Admin-level DB inspection helpers |
+| `esi_manifest` | `_LiveESIManifestAdapter` | `get_operations()`, `get_operation(op_id)`, `get_meta()` |
+| `queue_info` | `_LiveQueueInfoAdapter` | `get_all_tasks()`, `get_task()`, `cancel_task()`, `rate_stream()`, `log_stream()` |
+| `scheduler` | `_LiveSchedulerAdapter` | `list_jobs()`, `set_enabled()`, `run_now()` |
+
+### Background workers from an application
+
+Long-running work (data fetches, calculations) should be enqueued rather than blocking a request:
+
+```python
+from applications._adapters import tasks
+
+def my_worker(owner_id: int) -> None:
+    # runs in background thread — logging is streamed to the browser
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Starting my_worker for owner %s", owner_id)
+    # ... do work ...
+
+@my_bp.route("/run")
+@require_role("my_tool")
+def run_task():
+    from flask import session
+    owner_id = session["owner_id"]
+    task_id = tasks.enqueue("My Task", my_worker, owner_id, owner_id=owner_id)
+    return {"task_id": task_id}
+```
+
+---
+
+## Developer Guide — Creating Analysis Collectors
+
+Analysis collectors are data pipeline workers that populate DuckDB or per-owner SQLite. They live in `analysis/<domain>/`.
+
+### Structure
+
+```
+analysis/my_domain/
+  __init__.py       # re-exports entry points
+  worker.py         # table DDL + data collection functions
+```
+
+### Table Ownership Pattern
+
+```python
+# analysis/my_domain/worker.py
+import logging
+from core.db import publicDB
+
+logger = logging.getLogger(__name__)
+
+def ensure_tables(con) -> None:
+    """Idempotent DDL — always call before any writes."""
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS my_table (
+            id INTEGER PRIMARY KEY,
+            value DOUBLE,
+            fetched_at TIMESTAMP DEFAULT now()
+        )
+    """)
+
+def fetch_my_data() -> None:
+    """Entry point called by the scheduler or manually."""
+    ensure_tables_safe()
+    # ... collect data and write ...
+
+def ensure_tables_safe() -> None:
+    con = publicDB.connect()
+    try:
+        ensure_tables(con)
+    finally:
+        con.close()
+```
+
+### Enrichment Pattern
+
+If your collector adds columns to a table owned by another collector:
+
+```python
+def ensure_columns(con) -> None:
+    from analysis.structures.discover import ensure_tables as _ensure_structures
+    _ensure_structures(con)
+    con.execute("""
+        ALTER TABLE structures ADD COLUMN IF NOT EXISTS my_col TIMESTAMP
+    """)
+```
+
+### Making ESI Requests
+
+**Never use `requests` directly.** Import `esi_get`/`esi_request` directly from `core.queue.esi_req`:
+
+```python
+from core.queue.esi_req import esi_get, esi_request
+
+resp = esi_get("https://esi.evetech.net/latest/markets/10000002/orders/",
+               params={"page": 1, "order_type": "all"})
+if not resp.ok:
+    logger.warning("ESI %s: %s", resp.status_code, resp.url)
+    return
+
+data = resp.json()
+total_pages = int(resp.headers.get("X-Pages", 1))
+```
+
+### Registering a Scheduled Job
+
+Add an entry to `core/scheduler/jobs.py`:
+
+```python
+try:
+    from analysis.my_domain.worker import fetch_my_data
+    jobs.append({
+        "job_id": "my_domain_refresh",
+        "label": "My Domain Data Refresh",
+        "fn": fetch_my_data,
+        "fn_path": _path(fetch_my_data),
+        "interval_s": 3600,
+    })
+except Exception:
+    logger.warning("[SchedulerJobs] Could not import my_domain — skipping job")
+```
+
+The scheduler will auto-upsert the job on next startup.
+
+---
+
+## Developer Guide — Core Layer
+
+The `core/` layer is the infrastructure backbone. Applications import from `applications._adapters` — they should not import from `core.*` directly. Analysis workers import from `core.*` directly.
+
+### Key modules
+
+| Module | Purpose |
+|--------|---------|
+| `core.config` | `load_config()`, `RuntimeSettings`, `get_runtime_settings()` |
+| `core.db.publicDB` | DuckDB connections and CRUD helpers |
+| `core.db.privateDB` | Per-owner SQLite session factory |
+| `core.db.models` | `User`, `SiteAdmin` (DuckDB ORM), `Character` (SQLite ORM) |
+| `core.esi.auth` | OAuth token storage (Fernet-encrypted), `fresh_token()`, `pick_token()` |
+| `core.esi.registry` | Fetch and parse ESI OpenAPI spec |
+| `core.esi.generated.client` | `execute_operation()`, `fetch_all_pages()` — typed ESI calls |
+| `core.queue.esi_req` | Rate-limited `esi_get()`, `esi_post()`, `esi_request()` |
+| `core.queue.scheduler` | `enqueue()`, `get_task()`, `cancel_task()`, task queue internals |
+| `core.queue.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()` |
+| `core.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
+| `core.scheduler` | `SchedulerEngine`, `get_engine()` — background job scheduler |
+| `core.plugin.base` | `BaseTool`, `ToolManifest`, `ToolRegistry` |
+| `core.plugin.web` | `base_ctx()`, `require_login`, `require_admin`, `require_role` |
+| `core.web` | `create_app()` Flask factory, SSO auth blueprint |
+
+### Adding a new private DB model
+
+Subclass `PrivateBase` in `core/db/models/identity.py` (or a new model file imported there):
+
+```python
+from core.db.models import PrivateBase
+from sqlalchemy import Column, Integer, String
+
+class MyCharacterData(PrivateBase):
+    __tablename__ = "my_character_data"
+    id = Column(Integer, primary_key=True)
+    character_id = Column(Integer, nullable=False)
+    value = Column(String)
+```
+
+`initialize_private_database(owner_id)` will automatically create the table on first use.
+
+### DuckDB Thread Safety
+
+DuckDB connections are **not thread-safe**. Always get a fresh connection per operation:
+
+```python
+from core.db import publicDB
+
+con = publicDB.connect()
+try:
+    rows = con.execute("SELECT * FROM dim_types WHERE type_id = ?", [34]).fetchall()
+finally:
+    con.close()
+```
+
+For writes that must be serialised (to avoid DuckDB write contention), use the write thread:
+
+```python
+from core.queue.writer import db_write, db_executemany
+
+db_write("INSERT INTO my_table VALUES (?, ?)", [1, "value"])
+db_executemany("INSERT INTO my_table VALUES (?, ?)", [(1, "a"), (2, "b")])
+```
+
+---
+
+## ESI Client & Code Generation
+
+### Typed Client
+
+```python
+from core.esi.generated.client import execute_operation, fetch_all_pages
+
+# Single page
+result = execute_operation("GetMarketsRegionIdOrders",
+                           path_params={"region_id": 10000002},
+                           query_params={"order_type": "all"})
+
+# All pages automatically
+orders = fetch_all_pages("GetMarketsRegionIdOrders",
+                          path_params={"region_id": 10000002},
+                          query_params={"order_type": "all"})
+```
+
+### Regenerating
+
+```powershell
+python build.py              # fetch spec + regenerate all generated packages
+python build.py --force      # force regenerate even if spec is current
+python build.py --spec-only  # only fetch the latest ESI spec
+python build.py --collectors # only regenerate core/esi/personal|corp|public/
+```
+
+> **Do not hand-edit** `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, or `core/esi/public/` — every build run overwrites them.
+
+---
+
+## Security Notes
+
+| File/Path | Risk | Mitigation |
+|-----------|------|-----------|
+| `_publicData/key` | Fernet symmetric key — decrypts all OAuth tokens | **Never commit.** Listed in `.gitignore`. |
+| `_publicData/client_cred` | Encrypted `client_id`/`client_secret` | **Never commit.** Listed in `.gitignore`. |
+| `_privateData/` | Per-user SQLite databases with tokens and character data | **Never commit.** Listed in `.gitignore`. |
+| `config.yaml` | Contains host, port, session secret | **Never commit.** Listed in `.gitignore`. |
+
+Additional protections:
+
+- **CSRF** — SSO callback validates the `state` parameter via a time-limited `OAuthStateCache` that consumes each token exactly once within a 5-minute window.
+- **SQL injection** — all DuckDB queries use parameterised `con.execute("... WHERE id = ?", [val])`. No user input is interpolated into SQL strings.
+- **Token encryption** — OAuth tokens are Fernet-encrypted before being written to disk. The symmetric key never leaves the server.
+- **Rate limiting** — `esi_req.py` enforces ESI's floating-window token bucket and automatically backs off on 429 responses.
+
+---
+
+## Licensing
 
 This project is released under the MIT License. See `LICENCE.md` for the full text.
+
+EVE Online and all associated materials are property of CCP hf. This project is not affiliated with or endorsed by CCP hf.

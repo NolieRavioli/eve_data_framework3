@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from applications._adapters import db, tasks
 from applications._base import base_ctx
@@ -15,25 +16,86 @@ logger = logging.getLogger(__name__)
 market_bp = Blueprint("market_browser", __name__, template_folder="templates", static_folder="static")
 
 
+def _fmt_expires(issued, duration_days) -> str:
+    if not issued or duration_days is None:
+        return "—"
+    try:
+        if isinstance(issued, str):
+            issued = datetime.fromisoformat(issued)
+        if issued.tzinfo is None:
+            issued = issued.replace(tzinfo=timezone.utc)
+        expires = issued + timedelta(days=int(duration_days))
+        delta = expires - datetime.now(timezone.utc)
+        total_s = int(delta.total_seconds())
+        if total_s <= 0:
+            return "Expired"
+        d, rem = divmod(total_s, 86400)
+        h = rem // 3600
+        return f"{d}d {h}h" if d else f"{h}h {(rem % 3600) // 60}m"
+    except Exception:
+        return "—"
+
+
+def _get_regions() -> list[dict]:
+    try:
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
+    except Exception:
+        return []
+
+
+def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
+    region_filter = "AND mo.region_id = ?" if region_id else ""
+    params = [type_id, region_id] if region_id else [type_id]
+    sql = f"""
+        SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
+               mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
+               COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
+        FROM market_orders mo
+        LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
+        WHERE mo.type_id = ? {region_filter}
+    """
+    try:
+        rows = db.query(sql, params)
+    except Exception:
+        sql_plain = f"""
+            SELECT order_id, is_buy_order, price, volume_remain, volume_total,
+                   order_range AS range, location_id, issued, duration, min_volume,
+                   CAST(location_id AS VARCHAR) AS location_name
+            FROM market_orders
+            WHERE type_id = ? {region_filter}
+        """
+        try:
+            rows = db.query(sql_plain, params)
+        except Exception as exc:
+            logger.warning("Orders query failed: %s", exc)
+            return [], []
+
+    for o in rows:
+        o["expires_in"] = _fmt_expires(o.get("issued"), o.get("duration"))
+
+    sells = sorted([o for o in rows if not o["is_buy_order"]], key=lambda x: x["price"])
+    buys = sorted([o for o in rows if o["is_buy_order"]], key=lambda x: -x["price"])
+    return sells, buys
+
+
 @market_bp.route("/")
 def index():
     ctx = base_ctx("market_browser")
-
-    # Pull region list — fall back gracefully if SDE isn't loaded
-    try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
-        regions = [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
-    except Exception:
-        regions = []
-
-    ctx.update({"regions": regions, "orders": None, "type_id": None, "region_id": None})
+    ctx.update({
+        "regions": _get_regions(),
+        "sells": None, "buys": None,
+        "type_id": None, "type_name": "",
+        "region_id": 0,
+        "best_sell": None, "best_buy": None,
+        "sell_volume": 0, "buy_volume": 0,
+    })
     return render_template("market_browser.html", **ctx)
 
 
 @market_bp.route("/orders")
 def orders():
     ctx = base_ctx("market_browser")
-
     try:
         type_id = int(request.args.get("type_id", 0))
         region_id = int(request.args.get("region_id", 0))
@@ -41,45 +103,29 @@ def orders():
         type_id = 0
         region_id = 0
 
-    order_rows = []
-    best_buy = None
-    best_sell = None
+    sells, buys = [], []
     type_name = ""
-    regions = []
-    try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
-        regions = [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
-    except Exception:
-        regions = []
+    best_sell = best_buy = None
+    sell_volume = buy_volume = 0
 
-    if type_id and region_id:
+    if type_id:
         try:
             type_name = db.scalar("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
-            order_rows = db.query(
-                """
-                SELECT order_id, is_buy_order AS is_buy, price, volume_remain, volume_total,
-                       order_range AS range, location_id, issued
-                FROM market_orders
-                WHERE type_id = ? AND region_id = ?
-                ORDER BY is_buy_order DESC, price ASC
-                """,
-                [type_id, region_id],
-            )
-            sells = [o["price"] for o in order_rows if not o["is_buy"]]
-            buys = [o["price"] for o in order_rows if o["is_buy"]]
-            best_sell = min(sells) if sells else None
-            best_buy = max(buys) if buys else None
-        except Exception as exc:
-            logger.warning("Market orders query failed: %s", exc)
+        except Exception:
+            type_name = f"Type {type_id}"
+        sells, buys = _query_orders(type_id, region_id)
+        best_sell = min((o["price"] for o in sells), default=None)
+        best_buy = max((o["price"] for o in buys), default=None)
+        sell_volume = sum(o["volume_remain"] for o in sells)
+        buy_volume = sum(o["volume_remain"] for o in buys)
 
     ctx.update({
-        "regions": regions,
-        "orders": order_rows,
-        "type_id": type_id,
-        "type_name": type_name,
+        "regions": _get_regions(),
+        "sells": sells, "buys": buys,
+        "type_id": type_id, "type_name": type_name,
         "region_id": region_id,
-        "best_buy": best_buy,
-        "best_sell": best_sell,
+        "best_sell": best_sell, "best_buy": best_buy,
+        "sell_volume": sell_volume, "buy_volume": buy_volume,
     })
     return render_template("market_browser.html", **ctx)
 
@@ -103,4 +149,74 @@ def refresh():
         queue="public",
     )
     return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
+
+
+@market_bp.route("/refresh_all", methods=["POST"])
+def refresh_all():
+    from analysis.market.regions import fetch_all_market_data
+    task_id = tasks.enqueue(
+        "Market refresh — all regions",
+        fetch_all_market_data,
+        owner_id=0,
+        queue="public",
+    )
+    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
+
+
+# ── Tree API ──────────────────────────────────────────────────────────────────
+
+@market_bp.route("/tree")
+def tree():
+    """Return all market groups as a flat list for client-side tree building."""
+    try:
+        rows = db.query(
+            """
+            SELECT market_group_id, parent_group_id, name_en, has_types
+            FROM dim_market_groups
+            ORDER BY name_en
+            """
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@market_bp.route("/group/<int:group_id>/types")
+def group_types(group_id: int):
+    """Return published types in a market group, ordered by name."""
+    try:
+        rows = db.query(
+            """
+            SELECT type_id, name_en
+            FROM dim_types
+            WHERE market_group_id = ? AND published = true
+            ORDER BY name_en
+            """,
+            [group_id],
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@market_bp.route("/search")
+def search():
+    """Full-text search over type names; returns up to 40 matching published types."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    try:
+        rows = db.query(
+            """
+            SELECT type_id, name_en, market_group_id
+            FROM dim_types
+            WHERE name_en ILIKE ? AND published = true AND market_group_id IS NOT NULL
+            ORDER BY name_en
+            LIMIT 40
+            """,
+            [f"%{q}%"],
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
