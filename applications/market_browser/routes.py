@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from applications._adapters import db, tasks
 from applications._base import base_ctx
@@ -161,4 +161,62 @@ def refresh_all():
         queue="public",
     )
     return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
+
+
+# ── Tree API ──────────────────────────────────────────────────────────────────
+
+@market_bp.route("/tree")
+def tree():
+    """Return all market groups as a flat list for client-side tree building."""
+    try:
+        rows = db.query(
+            """
+            SELECT market_group_id, parent_group_id, name_en, has_types
+            FROM dim_market_groups
+            ORDER BY name_en
+            """
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@market_bp.route("/group/<int:group_id>/types")
+def group_types(group_id: int):
+    """Return published types in a market group, ordered by name."""
+    try:
+        rows = db.query(
+            """
+            SELECT type_id, name_en
+            FROM dim_types
+            WHERE market_group_id = ? AND published = true
+            ORDER BY name_en
+            """,
+            [group_id],
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@market_bp.route("/search")
+def search():
+    """Full-text search over type names; returns up to 40 matching published types."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    try:
+        rows = db.query(
+            """
+            SELECT type_id, name_en, market_group_id
+            FROM dim_types
+            WHERE name_en ILIKE ? AND published = true AND market_group_id IS NOT NULL
+            ORDER BY name_en
+            LIMIT 40
+            """,
+            [f"%{q}%"],
+        )
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
