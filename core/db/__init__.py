@@ -47,4 +47,19 @@ def initialize_all(sde_cfg: dict | None = None) -> dict:
     from core.db import publicDB
     ensure_schema()
     warm_caches(sde_cfg)
+
+    # Initialise ESI cache tables and seed route specs from the generated DDL.
+    try:
+        import core.esi.cache as esi_cache
+        con = publicDB.connect()
+        try:
+            esi_cache.ensure_tables(con)
+            count = esi_cache.seed_route_specs(con)
+            if count:
+                logger.info("ESI cache: seeded %d route spec rows.", count)
+        finally:
+            con.close()
+    except Exception as exc:
+        logger.warning("ESI cache init skipped (%s). Run 'python build.py' to generate cache_ddl.py.", exc)
+
     return publicDB.get_warehouse_status()

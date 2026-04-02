@@ -100,6 +100,8 @@ def main() -> None:
 
     parser.add_argument("--collectors", dest="collectors_only", action="store_true", help="Only regenerate domain collector packages.")
 
+    parser.add_argument("--cache-only", dest="cache_only", action="store_true", help="Only regenerate core/esi/generated/cache_ddl.py.")
+
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="Pin to a specific compatibility date.")
 
     parser.add_argument("--fullclean", action="store_true", help="Delete all data and generated files (including __pycache__), then exit.")
@@ -117,6 +119,32 @@ def main() -> None:
     if args.fullclean:
 
         _fullclean()
+
+        sys.exit(0)
+
+
+
+    # --cache-only: only regenerate cache_ddl.py then exit.
+
+    if args.cache_only:
+
+        print("[build] Regenerating ESI cache schema (cache_ddl.py)\u2026")
+
+        from utils.build.cache_codegen import generate_cache_schema
+
+        result = generate_cache_schema(compatibility_date=args.date, force=True)
+
+        print(
+
+            f"[build] Cache schema done \u2014 date={result['compatibility_date']}"
+
+            f"  routes={result['route_count']}"
+
+            f"  columns={result['column_count']}"
+
+        )
+
+        print("[build] Done.")
 
         sys.exit(0)
 
@@ -146,7 +174,33 @@ def main() -> None:
 
 
 
-    # Step 2: core/esi/generated/ codegen — skip if --spec-only or --collectors
+    # Step 2: ESI cache schema — skip if --spec-only or --collectors
+
+    if not args.spec_only and not args.collectors_only:
+
+        print("[build] Generating ESI cache schema (cache_ddl.py)\u2026")
+
+        from utils.build.cache_codegen import generate_cache_schema
+
+        cache_result = generate_cache_schema(compatibility_date=args.date, force=args.force)
+
+        _skipped = cache_result.get("skipped", False)
+
+        print(
+
+            f"[build] Cache schema {'skipped (up to date)' if _skipped else 'done'}"
+
+            f" \u2014 date={cache_result['compatibility_date']}"
+
+            f"  routes={cache_result['route_count']}"
+
+            + (f"  columns={cache_result['column_count']}" if not _skipped else "")
+
+        )
+
+
+
+    # Step 3: core/esi/generated/ codegen — skip if --spec-only or --collectors
 
     if not args.spec_only and not args.collectors_only:
 
@@ -170,7 +224,7 @@ def main() -> None:
 
 
 
-    # Step 3: domain collector packages — skip if --spec-only or --gen-only
+    # Step 4: domain collector packages — skip if --spec-only or --gen-only
 
     if not args.spec_only and not args.gen_only:
 

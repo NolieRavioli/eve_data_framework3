@@ -5,7 +5,6 @@ import re
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
 from typing import Callable, Deque, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -27,34 +26,25 @@ DEFAULT_WINDOW_SECONDS = 15 * 60  # 15 minutes
 DEFAULT_TOKEN_LIMIT = 1800  # Conservative default: ~1 request / second for 2XX responses.
 _CACHE_LOCK = threading.Lock()
 
-
-@dataclass(frozen=True)
-class _CacheRule:
-    method: str
-    path: str
-    ttl: int
-    match_prefix: bool = False
-
-
-_CACHE_RULES: tuple[_CacheRule, ...] = (
-    _CacheRule(method="GET", path="/latest/universe/structures/", ttl=7 * 24 * 3600),
-    _CacheRule(method="GET", path="/latest/markets/structures/", ttl=30 * 60, match_prefix=True),
-)
-
-
 _CacheKey = Tuple[str, str, bytes, Optional[str]]
 _CACHE: dict[_CacheKey, tuple[float, dict]] = {}
 
 
-def _resolve_cache_ttl(method: str, path: str) -> Optional[int]:
-    for rule in _CACHE_RULES:
-        if method != rule.method:
-            continue
-        if rule.match_prefix and path.startswith(rule.path):
-            return rule.ttl
-        if not rule.match_prefix and path == rule.path:
-            return rule.ttl
-    return None
+def _resolve_cache_ttl(method: str, url: str) -> Optional[int]:
+    """Return cache TTL in seconds for a URL using spec-driven data, or None if not cacheable.
+
+    Delegates to ``core.esi.cache.get_ttl_for_url`` which reads from the
+    generated ``ROUTE_SPECS_SEED_ROWS``.  Falls back gracefully when the
+    generated file is missing (pre-build.py state).
+    """
+    if method.upper() != "GET":
+        return None
+    try:
+        from core.esi import cache as _esi_cache  # lazy import — avoids circular startup
+        ttl, _ = _esi_cache.get_ttl_for_url(url)
+        return ttl
+    except Exception:
+        return None
 
 
 def _prepare_cache_key(method: str, url: str, kwargs: dict) -> tuple[requests.PreparedRequest, Optional[_CacheKey], Optional[int]]:
@@ -68,8 +58,7 @@ def _prepare_cache_key(method: str, url: str, kwargs: dict) -> tuple[requests.Pr
         json=kwargs.get("json"),
     )
     prepared = req.prepare()
-    parsed = urlparse(prepared.url)
-    ttl = _resolve_cache_ttl(prepared.method, parsed.path)
+    ttl = _resolve_cache_ttl(prepared.method, prepared.url)
     if not ttl:
         return prepared, None, None
 
@@ -296,11 +285,52 @@ class EsiRateLimiter:
         lane = getattr(_request_lane, "lane", None)
 
         prepared, cache_key, ttl = _prepare_cache_key(method, url, kwargs)
+
+        # Resolve operation_id for DuckDB cache bookkeeping.
+        _duckdb_op_id: Optional[str] = None
+        try:
+            from core.esi import cache as _esi_cache
+            _duckdb_op_id = _esi_cache._OP_MAP.get(_esi_cache._normalize_url_path(url))
+        except Exception:
+            pass
+
         if ttl and cache_key:
+            # L1: in-memory cache check.
             cached = _get_cached_response(cache_key, prepared)
             if cached is not None:
-                logger.debug("[RateLimiter] Using cached response for %s", prepared.url)
+                logger.debug("[RateLimiter] L1 cache hit for %s", prepared.url)
                 return cached
+
+            # L2: DuckDB persistent cache check.
+            try:
+                from core.esi import cache as _esi_cache
+                _db_cache_key = _esi_cache.make_cache_key(
+                    method, prepared.url,
+                    kwargs.get("params"),
+                    (kwargs.get("headers") or {}).get("Authorization"),
+                )
+                cached_row = _esi_cache.check(_db_cache_key)
+                if cached_row is not None:
+                    body_text = cached_row.get("response_body") or ""
+                    payload = {
+                        "status_code": cached_row.get("status_code", 200),
+                        "headers": {
+                            "ETag": cached_row.get("etag") or "",
+                            "Last-Modified": cached_row.get("last_modified") or "",
+                            "X-Pages": str(cached_row.get("x_pages") or ""),
+                        },
+                        "content": body_text.encode("utf-8") if isinstance(body_text, str) else body_text,
+                        "encoding": "utf-8",
+                        "reason": "OK (ESI Cache)",
+                        "url": cached_row.get("full_url", prepared.url),
+                    }
+                    # Also warm the L1 in-memory cache for the remainder of this session.
+                    _store_cached_response(cache_key, _build_cached_response(payload, prepared), ttl, prepared)
+                    resp = _build_cached_response(payload, prepared)
+                    logger.debug("[RateLimiter] L2 DuckDB cache hit for %s", prepared.url)
+                    return resp
+            except Exception as _dbc_exc:
+                logger.debug("[RateLimiter] DuckDB cache check skipped: %s", _dbc_exc)
 
         retry_sleep: float = 0
         while True:
@@ -359,10 +389,42 @@ class EsiRateLimiter:
 
                 if ttl and cache_key and 200 <= response.status_code < 300:
                     _store_cached_response(cache_key, response, ttl, prepared)
+                    # L2: persist to DuckDB (non-blocking via writer thread).
+                    try:
+                        from core.esi import cache as _esi_cache
+                        _db_cache_key = _esi_cache.make_cache_key(
+                            method, prepared.url,
+                            kwargs.get("params"),
+                            (kwargs.get("headers") or {}).get("Authorization"),
+                        )
+                        _esi_cache.store(
+                            cache_key=_db_cache_key,
+                            operation_id=_duckdb_op_id,
+                            method=method,
+                            full_url=prepared.url,
+                            params=kwargs.get("params"),
+                            response_body=response.text,
+                            status_code=response.status_code,
+                            ttl=ttl,
+                            headers=dict(response.headers),
+                        )
+                    except Exception as _dbs_exc:
+                        logger.debug("[RateLimiter] DuckDB cache store skipped: %s", _dbs_exc)
 
                 # 304 Not Modified: refresh cache TTL and return stored payload (1 token, already adjusted).
                 if response.status_code == 304 and cache_key and ttl:
                     _refresh_cache_ttl(cache_key, ttl)
+                    # Also refresh DuckDB TTL.
+                    try:
+                        from core.esi import cache as _esi_cache
+                        _db_cache_key = _esi_cache.make_cache_key(
+                            method, prepared.url,
+                            kwargs.get("params"),
+                            (kwargs.get("headers") or {}).get("Authorization"),
+                        )
+                        _esi_cache.refresh_ttl(_db_cache_key, ttl)
+                    except Exception:
+                        pass
                     stale = _get_cache_entry(cache_key)
                     if stale:
                         self._requests_total += 1
@@ -403,6 +465,14 @@ class EsiRateLimiter:
                 if _post_request_hook is not None:
                     try:
                         _post_request_hook(self.get_stats())
+                    except Exception:
+                        pass
+
+                # Update live rate-limit columns in esi_route_specs (non-blocking).
+                if _duckdb_op_id:
+                    try:
+                        from core.esi import cache as _esi_cache
+                        _esi_cache.update_route_rl(_duckdb_op_id, dict(response.headers))
                     except Exception:
                         pass
 
