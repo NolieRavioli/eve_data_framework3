@@ -132,7 +132,7 @@ def fetch_all_market_data() -> None:
         try:
             ensure_columns(con)
         except Exception as exc:
-            logger.debug("[MarketStation] dim_stations columns skipped (%s) — SDE not loaded yet?", exc)
+            logger.debug("dim_stations columns skipped (%s) — SDE not loaded yet?", exc)
         con.execute("CHECKPOINT")
     finally:
         con.close()
@@ -143,12 +143,12 @@ def fetch_all_market_data() -> None:
         all_ids = sde_store.list_market_region_ids(skip_recently_refreshed=False)
         if not all_ids:
             logger.warning(
-                "[MarketStation] No regions found — SDE may not be loaded (dim_regions missing)."
+                "No regions found — SDE may not be loaded (dim_regions missing)."
             )
         else:
-            logger.info("[MarketStation] All regions refreshed recently — nothing to do.")
+            logger.info("All regions refreshed recently — nothing to do.")
         return
-    logger.info("[MarketStation] Processing %s regions...", len(region_ids))
+    logger.info("Processing %s regions...", len(region_ids))
 
     for region_id in region_ids:
         url = f"{ESI_BASE}/markets/{region_id}/orders/"
@@ -157,7 +157,7 @@ def fetch_all_market_data() -> None:
         resp = esi_get(url, params={**params_base, "page": 1})
         if not resp.ok:
             logger.warning(
-                "[MarketStation] %s on region %s page 1 — skipping",
+                "%s on region %s page 1 — skipping",
                 resp.status_code, region_id,
             )
             if resp.status_code in (403, 404):
@@ -172,7 +172,7 @@ def fetch_all_market_data() -> None:
         sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
         _mark_stations_refreshed(region_id)
         logger.info(
-            "[MarketStation] Region %s page 1/%s — %s orders inserted",
+            "Region %s page 1/%s — %s orders inserted",
             region_id, total_pages, len(orders),
         )
 
@@ -180,7 +180,7 @@ def fetch_all_market_data() -> None:
             resp = esi_get(url, params={**params_base, "page": page})
             if not resp.ok:
                 logger.warning(
-                    "[MarketStation] %s on region %s page %s — skipping",
+                    "%s on region %s page %s — skipping",
                     resp.status_code, region_id, page,
                 )
                 continue
@@ -189,9 +189,9 @@ def fetch_all_market_data() -> None:
                 break
             sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
             logger.info(
-                "[MarketStation] Region %s page %s/%s — %s orders inserted",
+                "Region %s page %s/%s — %s orders inserted",
                 region_id, page, total_pages, len(orders),
             )
 
-    logger.info("[MarketStation] Completed")
+    logger.info("Completed")
 
