@@ -15,7 +15,7 @@ class QueueViewerTool(BaseTool):
         name="Queue Viewer",
         icon="=",
         description="Monitor background tasks, stream live logs, and inspect ESI rate stats.",
-        url_prefix="/tasks",
+        url_prefix="/queue",
         required_scopes=[],
         nav_weight=-50,
         nav_section="tools",

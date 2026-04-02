@@ -24,7 +24,7 @@
     }
   }
 
-  var es = new EventSource('/tasks/' + TASK_ID + '/stream');
+  var es = new EventSource('/queue/' + TASK_ID + '/stream');
   es.onmessage = function (event) {
     appendLine(event.data);
   };
@@ -51,7 +51,7 @@
   };
 
   window.cancelTask = function () {
-    fetch('/tasks/' + TASK_ID + '/cancel', { method: 'POST' })
+    fetch('/queue/' + TASK_ID + '/cancel', { method: 'POST' })
       .then(function (response) { return response.json(); })
       .then(function (payload) {
         if (payload.cancelled) setStatus('cancelled');

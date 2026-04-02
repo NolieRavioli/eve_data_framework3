@@ -1,5 +1,5 @@
 function cancelTask(taskId, button) {
-  fetch('/tasks/' + taskId + '/cancel', { method: 'POST' })
+  fetch('/queue/' + taskId + '/cancel', { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function (payload) {
       if (!payload.cancelled) {
@@ -16,13 +16,13 @@ function cancelTask(taskId, button) {
 }
 
 function clearDone() {
-  fetch('/tasks/clear', { method: 'POST' })
+  fetch('/queue/clear', { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function () { location.reload(); });
 }
 
 (function () {
-  // Live ESI rate card - SSE push from /tasks/rate_stream
+  // Live ESI rate card - SSE push from /queue/rate_stream
   var esiCard   = document.getElementById('esi-rate-card');
   var esiGroups = document.getElementById('esi-groups');
   var esiReqs   = document.getElementById('esi-reqs');
@@ -135,7 +135,7 @@ function clearDone() {
   }
 
   (function openRateStream() {
-    var es = new EventSource('/tasks/rate_stream');
+    var es = new EventSource('/queue/rate_stream');
     es.onmessage = function (ev) {
       try { applyRateStats(JSON.parse(ev.data)); } catch (e) {}
     };
