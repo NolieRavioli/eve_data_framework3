@@ -41,6 +41,34 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# ── Static DDL for esi_cache ──────────────────────────────────────────────────
+# This table's schema does NOT depend on routes.json — inline it here so the
+# table is always created at startup even when cache_ddl.py hasn't been
+# generated yet (i.e. before the first build.py run).
+_ESI_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS esi_cache (
+    cache_key                 VARCHAR PRIMARY KEY,
+    operation_id              VARCHAR,
+    method                    VARCHAR,
+    full_url                  VARCHAR,
+    params_json               VARCHAR,
+    etag                      VARCHAR,
+    last_modified             VARCHAR,
+    response_body             VARCHAR,
+    status_code               INTEGER,
+    fetched_at                TIMESTAMP,
+    expires_at                TIMESTAMP,
+    rl_group                  VARCHAR,
+    rl_remaining              INTEGER,
+    rl_used                   INTEGER,
+    rl_limit_str              VARCHAR,
+    retry_after               INTEGER,
+    x_pages                   INTEGER,
+    x_esi_error_limit_remain  INTEGER,
+    x_esi_error_limit_reset   INTEGER
+)
+"""
+
 # ── pre-computed TTL map (normalised URL pattern  →  cache_age seconds) ──────
 # Populated lazily on first call to get_ttl_for_url() from ROUTE_SPECS_SEED_ROWS.
 _TTL_MAP: dict[str, int] = {}          # normalized_path -> cache_age
@@ -111,25 +139,30 @@ def make_cache_key(method: str, url: str, params: dict | None, auth_header: str 
 def ensure_tables(con) -> None:
     """Create ``esi_route_specs`` and ``esi_cache`` if they don't exist.
 
-    Uses ``ALTER TABLE ADD COLUMN IF NOT EXISTS`` for every column declared in
-    ``SPEC_COLUMN_NAMES`` so that re-running after a ``build.py`` update
-    automatically adds any new spec columns without dropping existing data.
+    ``esi_cache`` is always created from the inline ``_ESI_CACHE_DDL`` constant
+    so it exists even before ``build.py`` has been run.
+
+    ``esi_route_specs`` is created from the generated ``cache_ddl.py`` when
+    available.  Uses ``ALTER TABLE ADD COLUMN IF NOT EXISTS`` for every column
+    declared in ``SPEC_COLUMN_NAMES`` so that re-running after a ``build.py``
+    update automatically adds any new spec columns without dropping existing data.
     """
+    # esi_cache is always safe to create — its schema is static.
+    con.execute(_ESI_CACHE_DDL)
+
     try:
         from core.esi.generated.cache_ddl import (  # type: ignore[import]
             ROUTE_SPECS_DDL,
-            RESPONSE_CACHE_DDL,
             SPEC_COLUMN_NAMES,
         )
     except ImportError:
         logger.warning(
             "[ESICache] core/esi/generated/cache_ddl.py not found — "
-            "skipping ESI cache table setup.  Run 'python build.py' to generate it."
+            "esi_route_specs table skipped.  Run 'python build.py' to generate it."
         )
         return
 
     con.execute(ROUTE_SPECS_DDL)
-    con.execute(RESPONSE_CACHE_DDL)
 
     # Migration: add any columns that exist in the generated DDL but not yet in
     # the live table (handles re-runs after spec updates add new fields).

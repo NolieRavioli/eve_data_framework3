@@ -4,8 +4,7 @@ import logging
 import re
 import threading
 import time
-from collections import deque
-from typing import Callable, Deque, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -14,16 +13,7 @@ from requests.structures import CaseInsensitiveDict
 
 logger = logging.getLogger(__name__)
 
-# Token costs based on the ESI floating window specification.
-TOKEN_COSTS = {
-    2: 2,  # 2XX responses
-    3: 1,  # 3XX responses
-    4: 5,  # 4XX responses
-    5: 0,  # 5XX responses
-}
-
-DEFAULT_WINDOW_SECONDS = 15 * 60  # 15 minutes
-DEFAULT_TOKEN_LIMIT = 1800  # Conservative default: ~1 request / second for 2XX responses.
+DEFAULT_WINDOW_SECONDS = 15 * 60  # 15 minutes — fallback when no X-Ratelimit-Limit header received yet.
 _CACHE_LOCK = threading.Lock()
 
 _CacheKey = Tuple[str, str, bytes, Optional[str]]
@@ -132,109 +122,7 @@ def _refresh_cache_ttl(key: _CacheKey, ttl: int) -> None:
             _CACHE[key] = (time.time() + ttl, entry[1])
 
 
-def _token_cost_for_status(status_code: int) -> int:
-    """Return the token cost for a given HTTP status code.
 
-    Per the ESI floating-window spec, 429 responses are explicitly excluded
-    from the 4XX 5-token penalty — the server does not count a rate-limited
-    request against your bucket, so we return our optimistic reservation.
-    420 (error-limit breach) uses the fixed-window error limit pathway: the
-    rate-limit bucket headers are absent, so we avoid charging 5 tokens against
-    our local bucket for a response that isn't really a route-level 4XX error.
-    """
-    if status_code in (420, 429):
-        return 0
-    bucket = status_code // 100
-    return TOKEN_COSTS.get(bucket, 5)
-
-
-class _TokenBucket:
-    """Simple floating-window token bucket implementation."""
-
-    def __init__(self, limit: int = DEFAULT_TOKEN_LIMIT, window: int = DEFAULT_WINDOW_SECONDS) -> None:
-        self.limit = max(1, limit)
-        self.window = max(1, window)
-        self._entries: Deque[tuple[float, int]] = deque()
-        self._total = 0
-        self._lock = threading.Lock()
-
-    def configure(self, *, limit: Optional[int] = None, window: Optional[int] = None) -> None:
-        with self._lock:
-            if limit is not None and limit > 0:
-                if limit != self.limit:
-                    logger.debug("[RateLimiter] Updating limit: %s -> %s", self.limit, limit)
-                self.limit = limit
-            if window is not None and window > 0:
-                if window != self.window:
-                    logger.debug("[RateLimiter] Updating window: %s -> %s", self.window, window)
-                self.window = window
-
-    def _prune(self, now: float) -> None:
-        while self._entries and now - self._entries[0][0] >= self.window:
-            _, cost = self._entries.popleft()
-            self._total -= cost
-
-    def acquire(self, cost: int) -> None:
-        """Block until the bucket can accommodate *cost* tokens."""
-
-        cost = max(0, cost)
-        while True:
-            with self._lock:
-                now = time.monotonic()
-                self._prune(now)
-                if self._total + cost <= self.limit:
-                    if cost:
-                        self._entries.append((now, cost))
-                        self._total += cost
-                    return
-                wait_time = self._entries[0][0] + self.window - now if self._entries else 1
-            if wait_time > 0:
-                time.sleep(min(wait_time, 1.0))
-
-    def adjust(self, delta: int) -> None:
-        """Adjust the token usage for the most recent request."""
-
-        if delta == 0:
-            return
-
-        if delta > 0:
-            # Record the extra cost immediately without blocking.  Calling
-            # acquire() here would block the response-handler thread for
-            # minutes whenever a run of error responses fills the bucket —
-            # the opposite of what we want.  The extra tokens are appended
-            # to the window deque so that *subsequent* acquire() calls
-            # account for them naturally.
-            with self._lock:
-                now = time.monotonic()
-                self._entries.append((now, delta))
-                self._total += delta
-            return
-
-        with self._lock:
-            # Return tokens by trimming from the newest entry.
-            to_return = -delta
-            while to_return and self._entries:
-                ts, cost = self._entries.pop()
-                remove = min(cost, to_return)
-                remaining = cost - remove
-                self._total -= remove
-                to_return -= remove
-                if remaining:
-                    self._entries.append((ts, remaining))
-                    self._total += remaining
-                    break
-
-    def get_stats(self) -> dict:
-        """Return a snapshot of current token-bucket usage."""
-        with self._lock:
-            now = time.monotonic()
-            self._prune(now)
-            return {
-                "tokens_used": self._total,
-                "tokens_limit": self.limit,
-                "tokens_remaining": max(0, self.limit - self._total),
-                "window_seconds": self.window,
-            }
 
 
 # ESI endpoints that never return an X-Ratelimit-Group header are statically
@@ -252,36 +140,31 @@ class EsiRateLimiter:
     def __init__(
         self,
         *,
-        token_limit: int = DEFAULT_TOKEN_LIMIT,
-        window_seconds: int = DEFAULT_WINDOW_SECONDS,
         max_retries: int = 5,
         default_retry_after: int = 2,
     ) -> None:
-        self._default_bucket = _TokenBucket(limit=token_limit, window=window_seconds)
         self._max_retries = max(1, max_retries)
         self._default_retry_after = max(1, default_retry_after)
         self._requests_total = 0
-        # Per-group rate-limit state (keyed by X-Ratelimit-Group header value)
+        # Per-group rate-limit state keyed by X-Ratelimit-Group header value.
+        # Each entry: {"remaining": int|None, "used": int|None, "limit": int, "window_seconds": int, "window_str": str}
         self._groups_lock = threading.Lock()
-        self._group_buckets: Dict[str, _TokenBucket] = {}
+        self._group_states: Dict[str, dict] = {}
         self._url_to_group: Dict[str, str] = {}   # normalised URL path → group name
-        self._group_display: Dict[str, dict] = {}  # group → latest header snapshot
 
         # Error-limit tracking (fixed-window, X-ESI-Error-Limit-Remain / X-ESI-Error-Limit-Reset)
         self._error_limit_lock = threading.Lock()
         self._error_limit_remain: Optional[int] = None
         self._error_limit_reset: Optional[int] = None
 
-        # Pre-populate synthetic groups for endpoints without X-Ratelimit-Group headers.
+        # Pre-seed URL→group mapping for endpoints that don't return X-Ratelimit-Group headers.
         for norm_path, group_name in _STATIC_URL_GROUPS:
             self._url_to_group[norm_path] = group_name
-            self._group_buckets[group_name] = _TokenBucket(limit=token_limit, window=window_seconds)
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Perform an HTTP request against ESI obeying rate limits and retries."""
 
         attempt = 0
-        initial_cost = TOKEN_COSTS[2]
         lane = getattr(_request_lane, "lane", None)
 
         prepared, cache_key, ttl = _prepare_cache_key(method, url, kwargs)
@@ -342,11 +225,16 @@ class EsiRateLimiter:
             if lane:
                 _ALTERNATING_GATE.acquire(lane)
             try:
-                # Resolve the group-specific bucket for this URL (or fall back to default).
+                # Throttle if the server last reported remaining == 0 for this URL's group.
                 norm = self._normalize_url_path(url)
                 with self._groups_lock:
                     gname = self._url_to_group.get(norm)
-                    bucket = self._group_buckets.get(gname) if gname else self._default_bucket
+                    gstate = self._group_states.get(gname) if gname else None
+
+                if gstate is not None and gstate.get("remaining") == 0:
+                    limit = max(gstate.get("limit") or 1, 1)
+                    window = gstate.get("window_seconds") or DEFAULT_WINDOW_SECONDS
+                    time.sleep(window / limit)
 
                 # Inject If-None-Match from a stale cache entry when available.
                 if cache_key:
@@ -363,8 +251,6 @@ class EsiRateLimiter:
                                 req_hdrs["If-None-Match"] = etag
                                 kwargs["headers"] = req_hdrs
 
-                bucket.acquire(initial_cost)
-
                 # Inject a default User-Agent if the caller did not supply one.
                 req_hdrs = dict(kwargs.get("headers") or {})
                 if not req_hdrs.get("User-Agent") and not req_hdrs.get("X-User-Agent"):
@@ -372,18 +258,7 @@ class EsiRateLimiter:
                     kwargs["headers"] = req_hdrs
 
                 kwargs.setdefault("timeout", 30)
-                try:
-                    response = requests.request(method, url, **kwargs)
-                except Exception:
-                    # Return the reserved tokens since no response was obtained.
-                    bucket.adjust(-initial_cost)
-                    raise
-
-                # Adjust for the actual status cost if different from optimistic reservation.
-                actual_cost = _token_cost_for_status(response.status_code)
-                delta = actual_cost - initial_cost
-                if delta:
-                    bucket.adjust(delta)
+                response = requests.request(method, url, **kwargs)
 
                 self._update_limits_from_headers(response.headers, url)
 
@@ -491,42 +366,25 @@ class EsiRateLimiter:
             return self._default_retry_after
 
     def get_stats(self) -> dict:
-        """Return per-group rate-limit stats plus a backward-compatible summary."""
+        """Return per-group rate-limit stats sourced directly from ESI response headers."""
         with self._groups_lock:
-            groups: dict = {}
-            for gname, gbucket in self._group_buckets.items():
-                bs = gbucket.get_stats()
-                dsp = self._group_display.get(gname, {})
-                remaining = dsp.get("remaining")
-                limit = bs["tokens_limit"]
-                groups[gname] = {
+            groups: dict = {
+                gname: {
                     "group": gname,
-                    "tokens_limit": limit,
-                    "tokens_remaining": remaining if remaining is not None else bs["tokens_remaining"],
-                    "tokens_used": (limit - remaining) if remaining is not None else bs["tokens_used"],
-                    "window_seconds": bs["window_seconds"],
-                    "window_str": dsp.get("window_str", ""),
+                    "tokens_limit": gstate.get("limit") or 0,
+                    "tokens_remaining": gstate.get("remaining"),
+                    "tokens_used": gstate.get("used"),
+                    "window_seconds": gstate.get("window_seconds", DEFAULT_WINDOW_SECONDS),
+                    "window_str": gstate.get("window_str", ""),
                 }
-
-        # Include the default bucket as a synthetic group when it has recorded
-        # activity (i.e. endpoints that don't return X-Ratelimit-Group headers).
-        dbs = self._default_bucket.get_stats()
-        if dbs["tokens_used"] > 0:
-            groups["(ungrouped)"] = {
-                "group": "(ungrouped)",
-                "tokens_limit": dbs["tokens_limit"],
-                "tokens_remaining": dbs["tokens_remaining"],
-                "tokens_used": dbs["tokens_used"],
-                "window_seconds": dbs["window_seconds"],
-                "window_str": f"{dbs['window_seconds'] // 60}m" if dbs["window_seconds"] % 60 == 0 else f"{dbs['window_seconds']}s",
+                for gname, gstate in self._group_states.items()
             }
 
-        # Backward-compat summary: most-depleted group (lowest remaining/limit ratio).
-        summary: dict = dbs
+        summary: dict = {}
         if groups:
             worst = min(
                 groups.values(),
-                key=lambda g: (g["tokens_remaining"] / g["tokens_limit"]) if g["tokens_limit"] else 1.0,
+                key=lambda g: (g["tokens_remaining"] or 0) / max(g["tokens_limit"], 1) if g["tokens_limit"] else 1.0,
             )
             summary = dict(worst)
 
@@ -597,20 +455,19 @@ class EsiRateLimiter:
         window_str = parts[1].strip() if len(parts) > 1 else ""
 
         with self._groups_lock:
-            if group in self._group_buckets:
-                self._group_buckets[group].configure(limit=limit, window=window_seconds)
-            else:
-                self._group_buckets[group] = _TokenBucket(limit=limit, window=window_seconds)
+            is_new = group not in self._group_states
+            self._group_states[group] = {
+                "remaining": remaining,
+                "used": used,
+                "limit": limit,
+                "window_seconds": window_seconds or DEFAULT_WINDOW_SECONDS,
+                "window_str": window_str,
+            }
+            if is_new:
                 logger.debug(
                     "[RateLimiter] New group: %s  limit=%s  window=%s",
                     group, limit, window_str or f"{window_seconds}s",
                 )
-
-            self._group_display[group] = {
-                "remaining": remaining,
-                "used": used,
-                "window_str": window_str,
-            }
 
             if url:
                 norm = self._normalize_url_path(url)

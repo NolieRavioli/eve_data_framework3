@@ -176,6 +176,7 @@ def _fallback_write(sql: str, params: list[Any] | None) -> None:
     con = connect(get_database_path())
     try:
         con.execute(sql, params or [])
+        con.execute("CHECKPOINT")
     finally:
         con.close()
 
@@ -187,6 +188,7 @@ def _fallback_executemany(sql: str, rows: list[Sequence[Any]]) -> None:
     try:
         if rows:
             con.executemany(sql, rows)
+            con.execute("CHECKPOINT")
     finally:
         con.close()
 

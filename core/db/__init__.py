@@ -39,8 +39,39 @@ def warm_caches(sde_cfg: dict | None = None) -> None:
     logger.info("SDE caches warm.")
 
 
+def initialize_analysis_tables(con) -> None:
+    """Call every analysis collector's ensure_tables (and ensure_columns where applicable).
+
+    Each import is guarded individually so an import error in one collector
+    never prevents the others from running.  All DDL is idempotent.
+
+    This is called once at startup so that the DB browser always shows the
+    full table set even before any data collection has run.
+    """
+    collectors = [
+        # (module_path, has_ensure_columns)
+        ("analysis.market.regions",      True),
+        ("analysis.market.structures",   True),
+        ("analysis.structures.discover", True),
+    ]
+
+    for module_path, has_columns in collectors:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            mod.ensure_tables(con)
+            if has_columns:
+                try:
+                    mod.ensure_columns(con)
+                except Exception as col_exc:
+                    logger.debug("[DB init] ensure_columns skipped for %s: %s", module_path, col_exc)
+            logger.debug("[DB init] Tables ready: %s", module_path)
+        except Exception as exc:
+            logger.warning("[DB init] Could not initialize tables for %s: %s", module_path, exc)
+
+
 def initialize_all(sde_cfg: dict | None = None) -> dict:
-    """Run the full public initialization sequence (schema then caches).
+    """Run the full public initialization sequence (schema → caches → analysis tables → ESI cache).
 
     Returns the current warehouse status dict.
     """
@@ -48,18 +79,24 @@ def initialize_all(sde_cfg: dict | None = None) -> dict:
     ensure_schema()
     warm_caches(sde_cfg)
 
-    # Initialise ESI cache tables and seed route specs from the generated DDL.
+    con = publicDB.connect()
     try:
-        import core.esi.cache as esi_cache
-        con = publicDB.connect()
+        # Initialise every analysis collector's tables up front so the DB
+        # browser shows the full schema from the first request.
+        initialize_analysis_tables(con)
+
+        # Initialise ESI cache tables and seed route specs from the generated DDL.
         try:
+            import core.esi.cache as esi_cache
             esi_cache.ensure_tables(con)
             count = esi_cache.seed_route_specs(con)
             if count:
                 logger.info("ESI cache: seeded %d route spec rows.", count)
-        finally:
-            con.close()
-    except Exception as exc:
-        logger.warning("ESI cache init skipped (%s). Run 'python build.py' to generate cache_ddl.py.", exc)
+        except Exception as exc:
+            logger.warning("ESI cache init skipped (%s). Run 'python build.py' to generate cache_ddl.py.", exc)
+
+        con.execute("CHECKPOINT")
+    finally:
+        con.close()
 
     return publicDB.get_warehouse_status()

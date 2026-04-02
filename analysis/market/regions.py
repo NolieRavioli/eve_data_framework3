@@ -17,14 +17,19 @@ own retry loops.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.queue.esi_req import esi_get
+from core.queue.writer import db_write
 
 logger = logging.getLogger(__name__)
 
 ESI_BASE = "https://esi.evetech.net/latest"
+
+_REGION_COOLDOWN_SECONDS = 3600          # 1 hour between successful region refreshes
+_STATION_FORBIDDEN_DAYS = 1              # mark stations forbidden for 1 day on ESI error
 
 
 # ── Table DDL — this collector OWNS market_orders + market_region_cooldowns ───
@@ -62,6 +67,41 @@ def ensure_tables(con) -> None:
     """)
 
 
+def ensure_columns(con) -> None:
+    """Add market cooldown tracking columns to ``dim_stations`` (enrichment pattern).
+
+    ``dim_stations`` is owned by the SDE loader; we add columns here following
+    the enrichment pattern from AGENTS.md.  Wrapped in a try/except in the
+    caller because the SDE may not be loaded yet.
+    """
+    con.execute(
+        "ALTER TABLE dim_stations ADD COLUMN IF NOT EXISTS market_forbidden_until TIMESTAMP"
+    )
+    con.execute(
+        "ALTER TABLE dim_stations ADD COLUMN IF NOT EXISTS market_refreshed_until TIMESTAMP"
+    )
+
+
+# ── Station cooldown helpers ──────────────────────────────────────────────────
+
+def _mark_stations_refreshed(region_id: int) -> None:
+    """Set market_refreshed_until on all dim_stations rows for this region."""
+    refreshed_until = datetime.now(timezone.utc) + timedelta(seconds=_REGION_COOLDOWN_SECONDS)
+    db_write(
+        "UPDATE dim_stations SET market_refreshed_until = ? WHERE region_id = ?",
+        [refreshed_until, region_id],
+    )
+
+
+def _mark_stations_forbidden(region_id: int) -> None:
+    """Set market_forbidden_until on all dim_stations rows for this region."""
+    forbidden_until = datetime.now(timezone.utc) + timedelta(days=_STATION_FORBIDDEN_DAYS)
+    db_write(
+        "UPDATE dim_stations SET market_forbidden_until = ? WHERE region_id = ?",
+        [forbidden_until, region_id],
+    )
+
+
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 def fetch_all_market_data() -> None:
@@ -89,6 +129,11 @@ def fetch_all_market_data() -> None:
     con = public_connect(read_only=False)
     try:
         ensure_tables(con)
+        try:
+            ensure_columns(con)
+        except Exception as exc:
+            logger.debug("[MarketStation] dim_stations columns skipped (%s) — SDE not loaded yet?", exc)
+        con.execute("CHECKPOINT")
     finally:
         con.close()
 
@@ -115,6 +160,8 @@ def fetch_all_market_data() -> None:
                 "[MarketStation] %s on region %s page 1 — skipping",
                 resp.status_code, region_id,
             )
+            if resp.status_code in (403, 404):
+                _mark_stations_forbidden(region_id)
             continue
         orders = resp.json()
         if not orders:
@@ -122,7 +169,8 @@ def fetch_all_market_data() -> None:
 
         total_pages = int(resp.headers.get("X-Pages", 1))
         sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-        sde_store.mark_region_market_refreshed(region_id)
+        sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
+        _mark_stations_refreshed(region_id)
         logger.info(
             "[MarketStation] Region %s page 1/%s — %s orders inserted",
             region_id, total_pages, len(orders),
