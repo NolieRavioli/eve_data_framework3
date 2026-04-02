@@ -128,9 +128,15 @@
     ISK-per-hour rankings, and full ESI access with secure character authentication.
   </p>
   <div class="hero-actions">
+    {% if base_logged_in %}
+    <a href="{{ url_for('dashboard.home') }}" class="hero-btn-primary">
+      Go to Dashboard
+    </a>
+    {% else %}
     <a href="{{ url_for('auth.login') }}" class="hero-btn-primary">
       Sign in with EVE Online
     </a>
+    {% endif %}
   </div>
 
   <div class="features">
