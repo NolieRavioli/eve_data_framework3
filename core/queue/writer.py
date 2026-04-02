@@ -96,6 +96,7 @@ def _writer_loop(db_path: Path) -> None:
                     con.executemany(op.sql, op.rows)
             else:
                 con.execute(op.sql, op.params or [])
+            con.execute("CHECKPOINT")
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             op.error = exc

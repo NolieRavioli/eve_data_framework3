@@ -64,3 +64,31 @@ async function runQuery() {
 document.getElementById('sql-input').addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runQuery();
 });
+
+var autoTimer = null;
+
+function toggleAuto() {
+    if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+        var btn = document.getElementById('auto-btn');
+        btn.textContent = '\u21BB Auto';
+        btn.classList.remove('btn-a');
+        btn.classList.add('btn-g');
+        setStatus('Auto-refresh stopped', '');
+    } else {
+        var sql = document.getElementById('sql-input').value.trim();
+        if (!sql) { setStatus('Enter a query first', 'err'); return; }
+        var interval = parseInt(document.getElementById('auto-interval').value, 10) * 1000;
+        var btn = document.getElementById('auto-btn');
+        btn.textContent = '\u25A0 Stop';
+        btn.classList.remove('btn-g');
+        btn.classList.add('btn-a');
+        runQuery();
+        autoTimer = setInterval(function() {
+            var currentSql = document.getElementById('sql-input').value.trim();
+            if (!currentSql) { toggleAuto(); return; }
+            runQuery();
+        }, interval);
+    }
+}

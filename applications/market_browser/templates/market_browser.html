@@ -1,104 +1,159 @@
 {% extends "base.html" %}
-{% block title %}Market Browser{% endblock %}
+{% block title %}{% if type_name %}{{ type_name }} — {% endif %}Market Browser{% endblock %}
 {% block content %}
-<div class="page-header">
-  <h1>📊 Market Browser</h1>
-  <p class="muted">Browse live sell &amp; buy orders by region and item type.</p>
-</div>
 
-{# ── Search form ──────────────────────────────────────────────────── #}
-<div class="card" style="margin-bottom:1.25rem">
-  <form method="get" action="{{ url_for('market_browser.orders') }}" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
-    <div style="flex:1;min-width:12rem">
-      <label class="form-label" for="type_id">Type ID</label>
-      <input id="type_id" name="type_id" type="number" min="1"
-             value="{{ type_id or '' }}" placeholder="e.g. 34 (Tritanium)"
-             class="form-control" style="width:100%">
-    </div>
-    <div style="flex:1;min-width:14rem">
-      <label class="form-label" for="region_id">Region</label>
-      <select id="region_id" name="region_id" class="form-control" style="width:100%">
+{# ── Page header: item name left, region selector right ─────────────── #}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub">Market Browser</div>
+    <h1>{{ type_name or "Select an item" }}{% if type_id %} <span class="muted" style="font-size:.65em;font-weight:400">· {{ type_id }}</span>{% endif %}</h1>
+  </div>
+  <form method="get" action="{{ url_for('market_browser.orders') }}" id="region-form">
+    {% if type_id %}<input type="hidden" name="type_id" value="{{ type_id }}">{% endif %}
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <span class="muted" style="font-size:.8rem;white-space:nowrap">Region</span>
+      <select name="region_id" onchange="document.getElementById('region-form').submit()" style="background:rgba(7,18,29,.85);border:1px solid var(--border);border-radius:.55rem;color:var(--text-strong);padding:.35rem .65rem;font-size:.9rem;cursor:pointer;min-width:12rem">
+        <option value="0" {% if not region_id %}selected{% endif %}>Universe</option>
         {% for r in regions %}
-        <option value="{{ r.id }}" {{ 'selected' if r.id == region_id else '' }}>{{ r.name }}</option>
+        <option value="{{ r.id }}" {% if r.id == region_id %}selected{% endif %}>{{ r.name }}</option>
         {% endfor %}
       </select>
     </div>
-    <button type="submit" class="btn btn-primary">Search</button>
   </form>
 </div>
 
-{# ── Refresh trigger ──────────────────────────────────────────────── #}
-{% if region_id %}
-<form method="post" action="{{ url_for('market_browser.refresh') }}" style="margin-bottom:1.25rem">
-  <input type="hidden" name="region_id" value="{{ region_id }}">
-  <button type="submit" class="btn btn-a">↻ Refresh market data for this region</button>
-</form>
-{% endif %}
+<div class="pg-body">
 
-{# ── Summary cards ────────────────────────────────────────────────── #}
-{% if type_name %}
-<h2 style="margin-bottom:.5rem">{{ type_name }} <span class="muted" style="font-size:.85rem">— type id {{ type_id }}</span></h2>
-{% endif %}
+  {# ── Type ID search + refresh ─────────────────────────────────────── #}
+  <div class="card" style="padding:.75rem 1rem">
+    <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap">
+      <form method="get" action="{{ url_for('market_browser.orders') }}" style="display:flex;gap:.75rem;align-items:flex-end;flex:1;flex-wrap:wrap">
+        <input type="hidden" name="region_id" value="{{ region_id or 0 }}">
+        <div style="flex:1;min-width:9rem">
+          <label class="muted" style="display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem" for="type_id">Type ID</label>
+          <input id="type_id" name="type_id" type="number" min="1" value="{{ type_id or '' }}"
+                 placeholder="e.g. 34 for Tritanium"
+                 style="width:100%;background:rgba(7,18,29,.7);border:1px solid var(--border);border-radius:.55rem;color:var(--text-strong);padding:.4rem .7rem;font-size:.9rem">
+        </div>
+        <button type="submit" class="btn btn-primary">Search</button>
+      </form>
+      {% if region_id and type_id %}
+      <form method="post" action="{{ url_for('market_browser.refresh') }}" style="margin:0">
+        <input type="hidden" name="region_id" value="{{ region_id }}">
+        <button type="submit" class="btn btn-a" style="white-space:nowrap">↻ Refresh region</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('market_browser.refresh_all') }}" style="margin:0">
+        <button type="submit" class="btn btn-g" style="white-space:nowrap">↻ Refresh all regions</button>
+      </form>
+    </div>
+  </div>
 
-{% if orders is not none %}
+  {% if sells is not none %}
+
+  {# ── Stats row ────────────────────────────────────────────────────── #}
   {% if best_sell is not none or best_buy is not none %}
-  <div style="display:flex;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap">
+  <div class="stat-row">
     {% if best_sell is not none %}
     <div class="stat">
-      <div class="stat-label">Best Sell</div>
-      <div class="stat-value" style="color:var(--bad)">{{ "{:,.2f}".format(best_sell) }} ISK</div>
+      <span class="v" style="color:var(--bad)">{{ "{:,.2f}".format(best_sell) }} ISK</span>
+      <span class="l">Best Sell</span>
     </div>
     {% endif %}
     {% if best_buy is not none %}
     <div class="stat">
-      <div class="stat-label">Best Buy</div>
-      <div class="stat-value" style="color:var(--good)">{{ "{:,.2f}".format(best_buy) }} ISK</div>
+      <span class="v" style="color:var(--good)">{{ "{:,.2f}".format(best_buy) }} ISK</span>
+      <span class="l">Best Buy</span>
     </div>
     {% endif %}
     {% if best_sell is not none and best_buy is not none %}
     <div class="stat">
-      <div class="stat-label">Spread</div>
-      <div class="stat-value">{{ "{:,.2f}".format(best_sell - best_buy) }} ISK</div>
+      <span class="v isk">{{ "{:,.2f}".format(best_sell - best_buy) }} ISK</span>
+      <span class="l">Spread</span>
+    </div>
+    {% endif %}
+    {% if sell_volume %}
+    <div class="stat">
+      <span class="v">{{ "{:,}".format(sell_volume) }}</span>
+      <span class="l">Sell Volume</span>
+    </div>
+    {% endif %}
+    {% if buy_volume %}
+    <div class="stat">
+      <span class="v">{{ "{:,}".format(buy_volume) }}</span>
+      <span class="l">Buy Volume</span>
     </div>
     {% endif %}
   </div>
   {% endif %}
 
-  {% if orders %}
-  <div class="tw tw-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th class="text-right">Price (ISK)</th>
-          <th class="text-right">Volume Remain</th>
-          <th class="text-right">Volume Total</th>
-          <th>Range</th>
-          <th>Issued</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for o in orders %}
-        <tr>
-          <td>
-            {% if o.is_buy %}
-            <span class="bdg bdg-ok">BUY</span>
-            {% else %}
-            <span class="bdg bdg-bad">SELL</span>
-            {% endif %}
-          </td>
-          <td class="text-right">{{ "{:,.2f}".format(o.price) }}</td>
-          <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
-          <td class="text-right">{{ "{:,}".format(o.volume_total) }}</td>
-          <td>{{ o.range }}</td>
-          <td class="muted" style="font-size:.8rem">{{ o.issued }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# ── Sellers ──────────────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="ct" style="color:var(--bad)">Sellers</div>
+    {% if sells %}
+    <div class="tw tw-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="text-right">Quantity</th>
+            <th class="text-right">Price</th>
+            <th>Location</th>
+            <th>Expires in</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in sells %}
+          <tr>
+            <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
+            <td class="text-right" style="color:var(--bad);font-weight:700">{{ "{:,.2f}".format(o.price) }} ISK</td>
+            <td class="muted" style="font-size:.85rem">{{ o.location_name }}</td>
+            <td class="muted" style="font-size:.82rem">{{ o.expires_in }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No sell orders found{% if region_id == 0 %} in the universe{% endif %}.</div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="empty">No orders found. Try refreshing market data for this region.</div>
+
+  {# ── Buyers ───────────────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="ct" style="color:var(--good)">Buyers</div>
+    {% if buys %}
+    <div class="tw tw-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="text-right">Quantity</th>
+            <th class="text-right">Price</th>
+            <th>Location</th>
+            <th>Range</th>
+            <th class="text-right">Min Vol</th>
+            <th>Expires in</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in buys %}
+          <tr>
+            <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
+            <td class="text-right" style="color:var(--good);font-weight:700">{{ "{:,.2f}".format(o.price) }} ISK</td>
+            <td class="muted" style="font-size:.85rem">{{ o.location_name }}</td>
+            <td>{{ o.range }}</td>
+            <td class="text-right muted">{{ o.min_volume }}</td>
+            <td class="muted" style="font-size:.82rem">{{ o.expires_in }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No buy orders found{% if region_id == 0 %} in the universe{% endif %}.</div>
+    {% endif %}
+  </div>
+
   {% endif %}
-{% endif %}
+
+</div>
 {% endblock %}
