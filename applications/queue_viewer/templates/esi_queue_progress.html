@@ -161,6 +161,22 @@
 .esi-req-status.s5 { color: var(--bad); }
 .esi-req-ms  { flex-shrink: 0; width: 4.5rem; color: var(--muted); text-align: right; }
 .esi-req-url { flex: 1; color: #bcd1e5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.esi-req-toggle { flex-shrink: 0; width: 0.9rem; color: var(--muted); font-size: 0.6rem; cursor: pointer; transition: transform 0.15s; user-select: none; }
+.esi-req-row { cursor: pointer; }
+.esi-req-row:hover { background: rgba(255,255,255,0.03); }
+.esi-req-hdrs {
+  display: none;
+  padding: 0.3rem 0.5rem 0.35rem 1.5rem;
+  background: rgba(0,0,0,0.25);
+  border-radius: 4px;
+  margin-bottom: 0.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.67rem;
+  line-height: 1.65;
+}
+.esi-req-hdr-kv { display: flex; gap: 0.6rem; }
+.esi-req-hdr-k { color: var(--muted); width: 16rem; flex-shrink: 0; }
+.esi-req-hdr-v { color: var(--txt); word-break: break-all; }
 {% endblock %}
 
 {% block content %}

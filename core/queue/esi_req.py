@@ -300,7 +300,7 @@ class EsiRateLimiter:
 
                 if _post_request_detail_hook is not None:
                     try:
-                        _post_request_detail_hook(method.upper(), url, response.status_code, _elapsed_ms)
+                        _post_request_detail_hook(method.upper(), url, response.status_code, _elapsed_ms, dict(response.headers))
                     except Exception:
                         pass
 

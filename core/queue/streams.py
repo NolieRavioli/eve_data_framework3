@@ -130,7 +130,14 @@ except Exception:
     pass
 
 
-def _esi_detail_hook(method: str, url: str, status_code: int, elapsed_ms: int) -> None:
+_INTERESTING_HEADERS = frozenset({
+    "x-ratelimit-group", "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-used",
+    "x-pages", "x-esi-error-limit-remain", "x-esi-error-limit-reset",
+    "etag", "expires", "last-modified",
+})
+
+
+def _esi_detail_hook(method: str, url: str, status_code: int, elapsed_ms: int, resp_headers: dict | None = None) -> None:
     """Called by esi_req after every real HTTP response — records on the running task."""
     task_id = getattr(_thread_task, "task_id", None)
     if not task_id:
@@ -138,7 +145,8 @@ def _esi_detail_hook(method: str, url: str, status_code: int, elapsed_ms: int) -
     task = _registry.get(task_id)
     if task:
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        task.add_esi_request({"ts": ts, "method": method, "url": url, "status": status_code, "ms": elapsed_ms})
+        hdrs = {k: v for k, v in (resp_headers or {}).items() if k.lower() in _INTERESTING_HEADERS}
+        task.add_esi_request({"ts": ts, "method": method, "url": url, "status": status_code, "ms": elapsed_ms, "hdrs": hdrs})
 
 
 try:

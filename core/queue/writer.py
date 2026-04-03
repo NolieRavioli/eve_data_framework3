@@ -118,12 +118,13 @@ def _writer_loop(db_path: Path) -> None:
             op.error = exc
             _connect()  # reset connection after an error
         finally:
-            # Unblock the caller immediately — don't make them wait for CHECKPOINT.
+            # Unblock the caller immediately — never make callers wait for CHECKPOINT.
             op.event.set()
 
-        # Checkpoint when the queue drains (burst complete) or every 100 ops.
-        if _write_queue.empty() or _pending >= 100:
-            _checkpoint()
+        # No inline checkpoint here — DuckDB auto-checkpoints at the WAL size
+        # threshold, and the 30 s idle timeout above handles explicit flushing
+        # after a burst completes.  Firing checkpoint between writes would block
+        # the next caller for the full flush duration (~14 s on large tables).
 
     _checkpoint()
     if con is not None:
