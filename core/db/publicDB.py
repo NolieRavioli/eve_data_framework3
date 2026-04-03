@@ -922,9 +922,9 @@ def mark_region_market_refreshed(
 ) -> None:
     """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
     from datetime import timedelta
-    from core.queue.writer import db_write
+    from core.queue.writer import db_write_nowait
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
-    db_write(
+    db_write_nowait(
         """
         INSERT INTO market_region_cooldowns (region_id, refreshed_until)
         VALUES (?, ?)
