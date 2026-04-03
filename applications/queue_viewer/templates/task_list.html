@@ -98,7 +98,7 @@
             <td class="mono muted" style="white-space:nowrap" data-col="finished">{{ t.finished_at or '\u2014' }}</td>
             <td class="esi-rate-cell">
               {% if t.esi_rate %}
-              {% set pct = (t.esi_rate.tokens_used / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
+              {% set pct = ((t.esi_rate.tokens_limit - (t.esi_rate.tokens_remaining or 0)) / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
               <div style="width:90px;background:rgba(0,0,0,0.35);border-radius:999px;height:5px;overflow:hidden;margin-bottom:0.3rem">
                 <div class="esi-mini-bar" style="height:100%;border-radius:999px;width:{{ pct|round(1) }}%;background:{% if pct >= 90 %}var(--bad){% elif pct >= 70 %}var(--warn){% else %}var(--accent){% endif %}"></div>
               </div>
