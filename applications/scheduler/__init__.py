@@ -20,6 +20,7 @@ class SchedulerTool(BaseTool):
         nav_weight=5,
         nav_section="admin",
         access_level="admin",
+        required_role="scheduler",
     )
 
     def create_blueprint(self) -> Blueprint:

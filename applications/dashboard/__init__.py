@@ -19,6 +19,8 @@ class DashboardTool(BaseTool):
         required_scopes=[],
         nav_weight=-100,
         nav_section="overview",
+        access_level="user",
+        required_role="dashboard",
     )
 
     def create_blueprint(self) -> Blueprint:

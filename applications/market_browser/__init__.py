@@ -16,6 +16,7 @@ class MarketBrowserTool(BaseTool):
         url_prefix="/market",
         required_scopes=[],
         nav_weight=10,
+        access_level="public",
     )
 
     def create_blueprint(self) -> Blueprint:

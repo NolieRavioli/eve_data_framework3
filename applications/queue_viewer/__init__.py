@@ -19,6 +19,8 @@ class QueueViewerTool(BaseTool):
         required_scopes=[],
         nav_weight=-50,
         nav_section="tools",
+        access_level="user",
+        required_role="queue",
     )
 
     def create_blueprint(self) -> Blueprint:

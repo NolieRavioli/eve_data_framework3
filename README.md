@@ -108,7 +108,7 @@ To add additional characters to your account, use the **Add Toon** link on the d
 Site admins can manage other users through the **Admin Panel** (`/admin`):
 
 - **Promote to site admin** — grants a user admin-level access across all applications.
-- **Grant / revoke roles** — control which applications each user can access. Roles map 1-to-1 to application `auth.json` role names.
+- **Grant / revoke roles** — control which applications each user can access. Roles map 1-to-1 to application role names.
 - **View logs** — the admin panel exposes a live log console streamed via SSE.
 
 ### Default Roles
@@ -135,7 +135,7 @@ revoke_user_role(owner_id, "isk_per_hour")
 
 ### Triggering Manual Data Collection
 
-Data collection happens automatically on the scheduler (see [Background Scheduler](#background-scheduler)). To trigger a refresh manually, visit the **Scheduler** admin panel (`/admin/scheduler`) and click **Run Now** on any job. You can also use the **Task Queue Viewer** (`/tools/queue`) to monitor running tasks and stream their logs live.
+Data collection happens automatically on the scheduler (see [Background Scheduler](#background-scheduler)). To trigger a refresh manually, visit the **Scheduler** admin panel (`/admin/scheduler`) and click **Run Now** on any job. You can also use the **ESI Queue** (`/queue`) to monitor running jobs and stream their logs live.
 
 ### Regenerating the ESI Spec
 
@@ -229,13 +229,13 @@ Cooldown settings that prevent re-fetching recently inaccessible structures. See
 | Application | URL Prefix | Access | Description |
 |-------------|------------|--------|-------------|
 | `market_browser` | `/market` | Public (no login) | Browse live market orders by region and item type |
-| `dashboard` | `/` | Role: `dashboard` | Character overview and quick links |
-| `queue_viewer` | `/tools/queue` | Role: `queue` | Live task progress and ESI rate monitor |
-| `industry_calculator` | `/tools/industry` | Role: `industry` | Calculate manufacturing costs and margins |
-| `isk_per_hour` | `/tools/isk` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
+| `dashboard` | `/dashboard` | Role: `dashboard` | Character overview and quick links |
+| `queue_viewer` | `/queue` | Role: `queue` | Live job progress and ESI rate monitor |
+| `industry_calculator` | `/industry` | Role: `industry` | Calculate manufacturing costs and margins |
+| `isk_per_hour` | `/isk_per_hour` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
 | `admin_panel` | `/admin` | Admin only | Logs, stats, and user management |
-| `db_browser` | `/admin/db` | Admin only | DuckDB/SQLite schema and query browser |
-| `esi_browser` | `/admin/esi` | ESI operation explorer | Browse all available ESI endpoints |
+| `db_browser` | `/admin/db_browser` | Admin only | DuckDB/SQLite schema and query browser |
+| `esi_browser` | `/admin/esi` | Admin only | Browse all available ESI endpoints |
 | `scheduler` | `/admin/scheduler` | Admin only | Enable/disable jobs, set intervals, run on demand |
 
 ---
@@ -348,24 +348,10 @@ Each application lives in `applications/<name>/` and is auto-discovered by `pkgu
 ```
 applications/my_tool/
   __init__.py      # defines Tool = MyTool()
-  auth.json        # access control declaration
   routes.py        # Flask blueprint
   templates/       # Jinja2 templates
   static/          # JavaScript, CSS (optional)
 ```
-
-### `auth.json`
-
-```json
-{
-  "role": "my_tool",
-  "minimum_level": "user"
-}
-```
-
-`minimum_level` values: `"public"` | `"user"` | `"admin"` | `"site_owner"`
-
-Set `"role": null` if no named role is required (access_level check only).
 
 ### `__init__.py`
 
@@ -383,7 +369,8 @@ class MyTool(BaseTool):
         required_scopes=[],
         nav_weight=50,
         nav_section="apps",
-        # access_level and required_role loaded from auth.json — omit here
+        access_level="user",
+        required_role="my_tool",
     )
 
     def create_blueprint(self):
@@ -391,6 +378,10 @@ class MyTool(BaseTool):
 
 Tool = MyTool()
 ```
+
+`access_level` values: `"public"` | `"user"` | `"admin"` | `"site_owner"`
+
+Set `required_role=None` if no named role is required (access_level check only).
 
 `nav_section` values: `"overview"` | `"tools"` | `"apps"` | `"admin"` | `""` (hidden)
 

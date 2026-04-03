@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from flask import Flask
 from flask import Blueprint
@@ -39,7 +38,6 @@ class ToolManifest:
     #: "site_owner" = site owner only
     access_level: str = "user"
     #: Named role required to access this tool (in addition to access_level).
-    #: Set automatically from auth.json — do not set manually in ToolManifest.
     required_role: str | None = None
 
 
@@ -47,36 +45,6 @@ class BaseTool(ABC):
     """Abstract base that every tool must implement."""
 
     manifest: ToolManifest
-
-    def __init__(self) -> None:
-        self._load_auth_config()
-
-    def _load_auth_config(self) -> None:
-        """Apply auth.json from the application package directory if present.
-
-        auth.json fields:
-          role           (str | null)  — named role required; null = level check only
-          minimum_level  (str)         — "public" | "user" | "admin" | "site_owner"
-        """
-        import json as _json
-        import sys
-        mod = sys.modules.get(type(self).__module__)
-        if not (mod and getattr(mod, "__file__", None)):
-            return
-        auth_path = Path(mod.__file__).parent / "auth.json"
-        if not auth_path.exists():
-            return
-        try:
-            with auth_path.open("r", encoding="utf-8") as fh:
-                spec = _json.load(fh)
-        except Exception:
-            return
-        role = spec.get("role") or None          # treat "" same as null
-        level = spec.get("minimum_level", "")
-        if role is not None:
-            self.manifest.required_role = role
-        if level in ACCESS_LEVELS:
-            self.manifest.access_level = level
 
     @abstractmethod
     def create_blueprint(self) -> Blueprint:

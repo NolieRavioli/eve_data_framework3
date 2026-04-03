@@ -16,6 +16,8 @@ class IndustryCalculatorTool(BaseTool):
         url_prefix="/industry",
         required_scopes=[],
         nav_weight=20,
+        access_level="user",
+        required_role="industry",
     )
 
     def create_blueprint(self) -> Blueprint:

@@ -16,6 +16,8 @@ class IskPerHourTool(BaseTool):
         url_prefix="/isk_per_hour",
         required_scopes=[],
         nav_weight=30,
+        access_level="user",
+        required_role="isk_per_hour",
     )
 
     def create_blueprint(self) -> Blueprint:

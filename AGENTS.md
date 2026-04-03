@@ -136,15 +136,15 @@ applications/            # ── USER-FACING TOOLS ─────────�
   __init__.py            # pkgutil auto-discovery, tool_registry singleton
   _base.py               # re-exports: BaseTool, ToolManifest, base_ctx, require_*, get_runtime_settings
   _adapters.py           # core infrastructure singletons for the applications layer (db, sde, tasks, …)
-  dashboard/             # nav_section="overview" — character overview; auth.json: role="dashboard"
-  queue_viewer/          # nav_section="tools"    — task progress + ESI rate SSE; auth.json: role="queue"
-  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; auth.json: minimum_level="admin"
-  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; auth.json: minimum_level="admin"
-  esi_browser/           # nav_section="admin"    — ESI operation explorer; auth.json: minimum_level="admin"
-  scheduler/             # nav_section="admin"    — background job management; auth.json: role="scheduler", minimum_level="admin"
-  market_browser/        # nav_section="apps"     — live market orders; auth.json: role=null, minimum_level="public"
-  industry_calculator/   # nav_section="apps"     — manufacturing cost calc; auth.json: role="industry"
-  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; auth.json: role="isk_per_hour"
+  dashboard/             # nav_section="overview" — character overview; access_level="user", required_role="dashboard"
+  queue_viewer/          # nav_section="tools"    — live job progress + ESI rate SSE; access_level="user", required_role="queue"
+  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; access_level="admin"
+  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; access_level="admin"
+  esi_browser/           # nav_section="admin"    — ESI operation explorer; access_level="admin"
+  scheduler/             # nav_section="admin"    — background job management; access_level="admin", required_role="scheduler"
+  market_browser/        # nav_section="apps"     — live market orders; access_level="public"
+  industry_calculator/   # nav_section="apps"     — manufacturing cost calc; access_level="user", required_role="industry"
+  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; access_level="user", required_role="isk_per_hour"
 
 utils/                   # ── UTILITIES & CODE GENERATION ─────────────────────
   build/
@@ -214,7 +214,7 @@ from core.db.publicDB import connect          # forbidden in applications/
 - **No raw SQL with user input** — always parameterised: `con.execute("WHERE id = ?", [val])`.
 - **Token handling**: 401 → token expired (stop, raise, do not retry); 403 → no permission (not retryable, return None).
 - **Table DDL belongs to analysis workers** — never add domain table DDL to `core/db/publicDB.py`.
-- **`auth.json` controls access** — never hard-code `access_level` or `required_role` in a `ToolManifest` constructor; let `BaseTool._load_auth_config()` read `auth.json`.
+- **`access_level` and `required_role` go in `ToolManifest`** — set them directly in the `ToolManifest` constructor in each application's `__init__.py`. There is no `auth.json` file.
 - **`@require_role` on new routes** — prefer over bare `@require_login`. Use `@require_admin` only for genuinely admin-only routes.
 - **Do not edit auto-generated packages** — `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, `core/esi/public/` are overwritten each `build.py` run.
 - **Config is gitignored** — `config.yaml` must never be committed. Use `example.config.yaml` for documentation and defaults.
@@ -493,22 +493,6 @@ task_id = scheduler.run_now("character_refresh")
 
 `applications/__init__.py` uses `pkgutil.iter_modules` to discover all sub-packages. Any package that exposes a module-level `Tool` attribute (a `BaseTool` instance) and does not start with `_` is auto-registered into the global `tool_registry`. Auto-registration happens on import — no manual registration step required.
 
-### `auth.json` Schema
-
-Every application package must contain `auth.json`:
-
-```json
-{
-  "role": "my_role",
-  "minimum_level": "user"
-}
-```
-
-- `role` — named role required (string, or `null` for level-only check)
-- `minimum_level` — `"public"` | `"user"` | `"admin"` | `"site_owner"`
-
-`BaseTool.__init__` calls `_load_auth_config()` which reads this file automatically.
-
 ### `ToolManifest` Fields
 
 ```python
@@ -521,7 +505,8 @@ ToolManifest(
     required_scopes=[],       # ESI scopes required (empty = no ESI auth needed)
     nav_weight=50,            # lower = higher in nav list
     nav_section="apps",       # "overview" | "tools" | "apps" | "admin" | "" (hidden)
-    # DO NOT set access_level or required_role here — loaded from auth.json
+    access_level="user",      # "public" | "user" | "admin" | "site_owner"
+    required_role="my_tool",  # named role string, or None for level-only check
 )
 ```
 
@@ -653,7 +638,6 @@ Otherwise leave `analysis/__init__.py` alone — schedulers and routes import di
 
 1. Declares a class-level `manifest: ToolManifest`.
 2. Overrides `create_blueprint() -> Blueprint`.
-3. Calls `_load_auth_config()` in `__init__` to read `auth.json`.
 
 `ToolManifest` is a frozen dataclass carrying nav metadata, access level, and OAuth scope requirements.
 
@@ -893,7 +877,6 @@ Use this to add a new user-facing web tool to the dashboard.
 ```
 applications/my_tool/
   __init__.py
-  auth.json
   routes.py
   templates/
     my_tool.html
@@ -901,16 +884,7 @@ applications/my_tool/
     my_tool.js   (optional)
 ```
 
-**Step 2 — Write `auth.json`.**
-
-```json
-{
-  "role": "my_tool",
-  "minimum_level": "user"
-}
-```
-
-**Step 3 — Write `__init__.py`.**
+**Step 2 — Write `__init__.py`.**
 
 ```python
 from applications._base import BaseTool, ToolManifest
@@ -927,6 +901,8 @@ class MyTool(BaseTool):
         required_scopes=[],
         nav_weight=60,
         nav_section="apps",
+        access_level="user",
+        required_role="my_tool",
     )
 
     def create_blueprint(self):
@@ -936,7 +912,9 @@ class MyTool(BaseTool):
 Tool = MyTool()
 ```
 
-**Step 4 — Write `routes.py`.**
+Set `required_role=None` if no named role is required (access_level check only). `access_level` values: `"public"` | `"user"` | `"admin"` | `"site_owner"`.
+
+**Step 3 — Write `routes.py`.**
 
 ```python
 from flask import Blueprint, render_template
@@ -954,7 +932,7 @@ def index():
     return render_template("my_tool.html", **base_ctx("my_tool"))
 ```
 
-**Step 5 — Write the template.**
+**Step 4 — Write the template.**
 
 ```html
 {% extends "base.html" %}
@@ -970,11 +948,11 @@ def index():
 {% endblock %}
 ```
 
-**Step 6 — Verify auto-discovery.**
+**Step 5 — Verify auto-discovery.**
 
 Start the server. Your tool should appear in the sidebar under the declared `nav_section`. Check the admin panel or Flask startup logs for any import errors. The `Tool = MyTool()` line **must** execute at import time without error.
 
-**Step 7 — Add the new role to `example.config.yaml`.**
+**Step 6 — Add the new role to `example.config.yaml`.**
 
 Document the new role name in `example.config.yaml` under the `Auth` section comment so site admins know to add it to `default_roles` if desired.
 
