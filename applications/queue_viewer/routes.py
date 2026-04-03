@@ -99,7 +99,7 @@ def esi_queue_list():
     summary   = Counter(task["status"] for task in task_rows)
 
     return render_template(
-        "task_list.html",
+        "esi_queue_list.html",
         **base_ctx("queue_viewer"),
         tasks=task_rows,
         is_admin=is_admin,
@@ -124,7 +124,7 @@ def esi_queue_progress(task_id: str):
         abort(403)
 
     return render_template(
-        "task_progress.html",
+        "esi_queue_progress.html",
         **base_ctx("queue_viewer"),
         task=task.as_dict(),
     )

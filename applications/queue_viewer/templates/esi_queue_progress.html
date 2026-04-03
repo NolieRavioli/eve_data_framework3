@@ -101,7 +101,7 @@
 <div class="pg-hd">
   <div>
     <h1>{{ task.name }}</h1>
-    <div class="pg-sub">Task ID <span class="mono">{{ task.task_id }}</span></div>
+    <div class="pg-sub">Job ID <span class="mono">{{ task.task_id }}</span></div>
   </div>
   <span id="status-badge" class="task-status {{ task.status }}">{{ task.status }}</span>
 </div>
@@ -164,5 +164,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('queue_viewer.static', filename='task_progress.js') }}"></script>
+<script src="{{ url_for('queue_viewer.static', filename='esi_queue_progress.js') }}"></script>
 {% endblock %}

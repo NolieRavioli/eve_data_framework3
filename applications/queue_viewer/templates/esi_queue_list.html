@@ -27,7 +27,7 @@
   <div class="stat-row">
     <div class="stat">
       <span class="v">{{ task_summary.total }}</span>
-      <span class="l">Visible Tasks</span>
+      <span class="l">Visible Jobs</span>
     </div>
     <div class="stat">
       <span class="v">{{ task_summary.running }}</span>
@@ -122,7 +122,7 @@
   {% else %}
   <div class="empty card">
     <div class="ei">~</div>
-    <p>No tasks in queue.</p>
+    <p>No jobs in queue.</p>
     <p>Use the <a href="{{ url_for('dashboard.home') }}" class="lnk">Dashboard</a> to start collection.</p>
   </div>
   {% endif %}
@@ -130,5 +130,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('queue_viewer.static', filename='task_list.js') }}"></script>
+<script src="{{ url_for('queue_viewer.static', filename='esi_queue_list.js') }}"></script>
 {% endblock %}
