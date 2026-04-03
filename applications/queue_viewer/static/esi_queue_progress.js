@@ -102,21 +102,46 @@
     var log = document.getElementById('esi-req-log');
     var card = document.getElementById('esi-req-card');
     card.style.display = '';
-    // Auto-scroll only if already at bottom
     var atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 5;
     entries.forEach(function (e) {
       var sCls = e.status >= 500 ? 's5' : e.status >= 400 ? 's4' : e.status >= 300 ? 's3' : 's2';
       var path = e.url.replace(/^https?:\/\/[^\/]+/, '');
-      var row = document.createElement('div');
-      row.className = 'esi-req-row';
-      row.innerHTML =
-        '<span class="esi-req-ts">' + e.ts + '</span>' +
-        '<span class="esi-req-method">' + e.method + '</span>' +
-        '<span class="esi-req-status ' + sCls + '">' + e.status + '</span>' +
-        '<span class="esi-req-ms">' + e.ms.toLocaleString() + 'ms</span>' +
-        '<span class="esi-req-url" title="' + e.url + '">' + path + '</span>';
-      log.appendChild(row);
-      // Cap visible rows at 300 (oldest dropped from top)
+
+      // Build header rows (only if any headers were captured).
+      var hdrHtml = '';
+      var hdrs = e.hdrs || {};
+      var hdrKeys = Object.keys(hdrs).sort();
+      if (hdrKeys.length) {
+        hdrHtml = hdrKeys.map(function (k) {
+          return '<div class="esi-req-hdr-kv"><span class="esi-req-hdr-k">' + k + '</span><span class="esi-req-hdr-v">' + hdrs[k] + '</span></div>';
+        }).join('');
+      }
+
+      var entry = document.createElement('div');
+      entry.innerHTML =
+        '<div class="esi-req-row">' +
+          '<span class="esi-req-toggle">\u25b6</span>' +
+          '<span class="esi-req-ts">' + e.ts + '</span>' +
+          '<span class="esi-req-method">' + e.method + '</span>' +
+          '<span class="esi-req-status ' + sCls + '">' + e.status + '</span>' +
+          '<span class="esi-req-ms">' + e.ms.toLocaleString() + 'ms</span>' +
+          '<span class="esi-req-url" title="' + e.url + '">' + path + '</span>' +
+        '</div>' +
+        (hdrHtml ? '<div class="esi-req-hdrs">' + hdrHtml + '</div>' : '');
+
+      if (hdrHtml) {
+        var row = entry.querySelector('.esi-req-row');
+        var hdrsEl = entry.querySelector('.esi-req-hdrs');
+        var toggle = entry.querySelector('.esi-req-toggle');
+        row.addEventListener('click', function () {
+          var open = hdrsEl.style.display === 'block';
+          hdrsEl.style.display = open ? 'none' : 'block';
+          toggle.style.transform = open ? '' : 'rotate(90deg)';
+        });
+      }
+
+      log.appendChild(entry);
+      // Cap at 300 entries (oldest dropped from top).
       if (log.children.length > 300) log.removeChild(log.firstChild);
     });
     if (atBottom) log.scrollTop = log.scrollHeight;
