@@ -28,6 +28,30 @@
   es.onmessage = function (event) {
     appendLine(event.data);
   };
+  function renderBuckets(groups) {
+    var card = document.getElementById('esi-buckets-card');
+    var list = document.getElementById('esi-buckets-list');
+    var keys = Object.keys(groups).sort();
+    if (!keys.length) { card.style.display = 'none'; return; }
+    list.innerHTML = '';
+    keys.forEach(function (name) {
+      var g = groups[name];
+      var limit = g.tokens_limit || 0;
+      var remaining = g.tokens_remaining != null ? g.tokens_remaining : limit;
+      var used = limit > 0 ? Math.max(0, limit - remaining) : (g.tokens_used || 0);
+      var pct = limit > 0 ? (used / limit * 100) : 0;
+      var barCls = pct >= 90 ? 'bucket-bar danger' : pct >= 70 ? 'bucket-bar warn' : 'bucket-bar';
+      var row = document.createElement('div');
+      row.className = 'bucket-row';
+      row.innerHTML =
+        '<span class="bucket-name" title="' + name + '">' + name + '</span>' +
+        '<div class="bucket-bar-wrap"><div class="' + barCls + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+        '<span class="bucket-tokens">' + remaining.toLocaleString() + '\u202f/\u202f' + limit.toLocaleString() + '</span>';
+      list.appendChild(row);
+    });
+    card.style.display = '';
+  }
+
   es.addEventListener('esi_rate', function (event) {
     var s = JSON.parse(event.data);
     var effectiveUsed = s.tokens_limit > 0
@@ -43,6 +67,7 @@
     document.getElementById('esi-window').textContent = s.window_seconds;
     document.getElementById('esi-requests-total').textContent = s.requests_total.toLocaleString();
     document.getElementById('esi-rate-card').style.display = '';
+    if (s.groups) renderBuckets(s.groups);
   });
   es.addEventListener('done', function (event) {
     setStatus(event.data);

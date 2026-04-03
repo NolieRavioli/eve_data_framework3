@@ -95,6 +95,47 @@
 .esi-rate-bar.danger { background: var(--bad); }
 .esi-rate-stats { font-size: 0.74rem; color: var(--muted); margin-top: 0.3rem; display: flex; gap: 1.2rem; flex-wrap: wrap; }
 .esi-rate-stats .hi { color: var(--txt); font-variant-numeric: tabular-nums; }
+
+.bucket-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.bucket-row:last-child { border-bottom: none; }
+.bucket-name {
+  flex: 1;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bucket-bar-wrap {
+  width: 80px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 999px;
+  height: 5px;
+  flex-shrink: 0;
+}
+.bucket-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.bucket-bar.warn { background: var(--warn); }
+.bucket-bar.danger { background: var(--bad); }
+.bucket-tokens {
+  font-size: 0.72rem;
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 {% endblock %}
 
 {% block content %}
@@ -135,6 +176,11 @@
       <span>Window&nbsp;<span id="esi-window" class="hi">—</span>s</span>
       <span>Requests&nbsp;<span id="esi-requests-total" class="hi">—</span></span>
     </div>
+  </div>
+
+  <div id="esi-buckets-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">Rate Limit Buckets</div>
+    <div id="esi-buckets-list"></div>
   </div>
 
   <div class="card stack">
