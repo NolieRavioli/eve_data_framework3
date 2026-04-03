@@ -46,8 +46,13 @@ function clearDone() {
       var pct    = g.tokens_limit > 0 ? (effectiveUsed / g.tokens_limit * 100) : 0;
       var col    = pct >= 90 ? 'var(--bad)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)';
       var charName = (isAdmin && runningTask && runningTask.char_name) ? runningTask.char_name : '';
+      // Hide buckets with no activity
       var elId   = 'esi-grp-' + gname;
       var el     = document.getElementById(elId);
+      if (effectiveUsed === 0) {
+        if (el) el.remove();
+        return;
+      }
       if (!el) {
         el = document.createElement('div');
         el.id = elId;

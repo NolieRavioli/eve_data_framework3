@@ -46,7 +46,7 @@ def _make_char_name_lookup():
     return _lookup
 
 
-def _enriched_rate_stream_gen():
+def _enriched_rate_stream_gen(viewer_owner_id: int = 0):
     """Wrap queue_info.rate_stream(), injecting char_name into each task dict."""
     _char_name = _make_char_name_lookup()
     for raw in queue_info.rate_stream():
@@ -56,7 +56,9 @@ def _enriched_rate_stream_gen():
         try:
             data = json.loads(raw[6:].strip())
             for t in data.get("tasks", []):
-                t["char_name"] = _char_name(t.get("owner_id") or 0)
+                oid = t.get("owner_id") or 0
+                # public/scheduler tasks have owner_id=0 — fall back to the viewing user
+                t["char_name"] = _char_name(oid if oid else viewer_owner_id)
             yield "data: " + json.dumps(data) + "\n\n"
         except Exception:
             yield raw
@@ -79,8 +81,9 @@ def rate_stats():
 @require_role("queue")
 def rate_stream():
     """SSE endpoint that streams ESI rate-limiter stats on every request."""
+    viewer_owner_id = session.get("owner_id", 0)
     return Response(
-        _enriched_rate_stream_gen(),
+        _enriched_rate_stream_gen(viewer_owner_id),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
