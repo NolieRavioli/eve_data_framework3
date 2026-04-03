@@ -428,8 +428,12 @@ class EsiRateLimiter:
 
         summary: dict = {}
         if groups:
+            # Only consider groups that have received at least one real ESI response
+            # (remaining=None means pre-seeded only — no live data yet).
+            real_groups = {k: v for k, v in groups.items() if v["tokens_remaining"] is not None}
+            candidates = real_groups if real_groups else groups
             worst = min(
-                groups.values(),
+                candidates.values(),
                 key=lambda g: (g["tokens_remaining"] or 0) / max(g["tokens_limit"], 1) if g["tokens_limit"] else 1.0,
             )
             summary = dict(worst)
