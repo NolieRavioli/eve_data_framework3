@@ -97,6 +97,31 @@
     document.getElementById('esi-rate-card').style.display = '';
     if (groups) renderBuckets(groups);
   });
+  es.addEventListener('esi_requests', function (event) {
+    var entries = JSON.parse(event.data);
+    var log = document.getElementById('esi-req-log');
+    var card = document.getElementById('esi-req-card');
+    card.style.display = '';
+    // Auto-scroll only if already at bottom
+    var atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 5;
+    entries.forEach(function (e) {
+      var sCls = e.status >= 500 ? 's5' : e.status >= 400 ? 's4' : e.status >= 300 ? 's3' : 's2';
+      var path = e.url.replace(/^https?:\/\/[^\/]+/, '');
+      var row = document.createElement('div');
+      row.className = 'esi-req-row';
+      row.innerHTML =
+        '<span class="esi-req-ts">' + e.ts + '</span>' +
+        '<span class="esi-req-method">' + e.method + '</span>' +
+        '<span class="esi-req-status ' + sCls + '">' + e.status + '</span>' +
+        '<span class="esi-req-ms">' + e.ms.toLocaleString() + 'ms</span>' +
+        '<span class="esi-req-url" title="' + e.url + '">' + path + '</span>';
+      log.appendChild(row);
+      // Cap visible rows at 300 (oldest dropped from top)
+      if (log.children.length > 300) log.removeChild(log.firstChild);
+    });
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  });
+
   es.addEventListener('done', function (event) {
     setStatus(event.data);
     es.close();

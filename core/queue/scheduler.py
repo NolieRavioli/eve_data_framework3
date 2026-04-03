@@ -36,6 +36,7 @@ class Task:
         self.started_at: Optional[datetime] = None
         self.finished_at: Optional[datetime] = None
         self.esi_rate: Optional[dict] = None
+        self._esi_log: list[dict] = []
 
     def add_log(self, line: str) -> None:
         with self._lock:
@@ -49,6 +50,17 @@ class Task:
     def snapshot(self) -> list[str]:
         with self._lock:
             return list(self._log)
+
+    def add_esi_request(self, entry: dict) -> None:
+        with self._lock:
+            self._esi_log.append(entry)
+            if len(self._esi_log) > 500:
+                self._esi_log = self._esi_log[-500:]
+        self._event.set()
+
+    def esi_requests_snapshot(self) -> list[dict]:
+        with self._lock:
+            return list(self._esi_log)
 
     def _set_status(self, s: str) -> None:
         self.status = s

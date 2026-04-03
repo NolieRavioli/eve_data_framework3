@@ -294,7 +294,15 @@ class EsiRateLimiter:
                     kwargs["headers"] = req_hdrs
 
                 kwargs.setdefault("timeout", 30)
+                _t0 = time.time()
                 response = requests.request(method, url, **kwargs)
+                _elapsed_ms = int((time.time() - _t0) * 1000)
+
+                if _post_request_detail_hook is not None:
+                    try:
+                        _post_request_detail_hook(method.upper(), url, response.status_code, _elapsed_ms)
+                    except Exception:
+                        pass
 
                 self._update_limits_from_headers(response.headers, url)
 
@@ -589,6 +597,14 @@ _post_request_hook: Optional[Callable] = None
 def set_post_request_hook(fn) -> None:
     global _post_request_hook
     _post_request_hook = fn
+
+
+_post_request_detail_hook: Optional[Callable] = None
+
+
+def set_post_request_detail_hook(fn) -> None:
+    global _post_request_detail_hook
+    _post_request_detail_hook = fn
 
 
 def get_esi_rate_limiter() -> EsiRateLimiter:

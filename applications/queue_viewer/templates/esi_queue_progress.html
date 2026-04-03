@@ -136,6 +136,31 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+.esi-req-log {
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.70rem;
+  line-height: 1.5;
+}
+.esi-req-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.18rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.esi-req-row:last-child { border-bottom: none; }
+.esi-req-ts  { color: var(--muted); flex-shrink: 0; }
+.esi-req-method { flex-shrink: 0; width: 2.5rem; color: var(--accent); font-weight: 700; }
+.esi-req-status { flex-shrink: 0; width: 2.2rem; font-weight: 700; }
+.esi-req-status.s2 { color: var(--good); }
+.esi-req-status.s3 { color: var(--accent); }
+.esi-req-status.s4 { color: var(--warn); }
+.esi-req-status.s5 { color: var(--bad); }
+.esi-req-ms  { flex-shrink: 0; width: 4.5rem; color: var(--muted); text-align: right; }
+.esi-req-url { flex: 1; color: #bcd1e5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 {% endblock %}
 
 {% block content %}
@@ -181,6 +206,11 @@
   <div id="esi-buckets-card" class="card stack" style="display:none">
     <div class="ct" style="margin-bottom:0.5rem">Rate Limit Buckets</div>
     <div id="esi-buckets-list"></div>
+  </div>
+
+  <div id="esi-req-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">ESI Request Log</div>
+    <div id="esi-req-log" class="esi-req-log"></div>
   </div>
 
   <div class="card stack">
