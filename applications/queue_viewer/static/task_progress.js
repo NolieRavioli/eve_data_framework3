@@ -30,11 +30,14 @@
   };
   es.addEventListener('esi_rate', function (event) {
     var s = JSON.parse(event.data);
-    var pct = s.tokens_limit > 0 ? (s.tokens_used / s.tokens_limit * 100) : 0;
+    var effectiveUsed = s.tokens_limit > 0
+                        ? Math.max(0, s.tokens_limit - (s.tokens_remaining || 0))
+                        : (s.tokens_used || 0);
+    var pct = s.tokens_limit > 0 ? (effectiveUsed / s.tokens_limit * 100) : 0;
     var bar = document.getElementById('esi-rate-bar');
     bar.style.width = pct.toFixed(1) + '%';
     bar.className = 'esi-rate-bar' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
-    document.getElementById('esi-tokens-used').textContent = s.tokens_used.toLocaleString();
+    document.getElementById('esi-tokens-used').textContent = effectiveUsed.toLocaleString();
     document.getElementById('esi-tokens-limit').textContent = s.tokens_limit.toLocaleString();
     document.getElementById('esi-tokens-remaining').textContent = s.tokens_remaining.toLocaleString();
     document.getElementById('esi-window').textContent = s.window_seconds;

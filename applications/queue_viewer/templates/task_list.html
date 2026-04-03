@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Task Queue - EVE Data Framework{% endblock %}
+{% block title %}ESI Queue - EVE Data Framework{% endblock %}
 
 {% block content %}
 <div class="pg-hd">
   <div>
-    <h1>Task Queue</h1>
+    <h1>ESI Queue</h1>
     <div class="pg-sub">{{ 'Admin view across all owners' if is_admin else 'Your background work and live sync state' }}</div>
   </div>
   <div class="toolbar">
@@ -12,7 +12,7 @@
   </div>
 </div>
 
-<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem">
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem" data-is-admin="{{ 'true' if is_admin else 'false' }}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
     <div>
       <div class="ct" style="margin:0;margin-bottom:0.2rem">ESI Floating Window Rate Limits</div>
@@ -58,10 +58,10 @@
       {% endif %}
     </div>
     <div class="tw tw-scroll">
-      <table id="task-table">
+      <table id="esi-queue-table">
         <thead>
           <tr>
-            <th>Task</th>
+            <th>Job</th>
             {% if is_admin %}<th>Owner</th>{% endif %}
             <th>Status</th>
             <th>Queue</th>
@@ -76,7 +76,7 @@
           {% for t in tasks | reverse %}
           <tr id="row-{{ t.task_id }}">
             <td>
-              <a href="{{ url_for('queue_viewer.task_progress', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
+              <a href="{{ url_for('queue_viewer.esi_queue_progress', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
               <div class="mono muted" style="margin-top:0.18rem">{{ t.task_id }}</div>
             </td>
             {% if is_admin %}
@@ -111,7 +111,7 @@
               {% if t.status == 'pending' %}
               <button class="btn btn-g cancel-btn" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="cancelTask('{{ t.task_id }}', this)">Cancel</button>
               {% endif %}
-              <a href="{{ url_for('queue_viewer.task_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
+              <a href="{{ url_for('queue_viewer.esi_queue_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
             </td>
           </tr>
           {% endfor %}

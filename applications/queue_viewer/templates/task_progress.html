@@ -110,7 +110,7 @@
   <div class="stat-row">
     <div class="stat">
       <span class="v mono">{{ task.task_id }}</span>
-      <span class="l">Task ID</span>
+      <span class="l">Job ID</span>
     </div>
     <div class="stat">
       <span class="v">{{ task.status }}</span>
@@ -147,7 +147,7 @@
         {% if task.status == 'pending' %}
         <button id="cancel-btn" class="btn btn-g" onclick="cancelTask()">Cancel</button>
         {% endif %}
-        <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">All Tasks</a>
+        <a href="{{ url_for('queue_viewer.esi_queue_list') }}" class="btn btn-g">ESI Queue</a>
         <a href="{{ url_for('dashboard.home') }}" class="btn btn-a">Dashboard</a>
       </div>
     </div>

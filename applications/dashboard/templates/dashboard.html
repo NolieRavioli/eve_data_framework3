@@ -26,7 +26,7 @@
     <div class="pg-sub">Owner {{ owner_id }} · character {{ character_id }}</div>
   </div>
   <div class="toolbar">
-    <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">Tasks</a>
+    <a href="{{ url_for('queue_viewer.esi_queue_list') }}" class="btn btn-g">Queue</a>
     <a href="{{ url_for('esi_browser.index') }}" class="btn btn-a">ESI Explorer</a>
   </div>
 </div>
@@ -99,7 +99,7 @@
       </div>
       <div class="pill-row" style="flex-wrap:wrap">
         <a href="{{ url_for('esi_browser.index') }}" class="btn btn-a">ESI Explorer</a>
-        <a href="{{ url_for('queue_viewer.task_list') }}" class="btn btn-g">Task Queue</a>
+        <a href="{{ url_for('queue_viewer.esi_queue_list') }}" class="btn btn-g">ESI Queue</a>
       </div>
     </div>
   </div>
