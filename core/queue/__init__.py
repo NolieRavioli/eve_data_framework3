@@ -15,7 +15,9 @@ from core.queue.writer import (
     stop_writer,
     is_running as writer_is_running,
     db_write,
+    db_write_nowait,
     db_executemany,
+    db_executemany_nowait,
 )
 
 __all__ = [
@@ -32,5 +34,7 @@ __all__ = [
     "stop_writer",
     "writer_is_running",
     "db_write",
+    "db_write_nowait",
     "db_executemany",
+    "db_executemany_nowait",
 ]

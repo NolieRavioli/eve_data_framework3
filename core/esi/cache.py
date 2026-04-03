@@ -314,8 +314,10 @@ def store(
     """Persist a successful ESI response to ``esi_cache`` via the writer thread.
 
     Expired rows are pruned in the same write batch before the INSERT.
+    Both writes are fire-and-forget so callers (e.g. the ESI rate limiter) are
+    not blocked waiting for disk I/O on every cached response.
     """
-    from core.queue.writer import db_write
+    from core.queue.writer import db_write_nowait
 
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(seconds=ttl)).isoformat()
@@ -334,9 +336,9 @@ def store(
     x_esi_err_reset = _int_header(headers, "X-ESI-Error-Limit-Reset")
 
     # Prune expired rows first (best-effort — ignore errors).
-    db_write("DELETE FROM esi_cache WHERE expires_at < now()", [])
+    db_write_nowait("DELETE FROM esi_cache WHERE expires_at < now()", [])
 
-    db_write(
+    db_write_nowait(
         """
         INSERT INTO esi_cache (
             cache_key, operation_id, method, full_url, params_json,

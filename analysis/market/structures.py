@@ -171,8 +171,7 @@ def fetch_structure_orders(
                 return _MARKET_404, 1
 
             if resp.status_code == 420:
-                logger.warning("[MarketStructure] 420 rate limit for %s, sleeping %.0fs", structure_id, rate_limit_sleep)
-                time.sleep(rate_limit_sleep)
+                logger.warning("[MarketStructure] 420 rate limit for %s, retrying", structure_id)
                 continue
 
             resp.raise_for_status()
@@ -185,13 +184,11 @@ def fetch_structure_orders(
                 "[MarketStructure] Timeout attempt %s/%s for structure %s page %s",
                 attempt, retries, structure_id, page,
             )
-            time.sleep(3 * attempt)
         except Exception as exc:
             logger.warning(
                 "[MarketStructure] Retry %s/%s for structure %s page %s: %s",
                 attempt, retries, structure_id, page, exc,
             )
-            time.sleep(2 * attempt)
 
     logger.error("[MarketStructure] Failed after %s retries for structure %s page %s", retries, structure_id, page)
     return [], 1

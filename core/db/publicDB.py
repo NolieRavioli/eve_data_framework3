@@ -636,8 +636,8 @@ def upsert_market_orders(rows: list[dict], database_file: str | Path | None = No
         for row in rows
         if row.get("order_id") is not None
     ]
-    from core.queue.writer import db_executemany
-    return db_executemany(
+    from core.queue.writer import db_executemany_nowait
+    return db_executemany_nowait(
         """
         INSERT OR REPLACE INTO market_orders (
             order_id, type_id, location_id, region_id, is_buy_order, issued, duration,

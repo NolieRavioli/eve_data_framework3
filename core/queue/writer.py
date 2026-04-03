@@ -217,11 +217,7 @@ def _fallback_executemany(sql: str, rows: list[Sequence[Any]]) -> None:
 
 
 def db_write(sql: str, params: Sequence[Any] | None = None) -> None:
-    """Execute a single write statement.
-
-    Routes through the serialized writer thread when running, or falls back
-    to a direct connection otherwise.
-    """
+    """Execute a single write statement, blocking until complete."""
     if not is_running():
         _fallback_write(sql, list(params) if params else None)
         return
@@ -229,12 +225,17 @@ def db_write(sql: str, params: Sequence[Any] | None = None) -> None:
     _submit(op)
 
 
-def db_executemany(sql: str, rows: list[Sequence[Any]]) -> int:
-    """Execute a bulk write statement.
+def db_write_nowait(sql: str, params: Sequence[Any] | None = None) -> None:
+    """Submit a single write statement without waiting for completion (fire-and-forget)."""
+    if not is_running():
+        _fallback_write(sql, list(params) if params else None)
+        return
+    op = _Op(sql=sql, params=list(params) if params else [], many=False, rows=None)
+    _write_queue.put(op)
 
-    Routes through the serialized writer thread when running, or falls back
-    to a direct connection otherwise.  Returns the number of rows submitted.
-    """
+
+def db_executemany(sql: str, rows: list[Sequence[Any]]) -> int:
+    """Execute a bulk write statement, blocking until complete."""
     if not rows:
         return 0
     if not is_running():
@@ -242,4 +243,16 @@ def db_executemany(sql: str, rows: list[Sequence[Any]]) -> int:
         return len(rows)
     op = _Op(sql=sql, params=None, many=True, rows=rows)
     _submit(op)
+    return len(rows)
+
+
+def db_executemany_nowait(sql: str, rows: list[Sequence[Any]]) -> int:
+    """Submit a bulk write without waiting for completion (fire-and-forget)."""
+    if not rows:
+        return 0
+    if not is_running():
+        _fallback_executemany(sql, rows)
+        return len(rows)
+    op = _Op(sql=sql, params=None, many=True, rows=rows)
+    _write_queue.put(op)
     return len(rows)
