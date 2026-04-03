@@ -64,6 +64,7 @@ _db_path: Path | None = None
 
 def _writer_loop(db_path: Path) -> None:
     con: duckdb.DuckDBPyConnection | None = None
+    _pending = 0
 
     def _connect() -> None:
         nonlocal con
@@ -80,10 +81,25 @@ def _writer_loop(db_path: Path) -> None:
             logger.error("[writer] Failed to open connection: %s", exc)
             con = None
 
+    def _checkpoint() -> None:
+        nonlocal _pending
+        if _pending and con is not None:
+            try:
+                con.execute("CHECKPOINT")
+                _pending = 0
+            except Exception as exc:
+                logger.debug("[writer] Checkpoint failed: %s", exc)
+
     _connect()
 
     while True:
-        item = _write_queue.get()
+        try:
+            item = _write_queue.get(timeout=30.0)
+        except _queue_module.Empty:
+            # Idle timeout — flush any accumulated WAL to the main file.
+            _checkpoint()
+            continue
+
         if item is _STOP:
             break
 
@@ -96,14 +112,20 @@ def _writer_loop(db_path: Path) -> None:
                     con.executemany(op.sql, op.rows)
             else:
                 con.execute(op.sql, op.params or [])
-            con.execute("CHECKPOINT")
+            _pending += 1
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             op.error = exc
             _connect()  # reset connection after an error
         finally:
+            # Unblock the caller immediately — don't make them wait for CHECKPOINT.
             op.event.set()
 
+        # Checkpoint when the queue drains (burst complete) or every 100 ops.
+        if _write_queue.empty() or _pending >= 100:
+            _checkpoint()
+
+    _checkpoint()
     if con is not None:
         try:
             con.close()
