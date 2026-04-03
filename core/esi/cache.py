@@ -69,11 +69,30 @@ CREATE TABLE IF NOT EXISTS esi_cache (
 )
 """
 
-# ── pre-computed TTL map (normalised URL pattern  →  cache_age seconds) ──────
-# Populated lazily on first call to get_ttl_for_url() from ROUTE_SPECS_SEED_ROWS.
+# ── pre-computed maps from ROUTE_SPECS_SEED_ROWS ─────────────────────────────
+# All populated lazily on first call to get_ttl_for_url() / get_static_rate_limit_seeds().
 _TTL_MAP: dict[str, int] = {}          # normalized_path -> cache_age
 _OP_MAP: dict[str, str] = {}           # normalized_path -> operation_id
+_RL_GROUP_MAP: dict[str, str] = {}     # normalized_path -> rate_limit_group name
+_RL_LIMITS_MAP: dict[str, dict] = {}   # group_name -> {limit, window_seconds, window_str}
 _TTL_MAP_LOADED = False
+
+
+def _parse_window_size(s: str) -> int:
+    """Convert ESI window-size string (e.g. '15m', '1h', '300s') to seconds."""
+    s = (s or "").strip()
+    if not s:
+        return 900  # 15-minute default
+    if s.endswith("m"):
+        return int(float(s[:-1])) * 60
+    if s.endswith("h"):
+        return int(float(s[:-1])) * 3600
+    if s.endswith("s"):
+        return int(float(s[:-1]))
+    try:
+        return int(s)
+    except ValueError:
+        return 900
 
 
 def _load_ttl_map() -> None:
@@ -82,8 +101,8 @@ def _load_ttl_map() -> None:
         return
     try:
         from core.esi.generated.cache_ddl import ROUTE_SPECS_SEED_ROWS  # type: ignore[import]
-    except ImportError:
-        logger.debug("[ESICache] cache_ddl.py not found — TTL map empty (run build.py)")
+    except (ImportError, Exception) as _exc:
+        logger.debug("[ESICache] cache_ddl.py not importable — TTL map empty: %s", _exc)
         _TTL_MAP_LOADED = True
         return
 
@@ -95,8 +114,38 @@ def _load_ttl_map() -> None:
             norm = _normalize_path(path)
             _TTL_MAP[norm] = int(cache_age)
             _OP_MAP[norm] = op_id
+
+        # Rate-limit group seeding.
+        rl_group = row.get("rate_limit_group")
+        if path and rl_group:
+            norm = _normalize_path(path)
+            _RL_GROUP_MAP[norm] = rl_group
+            if rl_group not in _RL_LIMITS_MAP:
+                max_tokens = row.get("rate_limit_max_tokens") or 0
+                window_str = row.get("rate_limit_window_size") or ""
+                _RL_LIMITS_MAP[rl_group] = {
+                    "remaining": None,           # unknown until first live response
+                    "used": None,
+                    "limit": int(max_tokens) if max_tokens else 0,
+                    "window_seconds": _parse_window_size(window_str),
+                    "window_str": window_str,
+                }
+
     _TTL_MAP_LOADED = True
-    logger.debug("[ESICache] TTL map loaded: %d cacheable routes", len(_TTL_MAP))
+    logger.debug(
+        "[ESICache] TTL map loaded: %d cacheable routes, %d rate-limit groups",
+        len(_TTL_MAP), len(_RL_LIMITS_MAP),
+    )
+
+
+def get_static_rate_limit_seeds() -> tuple[dict[str, str], dict[str, dict]]:
+    """Return ``(path_to_group, group_to_limits)`` dicts pre-seeded from routes.json.
+
+    Used by ``EsiRateLimiter.__init__`` to populate ``_url_to_group`` and
+    ``_group_states`` before any live ESI requests have been made.
+    """
+    _load_ttl_map()
+    return dict(_RL_GROUP_MAP), {g: dict(v) for g, v in _RL_LIMITS_MAP.items()}
 
 
 def _normalize_path(path: str) -> str:
