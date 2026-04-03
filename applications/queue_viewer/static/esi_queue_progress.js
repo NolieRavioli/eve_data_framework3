@@ -32,42 +32,70 @@
     var card = document.getElementById('esi-buckets-card');
     var list = document.getElementById('esi-buckets-list');
     var keys = Object.keys(groups).sort();
-    if (!keys.length) { card.style.display = 'none'; return; }
-    list.innerHTML = '';
+    var anyVisible = false;
+    // Keep existing rows and update them; append new ones.
+    var rendered = {};
     keys.forEach(function (name) {
       var g = groups[name];
       var limit = g.tokens_limit || 0;
+      // Skip groups that have never had a real ESI response (remaining == null means
+      // only pre-seeded; tokens_used also null → no real activity yet).
+      if (g.tokens_remaining == null && !g.tokens_used) return;
+      anyVisible = true;
+      rendered[name] = true;
       var remaining = g.tokens_remaining != null ? g.tokens_remaining : limit;
       var used = limit > 0 ? Math.max(0, limit - remaining) : (g.tokens_used || 0);
       var pct = limit > 0 ? (used / limit * 100) : 0;
       var barCls = pct >= 90 ? 'bucket-bar danger' : pct >= 70 ? 'bucket-bar warn' : 'bucket-bar';
-      var row = document.createElement('div');
-      row.className = 'bucket-row';
+      var elId = 'bkt-' + name.replace(/[^a-z0-9]/gi, '_');
+      var row = document.getElementById(elId);
+      if (!row) {
+        row = document.createElement('div');
+        row.id = elId;
+        row.className = 'bucket-row';
+        list.appendChild(row);
+      }
       row.innerHTML =
         '<span class="bucket-name" title="' + name + '">' + name + '</span>' +
         '<div class="bucket-bar-wrap"><div class="' + barCls + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
         '<span class="bucket-tokens">' + remaining.toLocaleString() + '\u202f/\u202f' + limit.toLocaleString() + '</span>';
-      list.appendChild(row);
     });
-    card.style.display = '';
+    // Remove rows for groups no longer present.
+    Array.prototype.slice.call(list.children).forEach(function (el) {
+      var name = el.title || el.querySelector('.bucket-name').title;
+      if (!rendered[name]) el.remove();
+    });
+    card.style.display = anyVisible ? '' : 'none';
   }
 
   es.addEventListener('esi_rate', function (event) {
     var s = JSON.parse(event.data);
-    var effectiveUsed = s.tokens_limit > 0
-                        ? Math.max(0, s.tokens_limit - (s.tokens_remaining || 0))
-                        : (s.tokens_used || 0);
-    var pct = s.tokens_limit > 0 ? (effectiveUsed / s.tokens_limit * 100) : 0;
+    var groups = s.groups || {};
+    // Compute aggregate totals across all active groups (mirrors queue list logic).
+    var totalLimit = 0, totalRemaining = 0, totalUsed = 0, worstWindow = 0;
+    Object.keys(groups).forEach(function (gname) {
+      var g = groups[gname];
+      var limit = g.tokens_limit || 0;
+      // Groups with null remaining have never had a real response — skip them
+      // for the summary bar so we only show real observed data.
+      if (g.tokens_remaining == null) return;
+      var used = limit > 0 ? Math.max(0, limit - g.tokens_remaining) : (g.tokens_used || 0);
+      totalLimit += limit;
+      totalRemaining += g.tokens_remaining;
+      totalUsed += used;
+      if ((g.window_seconds || 0) > worstWindow) worstWindow = g.window_seconds;
+    });
+    var pct = totalLimit > 0 ? (totalUsed / totalLimit * 100) : 0;
     var bar = document.getElementById('esi-rate-bar');
     bar.style.width = pct.toFixed(1) + '%';
     bar.className = 'esi-rate-bar' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
-    document.getElementById('esi-tokens-used').textContent = effectiveUsed.toLocaleString();
-    document.getElementById('esi-tokens-limit').textContent = s.tokens_limit.toLocaleString();
-    document.getElementById('esi-tokens-remaining').textContent = s.tokens_remaining.toLocaleString();
-    document.getElementById('esi-window').textContent = s.window_seconds;
-    document.getElementById('esi-requests-total').textContent = s.requests_total.toLocaleString();
+    document.getElementById('esi-tokens-used').textContent = totalUsed.toLocaleString();
+    document.getElementById('esi-tokens-limit').textContent = totalLimit.toLocaleString();
+    document.getElementById('esi-tokens-remaining').textContent = totalRemaining.toLocaleString();
+    document.getElementById('esi-window').textContent = worstWindow || (s.window_seconds || '—');
+    document.getElementById('esi-requests-total').textContent = (s.requests_total || 0).toLocaleString();
     document.getElementById('esi-rate-card').style.display = '';
-    if (s.groups) renderBuckets(s.groups);
+    if (groups) renderBuckets(groups);
   });
   es.addEventListener('done', function (event) {
     setStatus(event.data);
