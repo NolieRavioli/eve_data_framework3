@@ -177,12 +177,16 @@ def _writer_loop(db_path: Path) -> None:
 
         op: _Op = item
 
-        # ── Coalesce: drain all immediately-available many-ops with same SQL ──
-        # This converts N × executemany(1000 rows) into 1 × executemany(N*1000 rows)
-        # inside a single BEGIN/COMMIT, dramatically reducing per-call overhead.
+        # ── Coalesce: drain immediately-available many-ops with same SQL ─────
+        # Groups queued pages into one executemany() per BEGIN/COMMIT cycle,
+        # capped at _MAX_COALESCE_ROWS so no single batch grows unbounded.
+        # The writer loops immediately after each batch, picking up the next
+        # chunk — queue depth stays low and latency stays bounded.
+        _MAX_COALESCE_ROWS = 10_000
         batch: list[_Op] = [op]
+        coalesced_rows = len(op.rows) if (op.many and op.rows) else 0
         if op.many and op.rows:
-            while True:
+            while coalesced_rows < _MAX_COALESCE_ROWS:
                 try:
                     next_item = _write_queue.get_nowait()
                 except _queue_module.Empty:
@@ -193,6 +197,7 @@ def _writer_loop(db_path: Path) -> None:
                 next_op: _Op = next_item
                 if next_op.many and next_op.sql == op.sql and next_op.rows:
                     batch.append(next_op)
+                    coalesced_rows += len(next_op.rows)
                 else:
                     # Different op — stash it for the next iteration (preserves order).
                     _lookahead = next_op
