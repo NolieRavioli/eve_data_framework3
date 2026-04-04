@@ -263,6 +263,7 @@ def get_regions() -> list[dict]:
 
 # ── Market write helpers (for application workers that need to write orders) ──
 upsert_market_orders = _pub.upsert_market_orders
+replace_market_orders_for_region = _pub.replace_market_orders_for_region
 mark_region_market_refreshed = _pub.mark_region_market_refreshed
 
 # ── System status / monitoring ────────────────────────────────────────────────
@@ -288,6 +289,7 @@ __all__ = [
     "get_regions",
     "DEFAULT_REGION",
     "upsert_market_orders",
+    "replace_market_orders_for_region",
     "mark_region_market_refreshed",
     "get_writer_stats",
     "get_db_file_stats",

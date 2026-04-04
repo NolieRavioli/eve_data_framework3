@@ -34,6 +34,21 @@ _STATION_FORBIDDEN_DAYS = 1              # mark stations forbidden for 1 day on 
 
 # ── Table DDL — this collector OWNS market_orders + market_region_cooldowns ───
 
+def _migrate_market_orders_schema(con) -> None:
+    """Drop and recreate market_orders if it still has the old PRIMARY KEY schema."""
+    try:
+        pk_count = con.execute("""
+            SELECT COUNT(*) FROM information_schema.table_constraints
+            WHERE table_name = 'market_orders'
+              AND constraint_type = 'PRIMARY KEY'
+        """).fetchone()[0]
+        if pk_count:
+            logger.info("[market/regions] Dropping old market_orders PRIMARY KEY — migrating schema")
+            con.execute("DROP TABLE market_orders")
+    except Exception as exc:
+        logger.debug("[market/regions] Schema migration check: %s", exc)
+
+
 def ensure_tables(con) -> None:
     """Create market tables if they do not already exist.
 
@@ -42,9 +57,10 @@ def ensure_tables(con) -> None:
 
     :param con: An open, writable DuckDB connection.
     """
+    _migrate_market_orders_schema(con)
     con.execute("""
         CREATE TABLE IF NOT EXISTS market_orders (
-            order_id      BIGINT PRIMARY KEY,
+            order_id      BIGINT,
             type_id       BIGINT,
             location_id   BIGINT,
             region_id     BIGINT,
@@ -58,6 +74,10 @@ def ensure_tables(con) -> None:
             min_volume    BIGINT,
             last_seen     TIMESTAMP
         )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_market_orders_region
+        ON market_orders (region_id)
     """)
     con.execute("""
         CREATE TABLE IF NOT EXISTS market_region_cooldowns (
@@ -168,13 +188,8 @@ def fetch_all_market_data() -> None:
             continue
 
         total_pages = int(resp.headers.get("X-Pages", 1))
-        sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-        sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
-        _mark_stations_refreshed(region_id)
-        logger.info(
-            "Region %s page 1/%s — %s orders inserted",
-            region_id, total_pages, len(orders),
-        )
+        all_orders = [{**o, "region_id": region_id} for o in orders]
+        logger.info("Region %s page 1/%s — %s orders", region_id, total_pages, len(orders))
 
         for page in range(2, total_pages + 1):
             resp = esi_get(url, params={**params_base, "page": page})
@@ -187,11 +202,13 @@ def fetch_all_market_data() -> None:
             orders = resp.json()
             if not orders:
                 break
-            sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-            logger.info(
-                "Region %s page %s/%s — %s orders inserted",
-                region_id, page, total_pages, len(orders),
-            )
+            all_orders.extend([{**o, "region_id": region_id} for o in orders])
+            logger.info("Region %s page %s/%s — %s orders", region_id, page, total_pages, len(orders))
+
+        sde_store.replace_market_orders_for_region(region_id, all_orders)
+        sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
+        _mark_stations_refreshed(region_id)
+        logger.info("Region %s done — %s total orders queued", region_id, len(all_orders))
 
     logger.info("Completed")
 

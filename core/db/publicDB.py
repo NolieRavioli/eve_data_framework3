@@ -607,8 +607,35 @@ def _market_order_payload(rows: list[dict]) -> list:
     ]
 
 
+_MARKET_INSERT_SQL = """
+    INSERT INTO market_orders (
+        order_id, type_id, location_id, region_id, is_buy_order, issued, duration,
+        price, order_range, volume_remain, volume_total, min_volume, last_seen
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+def replace_market_orders_for_region(region_id: int, rows: list[dict]) -> int:
+    """Replace all market orders for a region with a fresh set.
+
+    Enqueues a blocking DELETE for the region followed by a fire-and-forget
+    plain INSERT (no conflict clause).  Because the writer is a serial queue
+    the DELETE is guaranteed to complete before the INSERT begins.
+    """
+    payload = _market_order_payload(rows)
+    if not payload:
+        return 0
+    from core.db.writer import db_write, db_executemany_nowait
+    db_write("DELETE FROM market_orders WHERE region_id = ?", [region_id])
+    return db_executemany_nowait(_MARKET_INSERT_SQL, payload)
+
+
 def upsert_market_orders(rows: list[dict]) -> int:
-    """Upsert market orders — inserts new rows, updates price/volume on conflict."""
+    """Upsert market orders — inserts new rows, updates price/volume on conflict.
+
+    Used for structure markets where orders span multiple regions and a
+    region-delete approach is not applicable.
+    """
     payload = _market_order_payload(rows)
     if not payload:
         return 0
