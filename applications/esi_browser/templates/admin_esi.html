@@ -1,5 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}ESI Explorer — Admin{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('esi_browser.static', filename='admin_esi.css') }}">{% endblock %}
 
 {% block content %}
 <div class="pg-hd">
@@ -25,7 +26,9 @@
   </div>
 </div>
 
-<div class="pg-body" style="gap:.8rem;">
+<div id="esi-app" class="pg-body" style="gap:.8rem;"
+     data-url-op="{{ url_for('esi_browser.detail', operation_id='PLACEHOLDER') }}"
+     data-url-run="{{ url_for('esi_browser.run', operation_id='PLACEHOLDER') }}">
 
   <!-- Filter bar -->
   <div class="card" style="padding:.75rem 1rem;">
@@ -33,9 +36,8 @@
       <input id="q" type="search" placeholder="Filter by operation, path, tag, scope…"
              style="flex:1;min-width:220px;background:rgba(7,18,29,.7);border:1px solid var(--border);
                     border-radius:.7rem;padding:.52rem .85rem;color:var(--text-strong);
-                    font-family:var(--font-mono);font-size:.82rem;outline:none;"
-             oninput="filterOps(this.value)">
-      <select id="method-filter" onchange="filterOps(document.getElementById('q').value)"
+                    font-family:var(--font-mono);font-size:.82rem;outline:none;">
+      <select id="method-filter"
               style="background:rgba(7,18,29,.7);border:1px solid var(--border);border-radius:.7rem;
                      padding:.52rem .85rem;color:var(--text);font-size:.82rem;cursor:pointer;">
         <option value="">All methods</option>
@@ -44,7 +46,7 @@
         <option value="PUT">PUT</option>
         <option value="DELETE">DELETE</option>
       </select>
-      <select id="auth-filter" onchange="filterOps(document.getElementById('q').value)"
+      <select id="auth-filter"
               style="background:rgba(7,18,29,.7);border:1px solid var(--border);border-radius:.7rem;
                      padding:.52rem .85rem;color:var(--text);font-size:.82rem;cursor:pointer;">
         <option value="">All</option>
@@ -76,7 +78,6 @@
                 data-method="{{ op.method }}"
                 data-auth="{{ 'auth' if op.requires_auth else 'public' }}"
                 data-text="{{ op.operation_id|lower }} {{ op.path|lower }} {{ (op.tags or [''])|join(' ')|lower }} {{ (op.scopes or [])|join(' ')|lower }}"
-                onclick="selectOp('{{ op.operation_id }}')"
                 style="cursor:pointer;">
               <td><span class="method-badge method-{{ op.method|lower }}">{{ op.method }}</span></td>
               <td style="font-family:var(--font-mono);font-size:.78rem;color:var(--text-strong);">{{ op.operation_id }}</td>
@@ -126,7 +127,7 @@
         </label>
       </div>
 
-      <button onclick="runOp()" id="dp-run-btn"
+      <button id="dp-run-btn"
               style="width:100%;padding:.6rem;border:1px solid var(--accent);border-radius:.85rem;
                      background:var(--accent-soft);color:var(--accent);font-weight:700;
                      font-size:.82rem;cursor:pointer;transition:background .14s;">
@@ -146,36 +147,6 @@
   </div>
 </div>
 
-<style>
-  .method-badge {
-    display:inline-block;padding:.15rem .42rem;border-radius:.4rem;
-    font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
-  }
-  .method-get  { background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.28); }
-  .method-post { background:rgba(105,210,255,.14);color:#69d2ff;border:1px solid rgba(105,210,255,.28); }
-  .method-put  { background:rgba(244,181,76,.14);color:#f4b54c;border:1px solid rgba(244,181,76,.28); }
-  .method-delete { background:rgba(248,113,113,.14);color:#f87171;border:1px solid rgba(248,113,113,.28); }
-  .scope-chip {
-    display:inline-block;padding:.18rem .5rem;background:rgba(105,210,255,.1);
-    border:1px solid rgba(105,210,255,.2);border-radius:.4rem;
-    font-size:.66rem;font-family:var(--font-mono);color:var(--muted);
-  }
-  .op-row:hover td { background:rgba(105,210,255,.06); }
-  .op-row.selected td { background:rgba(105,210,255,.1); }
-
-  .btn-sm {
-    display:inline-flex;align-items:center;padding:.42rem .85rem;
-    border:1px solid var(--border);border-radius:.7rem;
-    background:rgba(11,24,39,.8);color:var(--text);font-size:.8rem;
-    font-weight:600;text-decoration:none;transition:background .14s;
-  }
-  .btn-sm:hover { background:rgba(105,210,255,.08);color:var(--accent); }
-
-  @media (max-width: 900px) {
-    #layout { grid-template-columns: 1fr; }
-    #detail-panel { position:relative; }
-  }
-</style>
 {% endblock %}
 
 {% block scripts %}

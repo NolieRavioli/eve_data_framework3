@@ -1,4 +1,4 @@
-# tools/industry_calculator/__init__.py
+# applications/industry_calculator/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint

@@ -1,0 +1,172 @@
+﻿    .admin-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .console {
+      background: rgba(3, 11, 18, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1rem;
+      height: 420px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      line-height: 1.62;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log-line { display: block; color: #bcd1e5; }
+    .log-line.ERROR { color: var(--bad); }
+    .log-line.WARNING { color: var(--warn); }
+    .log-line.INFO { color: var(--accent); }
+    .log-line.DEBUG { color: var(--muted); }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.62rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(7, 18, 29, 0.58);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--good);
+    }
+
+    .status-dot.offline {
+      background: var(--bad);
+    }
+
+    .input {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 0.85rem;
+      background: rgba(7, 18, 29, 0.66);
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: rgba(105, 210, 255, 0.32);
+      box-shadow: 0 0 0 3px rgba(105, 210, 255, 0.08);
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 520px;
+    }
+
+    .table-wrap table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table-wrap th, .table-wrap td {
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(117, 157, 195, 0.08);
+      font-size: 0.78rem;
+    }
+
+    .table-wrap th {
+      position: sticky;
+      top: 0;
+      background: rgba(6, 16, 27, 0.95);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.62rem;
+      font-weight: 800;
+      z-index: 1;
+    }
+
+    .table-wrap tr:hover td {
+      background: rgba(105, 210, 255, 0.035);
+    }
+
+    .table-wrap tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid transparent;
+    }
+
+    .badge-admin {
+      background: rgba(105, 210, 255, 0.12);
+      border-color: rgba(105, 210, 255, 0.18);
+      color: var(--accent);
+    }
+
+    .badge-owner {
+      background: rgba(244, 181, 76, 0.12);
+      border-color: rgba(244, 181, 76, 0.18);
+      color: var(--gold);
+    }
+
+    .badge-none {
+      background: rgba(117, 157, 195, 0.12);
+      border-color: rgba(117, 157, 195, 0.18);
+      color: var(--muted);
+    }
+
+    .admin-msg {
+      display: none;
+      padding: 0.65rem 0.85rem;
+      border-radius: 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .admin-msg.ok {
+      display: block;
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+      color: var(--good);
+    }
+
+    .admin-msg.err {
+      display: block;
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
+      color: var(--bad);
+    }
+
+    .card h2 {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    @media (max-width: 1100px) {
+      .admin-grid {
+        grid-template-columns: 1fr;
+      }
+    }

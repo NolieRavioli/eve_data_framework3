@@ -1,183 +1,7 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}{{ task.name }} - EVE Data Framework{% endblock %}
 
-{% block extra_css %}
-.task-console {
-  background: rgba(3, 11, 18, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
-  padding: 1rem;
-  height: 560px;
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.task-console .ln {
-  display: block;
-  color: #bcd1e5;
-}
-
-.task-console .ln.err {
-  color: var(--bad);
-}
-
-.task-console .ln.ok {
-  color: var(--good);
-}
-
-.task-console .ln.head {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.task-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.35rem 0.8rem;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.task-status.pending {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.2);
-  color: var(--warn);
-}
-
-.task-status.running {
-  background: rgba(105, 210, 255, 0.12);
-  border-color: rgba(105, 210, 255, 0.2);
-  color: var(--accent);
-}
-
-.task-status.complete {
-  background: rgba(52, 211, 153, 0.12);
-  border-color: rgba(52, 211, 153, 0.2);
-  color: var(--good);
-}
-
-.task-status.failed {
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.2);
-  color: var(--bad);
-}
-
-.task-status.cancelled {
-  background: rgba(117, 157, 195, 0.12);
-  border-color: rgba(117, 157, 195, 0.2);
-  color: var(--muted);
-}
-
-.esi-rate-bar-wrap {
-  background: rgba(0,0,0,0.3);
-  border-radius: 999px;
-  height: 6px;
-  overflow: hidden;
-  margin-top: 0.4rem;
-}
-.esi-rate-bar {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 0.4s ease;
-  width: 0%;
-}
-.esi-rate-bar.warn { background: var(--warn); }
-.esi-rate-bar.danger { background: var(--bad); }
-.esi-rate-stats { font-size: 0.74rem; color: var(--muted); margin-top: 0.3rem; display: flex; gap: 1.2rem; flex-wrap: wrap; }
-.esi-rate-stats .hi { color: var(--txt); font-variant-numeric: tabular-nums; }
-
-.bucket-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-.bucket-row:last-child { border-bottom: none; }
-.bucket-name {
-  flex: 1;
-  font-size: 0.72rem;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.bucket-bar-wrap {
-  width: 80px;
-  background: rgba(0,0,0,0.3);
-  border-radius: 999px;
-  height: 5px;
-  flex-shrink: 0;
-}
-.bucket-bar {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 0.4s ease;
-}
-.bucket-bar.warn { background: var(--warn); }
-.bucket-bar.danger { background: var(--bad); }
-.bucket-tokens {
-  font-size: 0.72rem;
-  color: var(--txt);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.esi-req-log {
-  max-height: 220px;
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: 0.70rem;
-  line-height: 1.5;
-}
-.esi-req-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.18rem 0;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-}
-.esi-req-row:last-child { border-bottom: none; }
-.esi-req-ts  { color: var(--muted); flex-shrink: 0; }
-.esi-req-method { flex-shrink: 0; width: 2.5rem; color: var(--accent); font-weight: 700; }
-.esi-req-status { flex-shrink: 0; width: 2.2rem; font-weight: 700; }
-.esi-req-status.s2 { color: var(--good); }
-.esi-req-status.s3 { color: var(--accent); }
-.esi-req-status.s4 { color: var(--warn); }
-.esi-req-status.s5 { color: var(--bad); }
-.esi-req-ms  { flex-shrink: 0; width: 4.5rem; color: var(--muted); text-align: right; }
-.esi-req-url { flex: 1; color: #bcd1e5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.esi-req-toggle { flex-shrink: 0; width: 0.9rem; color: var(--muted); font-size: 0.6rem; cursor: pointer; transition: transform 0.15s; user-select: none; }
-.esi-req-row { cursor: pointer; }
-.esi-req-row:hover { background: rgba(255,255,255,0.03); }
-.esi-req-hdrs {
-  display: none;
-  padding: 0.3rem 0.5rem 0.35rem 1.5rem;
-  background: rgba(0,0,0,0.25);
-  border-radius: 4px;
-  margin-bottom: 0.1rem;
-  font-family: var(--font-mono);
-  font-size: 0.67rem;
-  line-height: 1.65;
-}
-.esi-req-hdr-kv { display: flex; gap: 0.6rem; }
-.esi-req-hdr-k { color: var(--muted); width: 16rem; flex-shrink: 0; }
-.esi-req-hdr-v { color: var(--txt); word-break: break-all; }
-{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('queue_viewer.static', filename='progress.css') }}">{% endblock %}
 
 {% block content %}
 <div class="pg-hd">
@@ -188,7 +12,9 @@
   <span id="status-badge" class="task-status {{ task.status }}">{{ task.status }}</span>
 </div>
 
-<div id="task-app" class="pg-body" data-task-id="{{ task.task_id }}">
+<div id="task-app" class="pg-body" data-task-id="{{ task.task_id }}"
+     data-url-stream="{{ url_for('queue_viewer.esi_queue_stream', task_id=task.task_id) }}"
+     data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id=task.task_id) }}">
   <div class="stat-row">
     <div class="stat">
       <span class="v mono">{{ task.task_id }}</span>
@@ -237,7 +63,7 @@
       </div>
       <div class="toolbar">
         {% if task.status == 'pending' %}
-        <button id="cancel-btn" class="btn btn-g" onclick="cancelTask()">Cancel</button>
+        <button id="cancel-btn" class="btn btn-g">Cancel</button>
         {% endif %}
         <a href="{{ url_for('queue_viewer.esi_queue_list') }}" class="btn btn-g">ESI Queue</a>
         <a href="{{ url_for('dashboard.home') }}" class="btn btn-a">Dashboard</a>

@@ -1,5 +1,7 @@
 var activeTableEl = null;
-var BROWSER_OWNER_ID = document.getElementById('db-app').dataset.ownerId || null;
+var _dbApp = document.getElementById('db-app');
+var BROWSER_OWNER_ID = _dbApp.dataset.ownerId || null;
+var _URL_QUERY = _dbApp.dataset.urlQuery;
 
 function selectTable(name, el) {
     var cols = document.getElementById('cols-' + name);
@@ -33,7 +35,7 @@ async function runQuery() {
     if (!sql) return;
     setStatus('Running…', '');
     try {
-        var r = await fetch('/admin/db_browser/query', {
+        var r = await fetch(_URL_QUERY, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({sql: sql, owner_id: BROWSER_OWNER_ID}),
@@ -92,3 +94,18 @@ function toggleAuto() {
         }, interval);
     }
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+  var runBtn = document.getElementById('run-query-btn');
+  if (runBtn) runBtn.addEventListener('click', runQuery);
+
+  var clearBtn = document.getElementById('clear-query-btn');
+  if (clearBtn) clearBtn.addEventListener('click', clearQuery);
+
+  var autoBtn = document.getElementById('auto-btn');
+  if (autoBtn) autoBtn.addEventListener('click', toggleAuto);
+
+  document.querySelectorAll('.table-item[data-tname]').forEach(function (el) {
+    el.addEventListener('click', function () { selectTable(this.dataset.tname, this); });
+  });
+});

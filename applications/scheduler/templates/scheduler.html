@@ -1,39 +1,13 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Scheduler - EVE Data Framework{% endblock %}
 
-{% block extra_css %}
-  .job-table { width: 100%; border-collapse: collapse; }
-  .job-table th, .job-table td {
-    padding: 0.6rem 0.8rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.88rem;
-  }
-  .job-table thead th {
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background: rgba(7, 18, 29, 0.60);
-  }
-  .job-table tbody tr:hover { background: rgba(105, 210, 255, 0.04); }
-  .job-table td.mono { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
-
-  .badge {
-    display: inline-block;
-    padding: 0.2rem 0.55rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-  .badge-on  { background: rgba(52, 211, 153, 0.15); color: var(--good); border: 1px solid rgba(52, 211, 153, 0.35); }
-  .badge-off { background: rgba(248, 113, 113, 0.12); color: var(--bad);  border: 1px solid rgba(248, 113, 113, 0.28); }
-
-  .tbl-actions { display: flex; gap: 0.4rem; }
-{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('scheduler.static', filename='scheduler.css') }}">{% endblock %}
 
 {% block content %}
+<div id="scheduler-app" hidden
+     data-url-toggle="{{ url_for('scheduler.toggle', job_id='PLACEHOLDER') }}"
+     data-url-run-now="{{ url_for('scheduler.run_now', job_id='PLACEHOLDER') }}"
+     data-url-progress="{{ url_for('queue_viewer.esi_queue_progress', task_id='PLACEHOLDER') }}"></div>
 <div class="pg-hd">
   <div>
     <h1>⏱ Scheduler</h1>
@@ -81,13 +55,12 @@
             </td>
             <td>
               <div class="tbl-actions">
-                <button class="btn btn-g"
+                <button class="btn btn-g js-toggle-btn"
                         data-job="{{ job.job_id }}"
-                        data-enabled="{{ 'true' if job.enabled else 'false' }}"
-                        onclick="toggleJob(this)">
+                        data-enabled="{{ 'true' if job.enabled else 'false' }}">
                   {{ 'Disable' if job.enabled else 'Enable' }}
                 </button>
-                <button class="btn btn-a" data-job="{{ job.job_id }}" onclick="runNow(this)">
+                <button class="btn btn-a js-run-btn" data-job="{{ job.job_id }}">
                   Run Now
                 </button>
               </div>

@@ -1,4 +1,4 @@
-# tools/market_browser/routes.py
+# applications/market_browser/routes.py
 """Flask blueprint for the Market Browser tool."""
 
 from __future__ import annotations
@@ -8,8 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-from applications._adapters import db, tasks
+from applications._adapters import db, tasks, get_regions
 from applications._base import base_ctx
+from applications.market_browser.worker import refresh_region
+from analysis.market.regions import fetch_all_market_data
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +36,6 @@ def _fmt_expires(issued, duration_days) -> str:
         return f"{d}d {h}h" if d else f"{h}h {(rem % 3600) // 60}m"
     except Exception:
         return "—"
-
-
-def _get_regions() -> list[dict]:
-    try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
-        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
-    except Exception:
-        return []
 
 
 def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
@@ -83,7 +77,7 @@ def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
 def index():
     ctx = base_ctx("market_browser")
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "sells": None, "buys": None,
         "type_id": None, "type_name": "",
         "region_id": 0,
@@ -120,7 +114,7 @@ def orders():
         buy_volume = sum(o["volume_remain"] for o in buys)
 
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "sells": sells, "buys": buys,
         "type_id": type_id, "type_name": type_name,
         "region_id": region_id,
@@ -140,7 +134,6 @@ def refresh():
     if not region_id:
         return redirect(url_for("market_browser.index"))
 
-    from applications.market_browser.worker import refresh_region
     task_id = tasks.enqueue(
         f"Market refresh — region {region_id}",
         refresh_region,
@@ -153,7 +146,6 @@ def refresh():
 
 @market_bp.route("/refresh_all", methods=["POST"])
 def refresh_all():
-    from analysis.market.regions import fetch_all_market_data
     task_id = tasks.enqueue(
         "Market refresh — all regions",
         fetch_all_market_data,

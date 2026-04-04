@@ -99,6 +99,25 @@ class _CharData:
         finally:
             session.close()
 
+    def get_characters(self, owner_id: int) -> list[dict]:
+        """Return all character dicts for an owner."""
+        session = _get_private_session(owner_id)
+        try:
+            chars = session.query(_Character).all()
+            return [
+                {
+                    "character_id": c.character_id,
+                    "name": c.name,
+                    "scopes": c.scopes,
+                    "token_expires": getattr(c, "token_expires", None),
+                }
+                for c in chars
+            ]
+        except Exception:
+            return []
+        finally:
+            session.close()
+
     def get_scopes(self, owner_id: int, character_id: int) -> list[str]:
         info = self.get_character(owner_id, character_id)
         if not info or not info.get("scopes"):
@@ -235,6 +254,22 @@ db_admin = types.SimpleNamespace(
     delete_site_admin=_pub.delete_site_admin,
 )
 
+# ── Shared UI helpers ─────────────────────────────────────────────────────────
+
+DEFAULT_REGION: int = 10000002  # The Forge (Jita)
+
+
+def get_regions() -> list[dict]:
+    """Return all market regions sorted by name."""
+    try:
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
+    except Exception:
+        return []
+
+# ── Market write helpers (for application workers that need to write orders) ──
+upsert_market_orders = _pub.upsert_market_orders
+mark_region_market_refreshed = _pub.mark_region_market_refreshed
 __all__ = [
     "sde",
     "db",
@@ -249,4 +284,8 @@ __all__ = [
     "esi_registry",
     "esi_manifest",
     "db_admin",
+    "get_regions",
+    "DEFAULT_REGION",
+    "upsert_market_orders",
+    "mark_region_market_refreshed",
 ]

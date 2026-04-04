@@ -22,13 +22,6 @@ from core.db import publicDB as sde_store
 from core.queue.esi_req import esi_get as _esi_get
 import core.sde as sde
 from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
-import types as _types
-raw_esi = _types.SimpleNamespace(get=_esi_get)
-token_resolution = _types.SimpleNamespace(
-    resolve_default_owner_id=resolve_default_owner_id,
-    pick_token=pick_token,
-    fresh_token=fresh_token,
-)
 from core.config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
@@ -76,76 +69,6 @@ def ensure_columns(con) -> None:
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS market_refreshed_until TIMESTAMP")
 
 
-# ── config helpers ────────────────────────────────────────────────────────────
-
-def _get_market_unauthorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Market", {}).get("unauthorized_cooldown_days", 7))
-    except Exception:
-        days = 7
-    return days * 24 * 3600
-
-
-def _get_market_forbidden_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Market", {}).get("forbidden_cooldown_days", 21))
-    except Exception:
-        days = 21
-    return days * 24 * 3600
-
-
-def _get_market_authorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        return int(cfg.get("Market", {}).get("authorized_cooldown_seconds", 3600))
-    except Exception:
-        return 3600
-
-
-def _get_enrich_unauthorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Structures", {}).get("unauthorized_cooldown_days", 7))
-    except Exception:
-        days = 7
-    return days * 24 * 3600
-
-
-def _get_enrich_forbidden_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Structures", {}).get("forbidden_cooldown_days", 21))
-    except Exception:
-        days = 21
-    return days * 24 * 3600
-
-
-def _get_enrich_authorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        return int(cfg.get("Structures", {}).get("authorized_cooldown_seconds", 3600))
-    except Exception:
-        return 3600
-
-
-def _get_market_max_retries() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        return int(cfg.get("Market", {}).get("max_retries", 3))
-    except Exception:
-        return 3
-
-
-def _get_market_rate_limit_sleep() -> float:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        return float(cfg.get("Market", {}).get("rate_limit_sleep_seconds", 10))
-    except Exception:
-        return 10.0
-
-
 # ── ESI calls ─────────────────────────────────────────────────────────────────
 
 def fetch_structure_orders(
@@ -153,14 +76,13 @@ def fetch_structure_orders(
     token: str,
     page: int = 1,
     retries: int = 3,
-    rate_limit_sleep: float = 10.0,
 ) -> tuple[list, int]:
     url = f"{ESI_BASE}/markets/structures/{structure_id}/"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     for attempt in range(1, retries + 1):
         try:
-            resp = raw_esi.get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
+            resp = _esi_get(url, headers=headers, params={**DATASOURCE, "page": page}, timeout=15)
 
             if resp.status_code == 403:
                 logger.warning("[MarketStructure] Skipping %s page %s: HTTP 403", structure_id, page)
@@ -204,7 +126,7 @@ def fetch_structure_details(structure_id: int, token: str) -> "dict | object | N
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        resp = raw_esi.get(url, headers=headers, params=DATASOURCE, timeout=15)
+        resp = _esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
         logger.warning("[MarketStructure] Metadata request failed for %s: %s", structure_id, exc)
         return None
@@ -270,6 +192,21 @@ def populate_structure_metadata(structure: dict, token: str) -> tuple[dict, str]
 # ── main worker ───────────────────────────────────────────────────────────────
 
 def update_structure_market_orders() -> None:
+    # Load config once for this run
+    try:
+        _raw_cfg = load_config(CONFIG_PATH)
+    except Exception:
+        _raw_cfg = {}
+    _mc = _raw_cfg.get("Market", {})
+    _sc = _raw_cfg.get("Structures", {})
+    market_unauthorized_cooldown = int(_mc.get("unauthorized_cooldown_days", 7)) * 86400
+    market_forbidden_cooldown    = int(_mc.get("forbidden_cooldown_days", 21)) * 86400
+    market_authorized_cooldown   = int(_mc.get("authorized_cooldown_seconds", 3600))
+    enrich_unauthorized_cooldown = int(_sc.get("unauthorized_cooldown_days", 7)) * 86400
+    enrich_forbidden_cooldown    = int(_sc.get("forbidden_cooldown_days", 21)) * 86400
+    enrich_authorized_cooldown   = int(_sc.get("authorized_cooldown_seconds", 3600))
+    max_retries                  = int(_mc.get("max_retries", 3))
+
     # Ensure our tables + enrichment columns exist
     con = public_connect(read_only=False)
     try:
@@ -286,12 +223,12 @@ def update_structure_market_orders() -> None:
     finally:
         con.close()
 
-    owner_id = token_resolution.resolve_default_owner_id()
+    owner_id = resolve_default_owner_id()
     if owner_id is None:
         logger.error("[MarketStructure] No private owner directories found.")
         return
 
-    _char_id, token_data = token_resolution.pick_token(owner_id)
+    _char_id, token_data = pick_token(owner_id)
     token = token_data["access_token"]
     structures = sde_store.list_public_structures(skip_market_forbidden=True)
     logger.info("[MarketStructure] Checking %s structures.", len(structures))
@@ -307,7 +244,7 @@ def update_structure_market_orders() -> None:
         num_orders = 0
         structure_id = structure["structure_id"]
         try:
-            _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
+            _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             structure, enrich_status = populate_structure_metadata(structure, token)
@@ -315,16 +252,15 @@ def update_structure_market_orders() -> None:
             sde_store.upsert_market_structures([structure])
 
             if enrich_status == "success":
-                sde_store.mark_structures_enrich_refreshed([structure_id], _get_enrich_authorized_cooldown())
+                sde_store.mark_structures_enrich_refreshed([structure_id], enrich_authorized_cooldown)
             elif enrich_status == "unauthorized":
-                sde_store.mark_structures_forbidden([structure_id], _get_enrich_unauthorized_cooldown())
+                sde_store.mark_structures_forbidden([structure_id], enrich_unauthorized_cooldown)
             elif enrich_status == "forbidden":
-                sde_store.mark_structures_forbidden([structure_id], _get_enrich_forbidden_cooldown())
+                sde_store.mark_structures_forbidden([structure_id], enrich_forbidden_cooldown)
 
             orders, pages = fetch_structure_orders(
                 structure_id, token, page=1,
-                retries=_get_market_max_retries(),
-                rate_limit_sleep=_get_market_rate_limit_sleep(),
+                retries=max_retries,
             )
             if orders is _MARKET_403:
                 market_unauthorized_ids.append(structure_id)
@@ -367,19 +303,18 @@ def update_structure_market_orders() -> None:
             num_orders += len(all_rows)
 
             for page in range(2, pages + 1):
-                _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
+                _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
                 token = token_data["access_token"]
                 more, _ = fetch_structure_orders(
                     structure_id, token, page=page,
-                    retries=_get_market_max_retries(),
-                    rate_limit_sleep=_get_market_rate_limit_sleep(),
+                    retries=max_retries,
                 )
                 page_rows = [{**order, "region_id": region_id, "location_id": structure_id} for order in more]
                 all_rows.extend(page_rows)
                 num_orders += len(page_rows)
 
             sde_store.upsert_market_orders(all_rows)
-            sde_store.mark_structures_market_refreshed([structure_id], _get_market_authorized_cooldown())
+            sde_store.mark_structures_market_refreshed([structure_id], market_authorized_cooldown)
             orders_total += num_orders
             logger.debug("[MarketStructure] Synced %s orders for %s.", num_orders, structure_id)
 
@@ -395,7 +330,7 @@ def update_structure_market_orders() -> None:
             logger.exception("[MarketStructure] Failed for %s.", structure_id)
 
     if market_unauthorized_ids:
-        cooldown = _get_market_unauthorized_cooldown()
+        cooldown = market_unauthorized_cooldown
         sde_store.mark_market_structures_forbidden(market_unauthorized_ids, cooldown)
         logger.info(
             "[MarketStructure] Marked %s structure(s) as market-403; will skip for %s days.",
@@ -403,7 +338,7 @@ def update_structure_market_orders() -> None:
         )
 
     if market_forbidden_ids:
-        cooldown = _get_market_forbidden_cooldown()
+        cooldown = market_forbidden_cooldown
         sde_store.mark_market_structures_forbidden(market_forbidden_ids, cooldown)
         logger.info(
             "[MarketStructure] Marked %s structure(s) as market-404; will skip for %s days.",

@@ -1,4 +1,4 @@
-# tools/market_browser/__init__.py
+# applications/market_browser/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint

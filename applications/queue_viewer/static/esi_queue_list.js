@@ -1,5 +1,6 @@
 function cancelTask(taskId, button) {
-  fetch('/queue/' + taskId + '/cancel', { method: 'POST' })
+  var _esiCard = document.getElementById('esi-rate-card');
+  fetch(_esiCard.dataset.urlCancel.replace('PLACEHOLDER', taskId), { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function (payload) {
       if (!payload.cancelled) {
@@ -16,7 +17,8 @@ function cancelTask(taskId, button) {
 }
 
 function clearDone() {
-  fetch('/queue/clear', { method: 'POST' })
+  var _esiCard = document.getElementById('esi-rate-card');
+  fetch(_esiCard.dataset.urlClear, { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function () { location.reload(); });
 }
@@ -27,6 +29,7 @@ function clearDone() {
   var esiGroups = document.getElementById('esi-groups');
   var esiReqs   = document.getElementById('esi-reqs');
   var isAdmin   = esiCard ? esiCard.dataset.isAdmin === 'true' : false;
+  var _URL_RATE_STREAM = esiCard ? esiCard.dataset.urlRateStream : '/queue/rate_stream';
 
   function applyRateStats(d) {
     var s = d.limiter;
@@ -150,7 +153,7 @@ function clearDone() {
   }
 
   (function openRateStream() {
-    var es = new EventSource('/queue/rate_stream');
+    var es = new EventSource(_URL_RATE_STREAM);
     es.onmessage = function (ev) {
       try { applyRateStats(JSON.parse(ev.data)); } catch (e) {}
     };
@@ -160,3 +163,12 @@ function clearDone() {
     };
   }());
 }());
+
+document.addEventListener('DOMContentLoaded', function () {
+  var clearBtn = document.getElementById('clear-done-btn');
+  if (clearBtn) clearBtn.addEventListener('click', clearDone);
+
+  document.querySelectorAll('.cancel-btn[data-task-id]').forEach(function (btn) {
+    btn.addEventListener('click', function () { cancelTask(this.dataset.taskId, this); });
+  });
+});

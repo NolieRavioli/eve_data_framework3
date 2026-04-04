@@ -8,11 +8,15 @@
     <div class="pg-sub">{{ 'Admin view across all owners' if is_admin else 'Your background work and live sync state' }}</div>
   </div>
   <div class="toolbar">
-    <button class="btn btn-g" onclick="clearDone()">Clear Completed</button>
+    <button class="btn btn-g" id="clear-done-btn">Clear Completed</button>
   </div>
 </div>
 
-<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem" data-is-admin="{{ 'true' if is_admin else 'false' }}">
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem"
+     data-is-admin="{{ 'true' if is_admin else 'false' }}"
+     data-url-rate-stream="{{ url_for('queue_viewer.rate_stream') }}"
+     data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id='PLACEHOLDER') }}"
+     data-url-clear="{{ url_for('queue_viewer.clear_tasks') }}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
     <div>
       <div class="ct" style="margin:0;margin-bottom:0.2rem">ESI Floating Window Rate Limits</div>
@@ -109,7 +113,7 @@
             </td>
             <td style="white-space:nowrap" data-col="action">
               {% if t.status == 'pending' %}
-              <button class="btn btn-g cancel-btn" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="cancelTask('{{ t.task_id }}', this)">Cancel</button>
+              <button class="btn btn-g cancel-btn" data-task-id="{{ t.task_id }}" style="padding:0.3rem 0.65rem;font-size:0.72rem">Cancel</button>
               {% endif %}
               <a href="{{ url_for('queue_viewer.esi_queue_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
             </td>

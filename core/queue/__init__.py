@@ -13,7 +13,6 @@ from core.queue.streams import rate_stream, log_stream
 from core.queue.writer import (
     start_writer,
     stop_writer,
-    is_running as writer_is_running,
     db_write,
     db_write_nowait,
     db_executemany,
@@ -32,7 +31,6 @@ __all__ = [
     "log_stream",
     "start_writer",
     "stop_writer",
-    "writer_is_running",
     "db_write",
     "db_write_nowait",
     "db_executemany",

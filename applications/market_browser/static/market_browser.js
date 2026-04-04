@@ -5,6 +5,10 @@
     var APP = document.getElementById('mb-app');
     var REGION_ID = parseInt(APP.dataset.regionId || '0', 10);
     var TYPE_ID   = parseInt(APP.dataset.typeId   || '0', 10);
+    var _URL_TREE        = APP.dataset.urlTree;
+    var _URL_GROUP_TYPES = APP.dataset.urlGroupTypes;  // contains '/0/' as placeholder
+    var _URL_SEARCH      = APP.dataset.urlSearch;
+    var _URL_ORDERS      = APP.dataset.urlOrders;
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -13,7 +17,7 @@
     }
 
     function ordersUrl(typeId) {
-        return '/market/orders?type_id=' + typeId + '&region_id=' + REGION_ID;
+        return _URL_ORDERS + '?type_id=' + typeId + '&region_id=' + REGION_ID;
     }
 
     // ── tree state ────────────────────────────────────────────────────────────
@@ -91,7 +95,7 @@
         // Fetch leaf types if this group (also) has types
         if (g.has_types && !loadedTypes[g.market_group_id]) {
             loadedTypes[g.market_group_id] = true;
-            fetch('/market/group/' + g.market_group_id + '/types')
+            fetch(_URL_GROUP_TYPES.replace('/0/', '/' + g.market_group_id + '/'))
                 .then(function (r) { return r.json(); })
                 .then(function (types) {
                     types.forEach(function (t) {
@@ -126,13 +130,13 @@
     // Walk up from the active type's group to root and expand each ancestor
     function expandToType(typeId, groups) {
         // Find which group contains this type via the server
-        fetch('/market/group/for_type/' + typeId)
+        fetch(_URL_TREE.replace('tree', 'group/for_type/' + typeId))
             .catch(function () { /* optional endpoint — graceful */ });
         // Simpler: we don't know the group id from the page alone without an extra call.
         // The sidebar will highlight the active type when its parent is opened naturally.
     }
 
-    fetch('/market/tree')
+        fetch(_URL_TREE)
         .then(function (r) { return r.json(); })
         .then(function (groups) {
             if (groups.error) {
@@ -160,7 +164,7 @@
             return;
         }
         searchTimer = setTimeout(function () {
-            fetch('/market/search?q=' + encodeURIComponent(q))
+            fetch(_URL_SEARCH + '?q=' + encodeURIComponent(q))
                 .then(function (r) { return r.json(); })
                 .then(function (types) {
                     searchResults.innerHTML = '';
@@ -190,6 +194,9 @@
     });
 
     // ── region selector ───────────────────────────────────────────────────────
-    // Already handled inline via onchange in the template.
+    var regionSelect = document.getElementById('region-select');
+    if (regionSelect) regionSelect.addEventListener('change', function () {
+        document.getElementById('region-form').submit();
+    });
 
 }());

@@ -31,8 +31,6 @@ import logging
 
 from core.db.privateDB import get_private_session, initialize_private_database
 from core.esi.auth import pick_token as _pick_token, fresh_token as _fresh_token
-import types as _types
-token_resolution = _types.SimpleNamespace(pick_token=_pick_token, fresh_token=_fresh_token)
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +103,8 @@ def populate_all(owner_id: int) -> None:
     logger.info("[CharacterPopulate] Starting for owner %s", owner_id)
 
     try:
-        char_id, token_data = token_resolution.pick_token(owner_id)
-        _, token_data = token_resolution.fresh_token(owner_id, char_id, token_data)
+        char_id, token_data = _pick_token(owner_id)
+        _, token_data = _fresh_token(owner_id, char_id, token_data)
         access_token = token_data["access_token"]
     except Exception:
         logger.exception(

@@ -1,4 +1,4 @@
-# tools/isk_per_hour/__init__.py
+# applications/isk_per_hour/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint

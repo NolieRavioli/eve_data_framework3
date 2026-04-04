@@ -1,5 +1,8 @@
 (function () {
-  var TASK_ID = document.getElementById('task-app').dataset.taskId;
+  var _taskApp = document.getElementById('task-app');
+  var TASK_ID = _taskApp.dataset.taskId;
+  var _URL_STREAM = _taskApp.dataset.urlStream;
+  var _URL_CANCEL = _taskApp.dataset.urlCancel;
   var consoleEl = document.getElementById('console');
   var badge = document.getElementById('status-badge');
   var cancelButton = document.getElementById('cancel-btn');
@@ -24,7 +27,7 @@
     }
   }
 
-  var es = new EventSource('/queue/' + TASK_ID + '/stream');
+  var es = new EventSource(_URL_STREAM);
   es.onmessage = function (event) {
     appendLine(event.data);
   };
@@ -157,11 +160,13 @@
   };
 
   window.cancelTask = function () {
-    fetch('/queue/' + TASK_ID + '/cancel', { method: 'POST' })
+    fetch(_URL_CANCEL, { method: 'POST' })
       .then(function (response) { return response.json(); })
       .then(function (payload) {
         if (payload.cancelled) setStatus('cancelled');
         else if (payload.message) appendLine('[INFO] ' + payload.message);
       });
   };
+
+  if (cancelButton) cancelButton.addEventListener('click', window.cancelTask);
 }());

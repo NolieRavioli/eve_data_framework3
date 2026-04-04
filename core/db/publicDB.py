@@ -384,37 +384,6 @@ def ensure_public_database(database_file: str | Path | None = None) -> dict:
     return get_warehouse_status(target)
 
 
-def reset_public_operational_tables(
-    *,
-    clear_users: bool = True,
-    database_file: str | Path | None = None,
-) -> None:
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        con.execute("DELETE FROM market_orders")
-        con.execute("DELETE FROM public_contracts")
-        con.execute("DELETE FROM market_structures")
-        con.execute("DELETE FROM structures")
-        if clear_users:
-            con.execute("DELETE FROM user_roles")
-            con.execute("DELETE FROM site_admins")
-            con.execute("DELETE FROM users")
-    finally:
-        con.close()
-
-
-def retire_legacy_public_database() -> dict:
-    removed: list[str] = []
-    public_db = get_public_database_path()
-    for suffix in ("", "-wal", "-shm"):
-        path = Path(str(public_db) + suffix)
-        if path.exists():
-            path.unlink()
-            removed.append(str(path))
-    return {"removed": removed, "legacy_database": str(public_db)}
-
-
 def link_public_user(owner_id: int, character_id: int, database_file: str | Path | None = None) -> None:
     con = connect(database_file or get_database_path(), read_only=False)
     try:
@@ -616,7 +585,7 @@ def public_table_counts(
         con.close()
 
 
-def upsert_market_orders(rows: list[dict], database_file: str | Path | None = None) -> int:
+def upsert_market_orders(rows: list[dict]) -> int:
     payload = [
         (
             _as_int(row.get("order_id")),
@@ -643,44 +612,6 @@ def upsert_market_orders(rows: list[dict], database_file: str | Path | None = No
             order_id, type_id, location_id, region_id, is_buy_order, issued, duration,
             price, order_range, volume_remain, volume_total, min_volume, last_seen
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        payload,
-    )
-
-
-def upsert_public_contracts(rows: list[dict], database_file: str | Path | None = None) -> int:
-    payload = [
-        (
-            _as_int(row.get("contract_id")),
-            _as_int(row.get("region_id")),
-            _as_int(row.get("issuer_id")),
-            _as_int(row.get("issuer_corporation_id")),
-            row.get("contract_type") or row.get("type"),
-            _coerce_timestamp(row.get("date_issued")),
-            _coerce_timestamp(row.get("date_expired")),
-            row.get("title"),
-            _as_float(row.get("volume")),
-            _as_float(row.get("price")),
-            _as_float(row.get("buyout")),
-            _as_float(row.get("collateral")),
-            _as_float(row.get("reward")),
-            _as_int(row.get("days_to_complete")),
-            _as_int(row.get("start_location_id")),
-            _as_int(row.get("end_location_id")),
-            _as_bool(row.get("for_corporation")),
-            _coerce_timestamp(row.get("last_seen")) or _utc_now(),
-        )
-        for row in rows
-        if row.get("contract_id") is not None
-    ]
-    from core.queue.writer import db_executemany
-    return db_executemany(
-        """
-        INSERT OR REPLACE INTO public_contracts (
-            contract_id, region_id, issuer_id, issuer_corporation_id, contract_type,
-            date_issued, date_expired, title, volume, price, buyout, collateral, reward,
-            days_to_complete, start_location_id, end_location_id, for_corporation, last_seen
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         payload,
     )
@@ -766,7 +697,7 @@ def list_public_structures(
         con.close()
 
 
-def upsert_structures(rows: list[dict], database_file: str | Path | None = None) -> int:
+def upsert_structures(rows: list[dict]) -> int:
     payload = [
         (
             _as_int(row.get("structure_id")),
@@ -796,7 +727,6 @@ def upsert_structures(rows: list[dict], database_file: str | Path | None = None)
 def mark_structures_forbidden(
     structure_ids: list[int],
     cooldown_seconds: int = 21 * 24 * 3600,
-    database_file: str | Path | None = None,
 ) -> None:
     """Record that a batch of structures returned 403/are inaccessible for enrichment.
 
@@ -819,7 +749,6 @@ def mark_structures_forbidden(
 def mark_structures_enrich_refreshed(
     structure_ids: list[int],
     cooldown_seconds: int = 3600,
-    database_file: str | Path | None = None,
 ) -> None:
     """Record that a batch of structures were successfully enriched with metadata.
 
@@ -841,7 +770,6 @@ def mark_structures_enrich_refreshed(
 def mark_market_structures_forbidden(
     structure_ids: list[int],
     cooldown_seconds: int = 7 * 24 * 3600,
-    database_file: str | Path | None = None,
 ) -> None:
     """Record that a batch of structures returned 403 on the market endpoint.
 
@@ -863,7 +791,6 @@ def mark_market_structures_forbidden(
 def mark_structures_market_refreshed(
     structure_ids: list[int],
     cooldown_seconds: int = 3600,
-    database_file: str | Path | None = None,
 ) -> None:
     """Record that a batch of structures returned market orders successfully.
 
@@ -918,7 +845,6 @@ def list_market_region_ids(
 def mark_region_market_refreshed(
     region_id: int,
     cooldown_seconds: int = 3600,
-    database_file: str | Path | None = None,
 ) -> None:
     """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
     from datetime import timedelta
@@ -934,7 +860,7 @@ def mark_region_market_refreshed(
     )
 
 
-def upsert_market_structures(rows: list[dict], database_file: str | Path | None = None) -> int:
+def upsert_market_structures(rows: list[dict]) -> int:
     payload = [
         (
             _as_int(row.get("structure_id")),
@@ -958,66 +884,6 @@ def upsert_market_structures(rows: list[dict], database_file: str | Path | None 
         """,
         payload,
     )
-
-
-def search_market_orders(
-    *,
-    type_ids: set[int] | None = None,
-    has_type_filter: bool = False,
-    region_id: int | None = None,
-    location_id: int | None = None,
-    is_buy: int | None = None,
-    sort_by: str = "price",
-    page: int = 1,
-    page_size: int = 50,
-    database_file: str | Path | None = None,
-) -> tuple[int, list[dict]]:
-    where: list[str] = []
-    params: list[Any] = []
-    if type_ids:
-        ordered = sorted(type_ids)
-        where.append(f"type_id IN ({', '.join(['?'] * len(ordered))})")
-        params.extend(ordered)
-    elif has_type_filter:
-        where.append("1 = 0")
-
-    if region_id:
-        where.append("region_id = ?")
-        params.append(region_id)
-    if location_id:
-        where.append("location_id = ?")
-        params.append(location_id)
-    if is_buy in (0, 1):
-        where.append("is_buy_order = ?")
-        params.append(bool(is_buy))
-
-    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-    order_sql = "volume_remain DESC, price ASC" if sort_by == "volume" else "price ASC, volume_remain DESC"
-    offset = max(page - 1, 0) * page_size
-
-    con = connect(database_file or get_database_path(), read_only=False)
-    try:
-        _ensure_public_schema(con)
-        total_row = con.execute(
-            f"SELECT COUNT(*) FROM market_orders {where_sql}",
-            params,
-        ).fetchone()
-        rows = _query_to_dicts(
-            con,
-            f"""
-            SELECT
-                order_id, type_id, location_id, region_id, is_buy_order, issued,
-                duration, price, order_range, volume_remain, volume_total, min_volume, last_seen
-            FROM market_orders
-            {where_sql}
-            ORDER BY {order_sql}
-            LIMIT ? OFFSET ?
-            """,
-            [*params, page_size, offset],
-        )
-        return int(total_row[0] or 0), rows
-    finally:
-        con.close()
 
 
 def sync_esi_registry_to_warehouse(

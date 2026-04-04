@@ -10,7 +10,7 @@ import logging
 from flask import Blueprint, Response, abort, jsonify, render_template, session
 
 from applications._base import base_ctx, require_role
-from applications._adapters import queue_info
+from applications._adapters import queue_info, char_data
 
 logger = logging.getLogger(__name__)
 tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")
@@ -23,8 +23,6 @@ def _owns_task(task) -> bool:
 
 def _make_char_name_lookup():
     """Return a closure that maps owner_id → character name (cached for connection lifetime)."""
-    from core.db.models import Character as _Character
-    from core.db.privateDB import get_private_session as _gps
     _cache: dict[int, str] = {}
 
     def _lookup(owner_id: int) -> str:
@@ -34,10 +32,8 @@ def _make_char_name_lookup():
             _cache[owner_id] = ""
             return ""
         try:
-            sess = _gps(owner_id)
-            chars = sess.query(_Character).all()
-            name = chars[0].name if chars else str(owner_id)
-            sess.close()
+            chars = char_data.get_characters(owner_id)
+            name = chars[0]["name"] if chars else str(owner_id)
         except Exception:
             name = str(owner_id)
         _cache[owner_id] = name

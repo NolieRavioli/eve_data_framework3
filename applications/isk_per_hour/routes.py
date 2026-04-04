@@ -1,4 +1,4 @@
-# tools/isk_per_hour/routes.py
+# applications/isk_per_hour/routes.py
 """Flask blueprint for the ISK/hr ranking tool."""
 
 from __future__ import annotations
@@ -7,14 +7,13 @@ import logging
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from applications._adapters import db, tasks
+from applications._adapters import db, tasks, DEFAULT_REGION, get_regions
 from applications._base import base_ctx, require_role
+from applications.isk_per_hour.worker import compute_rankings
 
 logger = logging.getLogger(__name__)
 
 isk_bp = Blueprint("isk_per_hour", __name__, template_folder="templates", static_folder="static")
-
-_DEFAULT_REGION = 10000002  # The Forge (Jita)
 
 
 @isk_bp.route("/")
@@ -22,10 +21,10 @@ _DEFAULT_REGION = 10000002  # The Forge (Jita)
 def index():
     ctx = base_ctx("isk_per_hour")
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "categories": _get_categories(),
         "results": None,
-        "region_id": _DEFAULT_REGION,
+        "region_id": DEFAULT_REGION,
         "category_id": None,
     })
     return render_template("isk_per_hour.html", **ctx)
@@ -35,16 +34,15 @@ def index():
 @require_role("isk_per_hour")
 def compute():
     try:
-        region_id = int(request.form.get("region_id", _DEFAULT_REGION))
+        region_id = int(request.form.get("region_id", DEFAULT_REGION))
         category_id = int(request.form.get("category_id", 0))
     except (ValueError, TypeError):
-        region_id = _DEFAULT_REGION
+        region_id = DEFAULT_REGION
         category_id = 0
 
     if not category_id:
         return redirect(url_for("isk_per_hour.index"))
 
-    from applications.isk_per_hour.worker import compute_rankings
     task_id = tasks.enqueue(
         f"ISK/hr — region {region_id}, category {category_id}",
         compute_rankings,
@@ -62,10 +60,10 @@ def results():
     ctx = base_ctx("isk_per_hour")
 
     try:
-        region_id = int(request.args.get("region_id", _DEFAULT_REGION))
+        region_id = int(request.args.get("region_id", DEFAULT_REGION))
         category_id = int(request.args.get("category_id", 0))
     except (ValueError, TypeError):
-        region_id = _DEFAULT_REGION
+        region_id = DEFAULT_REGION
         category_id = 0
 
     rows = []
@@ -84,21 +82,13 @@ def results():
             logger.warning("ISK/hr results query failed: %s", exc)
 
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "categories": _get_categories(),
         "results": rows,
         "region_id": region_id,
         "category_id": category_id,
     })
     return render_template("isk_per_hour.html", **ctx)
-
-
-def _get_regions() -> list[dict]:
-    try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
-        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
-    except Exception:
-        return []
 
 
 def _get_categories() -> list[dict]:
