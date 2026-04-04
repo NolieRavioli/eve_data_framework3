@@ -182,7 +182,7 @@ def _writer_loop(db_path: Path) -> None:
         # capped at _MAX_COALESCE_ROWS so no single batch grows unbounded.
         # The writer loops immediately after each batch, picking up the next
         # chunk — queue depth stays low and latency stays bounded.
-        _MAX_COALESCE_ROWS = 10_000
+        _MAX_COALESCE_ROWS = 50_000
         batch: list[_Op] = [op]
         coalesced_rows = len(op.rows) if (op.many and op.rows) else 0
         if op.many and op.rows:
