@@ -1,5 +1,5 @@
 ﻿{% extends "base.html" %}
-{% block title %}System Status â€” EVE Data Framework{% endblock %}
+{% block title %}System Status - EVE Data Framework{% endblock %}
 
 {% block content %}
 <div class="pg-hd">
@@ -15,7 +15,7 @@
      data-url-table-stats="{{ url_for('sys_status.api_table_stats') }}"
      data-url-ws-base="{{ request.host_url.rstrip('/') }}">
 
-  {# â”€â”€ Writer Thread â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Writer Thread ------------------------------------------------------ #}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">DuckDB Writer Thread</div>
     <div class="stat-row">
@@ -39,7 +39,7 @@
         <span class="v" id="w-cp-ago">
           {%- if snapshot.writer.last_checkpoint_seconds_ago is not none -%}
             {{ snapshot.writer.last_checkpoint_seconds_ago }}s ago
-          {%- else -%}â€”{%- endif -%}
+          {%- else -%}-{%- endif -%}
         </span>
         <span class="l">Last Checkpoint</span>
       </div>
@@ -54,7 +54,7 @@
     </div>
   </div>
 
-  {# â”€â”€ Write Performance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Write Performance -------------------------------------------------- #}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">Write Performance <span class="muted" style="font-size:0.75rem;font-weight:normal">(rolling 500 ops)</span></div>
     <div class="stat-row">
@@ -68,26 +68,26 @@
       </div>
       <div class="stat">
         <span class="v" id="w-p50">
-          {%- if snapshot.writer.p50_ms is not none -%}{{ '%.0f' % snapshot.writer.p50_ms }}ms{%- else -%}â€”{%- endif -%}
+          {%- if snapshot.writer.p50_ms is not none -%}{{ '%.0f' % snapshot.writer.p50_ms }}ms{%- else -%}-{%- endif -%}
         </span>
         <span class="l">p50 Latency</span>
       </div>
       <div class="stat">
         <span class="v" id="w-p95">
-          {%- if snapshot.writer.p95_ms is not none -%}{{ '%.0f' % snapshot.writer.p95_ms }}ms{%- else -%}â€”{%- endif -%}
+          {%- if snapshot.writer.p95_ms is not none -%}{{ '%.0f' % snapshot.writer.p95_ms }}ms{%- else -%}-{%- endif -%}
         </span>
         <span class="l">p95 Latency</span>
       </div>
       <div class="stat">
         <span class="v" id="w-p99">
-          {%- if snapshot.writer.p99_ms is not none -%}{{ '%.0f' % snapshot.writer.p99_ms }}ms{%- else -%}â€”{%- endif -%}
+          {%- if snapshot.writer.p99_ms is not none -%}{{ '%.0f' % snapshot.writer.p99_ms }}ms{%- else -%}-{%- endif -%}
         </span>
         <span class="l">p99 Latency</span>
       </div>
     </div>
   </div>
 
-  {# â”€â”€ Database File + Hints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Database File + Hints ---------------------------------------------- #}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">Database File</div>
     <div class="muted mono" style="font-size:0.8rem;margin-bottom:0.75rem">{{ snapshot.db_file.path }}</div>
@@ -125,7 +125,7 @@
     <div id="table-stats-container" style="margin-top:0.5rem"></div>
   </div>
 
-  {# â”€â”€ Task Queues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Task Queues -------------------------------------------------------- #}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">Task Queues</div>
     <div class="stat-row">
@@ -156,7 +156,7 @@
     </div>
   </div>
 
-  {# â”€â”€ Process â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Process ------------------------------------------------------------ #}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">Process</div>
     <div class="stat-row">
@@ -173,7 +173,7 @@
     </div>
   </div>
 
-  {# â”€â”€ Scheduler Jobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Scheduler Jobs ----------------------------------------------------- #}
   {% if snapshot.jobs %}
   <div class="card stack" style="margin-bottom:1rem">
     <div class="ct" style="margin:0 0 0.75rem">Scheduler Jobs</div>
@@ -193,8 +193,8 @@
           <td>{{ job.label or job.job_id }}</td>
           <td>{{ 'Yes' if job.enabled else 'No' }}</td>
           <td>{{ job.interval_s }}s</td>
-          <td class="mono muted">{{ job.last_run_at or 'â€”' }}</td>
-          <td class="mono muted">{{ job.next_run_at or 'â€”' }}</td>
+          <td class="mono muted">{{ job.last_run_at or '-' }}</td>
+          <td class="mono muted">{{ job.next_run_at or '-' }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -202,11 +202,11 @@
   </div>
   {% endif %}
 
-  {# â”€â”€ Live Telemetry Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #}
+  {# -- Live Telemetry Logs ------------------------------------------------ #}
   <div class="card stack">
     <div class="ct" style="margin:0 0 0.75rem">
       Live Telemetry Logs
-      <span id="ws-status" style="font-size:0.75rem;font-weight:normal;margin-left:0.75rem;opacity:.7">connectingâ€¦</span>
+      <span id="ws-status" style="font-size:0.75rem;font-weight:normal;margin-left:0.75rem;opacity:.7">connecting...</span>
     </div>
     {# Topic selector #}
     <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.75rem" id="topic-selectors">
@@ -227,7 +227,7 @@
     </div>
     <div id="log-feed"
          style="height:400px;overflow-y:auto;font-family:monospace;font-size:0.78rem;background:rgba(0,0,0,.25);border-radius:4px;padding:0.5rem">
-      <div class="muted" style="text-align:center;padding:2rem 0">Waiting for WebSocket connectionâ€¦</div>
+      <div class="muted" style="text-align:center;padding:2rem 0">Waiting for WebSocket connection...</div>
     </div>
   </div>
 
