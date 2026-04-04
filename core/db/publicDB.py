@@ -912,6 +912,21 @@ def mark_region_market_refreshed(
     )
 
 
+def cleanup_stale_market_orders_for_region(region_id: int, before_timestamp: datetime) -> None:
+    """Non-blocking delete of orders not seen since before_timestamp for a region.
+
+    Queued via ``db_write_nowait`` so it executes after all preceding upserts
+    for the same region (FIFO write queue) — no extra coordination needed.
+    Orders refreshed during the current fetch cycle have ``last_seen`` ≥
+    before_timestamp and are not affected.
+    """
+    from core.db.writer import db_write_nowait
+    db_write_nowait(
+        "DELETE FROM market_orders WHERE region_id = ? AND last_seen < ?",
+        [region_id, before_timestamp],
+    )
+
+
 def upsert_market_structures(rows: list[dict]) -> int:
     payload = [
         (

@@ -14,6 +14,25 @@ own retry loops.
 
 - ``market_orders`` — owned by this collector via :func:`ensure_tables`
 - ``market_region_cooldowns`` — owned by this collector via :func:`ensure_tables`
+
+**Write strategy:**
+
+Orders are upserted to DuckDB immediately as each ESI page arrives via the
+non-blocking ``db_executemany_nowait`` path.  The writer thread's coalesce
+logic automatically merges consecutive same-SQL batches (up to 50 k rows per
+BEGIN/COMMIT cycle), so the per-page 1 k-row submissions become large
+vectorised commits without any Python-side accumulation.
+
+A ``refresh_start`` timestamp is recorded before page 1 of each region is
+fetched.  After all pages have been submitted, a non-blocking DELETE removes
+any orders whose ``last_seen`` pre-dates ``refresh_start`` — i.e. orders that
+were in the DB from a previous fetch but were not present in this refresh cycle.
+Because the write queue is FIFO, the DELETE always executes after every upsert
+for the region has committed, with no additional coordination required.
+
+Crash safety is improved over the old approach: each committed page is
+immediately durable.  A crash mid-region leaves the already-committed pages
+intact; the stale-cleanup DELETE fires correctly on the next successful run.
 """
 
 import logging
@@ -146,16 +165,21 @@ def fetch_all_market_data() -> None:
 
     For each eligible region the fetch proceeds as follows:
 
-    1. **Page 1** is fetched to discover the total page count from the
+    1. ``refresh_start`` is recorded (UTC) before page 1 is fetched.
+    2. **Page 1** is fetched to discover the total page count from the
        ``X-Pages`` response header.  Regions that return a non-OK status or
        an empty order list are skipped entirely.
-    2. Page 1 orders are written to ``market_orders`` immediately and the
-       region cooldown is recorded via
-       :func:`core.db.publicDB.mark_region_market_refreshed`.
-    3. **Pages 2 through X-Pages** are fetched sequentially.  Each page is
-       written to ``market_orders`` as soon as it arrives.  A non-OK status
-       on any subsequent page is logged as a warning and the loop moves on to
-       the next page rather than aborting the region.
+    3. Each page's orders are upserted to ``market_orders`` immediately via
+       the non-blocking ``upsert_market_orders`` path — the write queue
+       coalesces consecutive same-SQL batches automatically, so the 1 k-row
+       per-page submissions become large vectorised commits without any
+       Python-side accumulation.  The ESI fetch loop for subsequent pages
+       runs concurrently with the writer committing earlier pages.
+    4. After all pages are submitted, a non-blocking DELETE removes orders
+       whose ``last_seen`` pre-dates ``refresh_start`` (i.e. orders absent
+       from the current refresh cycle).  The FIFO write queue guarantees the
+       DELETE executes only after every upsert has committed.
+    5. Region cooldown and station timestamps are updated (non-blocking).
 
     Rate limiting, ETag caching, and 429 back-off are delegated to
     :func:`core.queue.esi_req.esi_get`.
@@ -185,6 +209,11 @@ def fetch_all_market_data() -> None:
     logger.info("Processing %s regions...", len(region_ids))
 
     for region_id in region_ids:
+        # Record the start time before any pages are fetched.  Orders whose
+        # last_seen is older than this were not present in the current refresh
+        # and will be cleaned up after all pages are submitted.
+        refresh_start = datetime.now(timezone.utc)
+
         url = f"{ESI_BASE}/markets/{region_id}/orders/"
         params_base = {"order_type": "all", "datasource": "tranquility"}
 
@@ -202,8 +231,11 @@ def fetch_all_market_data() -> None:
             continue
 
         total_pages = int(resp.headers.get("X-Pages", 1))
-        all_orders = [{**o, "region_id": region_id} for o in orders]
+        total_rows = len(orders)
         logger.info("Region %s page 1/%s — %s orders", region_id, total_pages, len(orders))
+
+        # Upsert page 1 immediately — non-blocking, writer coalesces batches.
+        sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
 
         for page in range(2, total_pages + 1):
             resp = esi_get(url, params={**params_base, "page": page})
@@ -216,13 +248,17 @@ def fetch_all_market_data() -> None:
             orders = resp.json()
             if not orders:
                 break
-            all_orders.extend([{**o, "region_id": region_id} for o in orders])
+            total_rows += len(orders)
             logger.info("Region %s page %s/%s — %s orders", region_id, page, total_pages, len(orders))
+            # Upsert each page as it arrives — no accumulation in RAM.
+            sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
 
-        sde_store.replace_market_orders_for_region(region_id, all_orders)
+        # All page upserts are in the write queue.  The stale-cleanup DELETE is
+        # enqueued after them so it executes once every new order is committed.
+        sde_store.cleanup_stale_market_orders_for_region(region_id, refresh_start)
         sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
         _mark_stations_refreshed(region_id)
-        logger.info("Region %s done — %s total orders written", region_id, len(all_orders))
+        logger.info("Region %s done — %s orders submitted", region_id, total_rows)
 
     logger.info("Completed")
 
