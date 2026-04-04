@@ -34,21 +34,6 @@ _STATION_FORBIDDEN_DAYS = 1              # mark stations forbidden for 1 day on 
 
 # ── Table DDL — this collector OWNS market_orders + market_region_cooldowns ───
 
-def _migrate_market_orders_schema(con) -> None:
-    """Drop and recreate market_orders if it still has the old PRIMARY KEY schema."""
-    try:
-        pk_count = con.execute("""
-            SELECT COUNT(*) FROM information_schema.table_constraints
-            WHERE table_name = 'market_orders'
-              AND constraint_type = 'PRIMARY KEY'
-        """).fetchone()[0]
-        if pk_count:
-            logger.info("[market/regions] Dropping old market_orders PRIMARY KEY — migrating schema")
-            con.execute("DROP TABLE market_orders")
-    except Exception as exc:
-        logger.debug("[market/regions] Schema migration check: %s", exc)
-
-
 def ensure_tables(con) -> None:
     """Create market tables if they do not already exist.
 
@@ -57,7 +42,6 @@ def ensure_tables(con) -> None:
 
     :param con: An open, writable DuckDB connection.
     """
-    _migrate_market_orders_schema(con)
     con.execute("""
         CREATE TABLE IF NOT EXISTS market_orders (
             order_id      BIGINT,
