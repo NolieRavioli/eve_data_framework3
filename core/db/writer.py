@@ -157,18 +157,47 @@ def _writer_loop(db_path: Path) -> None:
 
     _connect()
 
+    _lookahead: object = None  # non-matching op deferred from last coalesce drain
+
     while True:
-        try:
-            item = _write_queue.get(timeout=30.0)
-        except _queue_module.Empty:
-            # Idle timeout — flush any accumulated WAL to the main file.
-            _checkpoint()
-            continue
+        # Prefer a deferred item from the last coalesce drain over a fresh queue pop.
+        if _lookahead is not None:
+            item = _lookahead
+            _lookahead = None
+        else:
+            try:
+                item = _write_queue.get(timeout=30.0)
+            except _queue_module.Empty:
+                # Idle timeout — flush any accumulated WAL to the main file.
+                _checkpoint()
+                continue
 
         if item is _STOP:
             break
 
         op: _Op = item
+
+        # ── Coalesce: drain all immediately-available many-ops with same SQL ──
+        # This converts N × executemany(1000 rows) into 1 × executemany(N*1000 rows)
+        # inside a single BEGIN/COMMIT, dramatically reducing per-call overhead.
+        batch: list[_Op] = [op]
+        if op.many and op.rows:
+            while True:
+                try:
+                    next_item = _write_queue.get_nowait()
+                except _queue_module.Empty:
+                    break
+                if next_item is _STOP:
+                    _lookahead = next_item
+                    break
+                next_op: _Op = next_item
+                if next_op.many and next_op.sql == op.sql and next_op.rows:
+                    batch.append(next_op)
+                else:
+                    # Different op — stash it for the next iteration (preserves order).
+                    _lookahead = next_op
+                    break
+
         enqueue_wait_ms = (time.monotonic() - op.enqueued_at) * 1000
         t0 = time.monotonic()
         depth = _write_queue.qsize()
@@ -180,8 +209,16 @@ def _writer_loop(db_path: Path) -> None:
             con.execute("BEGIN")
             try:
                 if op.many:
-                    if op.rows:
-                        con.executemany(op.sql, op.rows)
+                    combined: list = []
+                    for b in batch:
+                        combined.extend(b.rows)
+                    if combined:
+                        con.executemany(op.sql, combined)
+                        if len(batch) > 1:
+                            logger.debug(
+                                "[writer] coalesced %d ops → %d rows",
+                                len(batch), len(combined),
+                            )
                 else:
                     con.execute(op.sql, op.params or [])
                 con.execute("COMMIT")
@@ -195,24 +232,26 @@ def _writer_loop(db_path: Path) -> None:
             execute_ms = (time.monotonic() - t0) * 1000
             if execute_ms > 500:
                 logger.warning(
-                    "[writer] slow write %.0fms (queued %.0fms) | %s",
-                    execute_ms, enqueue_wait_ms, op.sql[:80],
+                    "[writer] slow write %.0fms (queued %.0fms) | %d ops | %s",
+                    execute_ms, enqueue_wait_ms, len(batch), op.sql.strip()[:80],
                 )
             with _stats_lock:
-                _stats["writes_total"] += 1
+                _stats["writes_total"] += len(batch)
                 _stats["last_enqueue_wait_ms"] = enqueue_wait_ms
                 _stats["last_execute_ms"] = execute_ms
                 _stats["last_write_latency_ms"] = execute_ms
                 _latencies.append(execute_ms)
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
-            op.error = exc
+            for b in batch:
+                b.error = exc
             with _stats_lock:
-                _stats["writes_error"] += 1
+                _stats["writes_error"] += len(batch)
             _connect()  # reset connection after an error
         finally:
-            # Unblock the caller immediately — never make callers wait for CHECKPOINT.
-            op.event.set()
+            # Unblock all callers in the coalesced batch immediately.
+            for b in batch:
+                b.event.set()
 
         # No inline checkpoint here — checkpoint_threshold is set to 10 GB so
         # DuckDB will not auto-checkpoint during write bursts.  The 30 s idle
