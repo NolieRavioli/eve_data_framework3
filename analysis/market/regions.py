@@ -76,6 +76,7 @@ def ensure_tables(con) -> None:
                 "[ensure_tables] Migrating market_orders: adding PRIMARY KEY on order_id"
             )
             con.execute("DROP TABLE IF EXISTS market_orders_old")
+            con.execute("DROP INDEX IF EXISTS idx_market_orders_region")
             con.execute("ALTER TABLE market_orders RENAME TO market_orders_old")
             con.execute(_MARKET_ORDERS_DDL)
             con.execute("""
