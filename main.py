@@ -3,7 +3,7 @@ import logging
 
 from core.config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
 from core.db import initialize_all
-from core.queue.writer import start_writer, stop_writer
+from core.db.writer import start_writer, stop_writer
 from core.web.app import start_webUI
 
 logger = logging.getLogger(__name__)

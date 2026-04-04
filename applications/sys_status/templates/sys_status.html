@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}System Status — EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>System Status</h1>
+    <div class="pg-sub">Live DB writer metrics, file stats, and process health</div>
+  </div>
+</div>
+
+<div class="pg-body"
+     id="sys-root"
+     data-url-stream="{{ url_for('sys_status.stream') }}">
+
+  {# ── Writer Thread ────────────────────────────────────────────────────── #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">DuckDB Writer Thread</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="w-alive">{{ 'Yes' if snapshot.writer.thread_alive else 'No' }}</span>
+        <span class="l">Thread Alive</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-queue">{{ snapshot.writer.queue_depth }}</span>
+        <span class="l">Queue Depth</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-total">{{ snapshot.writer.writes_total }}</span>
+        <span class="l">Writes Total</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-err">{{ snapshot.writer.writes_error }}</span>
+        <span class="l">Write Errors</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-latency">{{ '%.1f' % snapshot.writer.last_write_latency_ms }}ms</span>
+        <span class="l">Last Latency</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-ago">
+          {%- if snapshot.writer.last_checkpoint_seconds_ago is not none -%}
+            {{ snapshot.writer.last_checkpoint_seconds_ago }}s ago
+          {%- else -%}—{%- endif -%}
+        </span>
+        <span class="l">Last Checkpoint</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-ms">{{ '%.1f' % snapshot.writer.last_checkpoint_ms }}ms</span>
+        <span class="l">Checkpoint Duration</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-total">{{ snapshot.writer.checkpoints_total }}</span>
+        <span class="l">Total Checkpoints</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Database File ────────────────────────────────────────────────────── #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Database File</div>
+    <div class="muted mono" style="font-size:0.8rem;margin-bottom:0.75rem">{{ snapshot.db_file.path }}</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="db-size">{{ (snapshot.db_file.file_size_bytes / 1048576) | round(1) }} MB</span>
+        <span class="l">DB File Size</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="db-wal">{{ 'Yes' if snapshot.db_file.wal_exists else 'No' }}</span>
+        <span class="l">WAL Active</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="db-wal-size">{{ (snapshot.db_file.wal_size_bytes / 1048576) | round(2) }} MB</span>
+        <span class="l">WAL Size</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Task Queues ──────────────────────────────────────────────────────── #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Task Queues</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="tq-pending">{{ snapshot.task_counts.get('pending', 0) }}</span>
+        <span class="l">Pending</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-running">{{ snapshot.task_counts.get('running', 0) }}</span>
+        <span class="l">Running</span>
+      </div>
+      <div class="stat">
+        <span class="v ok" id="tq-complete">{{ snapshot.task_counts.get('complete', 0) }}</span>
+        <span class="l">Complete</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-failed">{{ snapshot.task_counts.get('failed', 0) }}</span>
+        <span class="l">Failed</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-pub">{{ snapshot.queue_counts.get('public', 0) }}</span>
+        <span class="l">Public Queue</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-prv">{{ snapshot.queue_counts.get('private', 0) }}</span>
+        <span class="l">Private Queue</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Process ──────────────────────────────────────────────────────────── #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Process</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v">{{ snapshot.process.pid }}</span>
+        <span class="l">PID</span>
+      </div>
+      {% if snapshot.process.memory_rss_mb is not none %}
+      <div class="stat">
+        <span class="v" id="proc-rss">{{ snapshot.process.memory_rss_mb }} MB</span>
+        <span class="l">Memory (RSS)</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Scheduler Jobs ───────────────────────────────────────────────────── #}
+  {% if snapshot.jobs %}
+  <div class="card stack">
+    <div class="ct" style="margin:0 0 0.75rem">Scheduler Jobs</div>
+    <table class="data-tbl" style="width:100%">
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Enabled</th>
+          <th>Interval</th>
+          <th>Last Run</th>
+          <th>Next Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in snapshot.jobs %}
+        <tr>
+          <td>{{ job.label or job.job_id }}</td>
+          <td>{{ 'Yes' if job.enabled else 'No' }}</td>
+          <td>{{ job.interval_s }}s</td>
+          <td class="mono muted">{{ job.last_run_at or '—' }}</td>
+          <td class="mono muted">{{ job.next_run_at or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sys_status.static', filename='sys_status.js') }}"></script>
+{% endblock %}

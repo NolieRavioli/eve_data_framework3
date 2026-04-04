@@ -11,6 +11,7 @@ start_writer(db_path=None)   — start the writer thread (call once at startup)
 stop_writer(timeout=10.0)    — graceful shutdown (call at app teardown)
 db_write(sql, params=None)   — execute a single write statement (blocking)
 db_executemany(sql, rows)    — execute a bulk insert/upsert (blocking)
+get_writer_stats()           — return live metrics dict (queue depth, latency, etc.)
 
 When the writer is not running (e.g. during SDE pipeline startup or in tests),
 both ``db_write`` and ``db_executemany`` fall back to a direct short-lived
@@ -23,6 +24,7 @@ from __future__ import annotations
 import logging
 import queue as _queue_module
 import threading
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Op:
-    __slots__ = ("sql", "params", "many", "rows", "event", "error")
+    __slots__ = ("sql", "params", "many", "rows", "event", "error", "enqueued_at")
 
     def __init__(
         self,
@@ -49,6 +51,7 @@ class _Op:
         self.rows = rows
         self.event: threading.Event = threading.Event()
         self.error: BaseException | None = None
+        self.enqueued_at: float = time.monotonic()
 
 
 _STOP = object()  # sentinel
@@ -58,6 +61,39 @@ _STOP = object()  # sentinel
 _write_queue: _queue_module.Queue = _queue_module.Queue()
 _writer_thread: threading.Thread | None = None
 _db_path: Path | None = None
+
+# ── Metrics ────────────────────────────────────────────────────────────────────
+
+_stats_lock = threading.Lock()
+_stats: dict[str, Any] = {
+    "writes_total": 0,
+    "writes_error": 0,
+    "last_write_latency_ms": 0.0,
+    "last_checkpoint_at": None,   # float (monotonic) or None
+    "last_checkpoint_ms": 0.0,
+    "checkpoints_total": 0,
+}
+
+
+def get_writer_stats() -> dict:
+    """Return a snapshot of writer thread metrics.
+
+    Keys returned:
+        thread_alive        — bool: is the writer thread running
+        queue_depth         — int: number of ops currently queued
+        writes_total        — int: total completed write ops
+        writes_error        — int: total failed write ops
+        last_write_latency_ms — float: latency of the most recent op (ms)
+        last_checkpoint_at  — float | None: monotonic timestamp of last checkpoint
+        last_checkpoint_ms  — float: duration of last checkpoint (ms)
+        checkpoints_total   — int: total checkpoint ops fired
+    """
+    with _stats_lock:
+        snap = dict(_stats)
+    snap["thread_alive"] = is_running()
+    snap["queue_depth"] = _write_queue.qsize()
+    return snap
+
 
 # ── Writer loop ────────────────────────────────────────────────────────────────
 
@@ -84,9 +120,15 @@ def _writer_loop(db_path: Path) -> None:
     def _checkpoint() -> None:
         nonlocal _pending
         if _pending and con is not None:
+            t0 = time.monotonic()
             try:
                 con.execute("CHECKPOINT")
+                elapsed_ms = (time.monotonic() - t0) * 1000
                 _pending = 0
+                with _stats_lock:
+                    _stats["last_checkpoint_at"] = time.monotonic()
+                    _stats["last_checkpoint_ms"] = elapsed_ms
+                    _stats["checkpoints_total"] += 1
             except Exception as exc:
                 logger.debug("[writer] Checkpoint failed: %s", exc)
 
@@ -104,6 +146,7 @@ def _writer_loop(db_path: Path) -> None:
             break
 
         op: _Op = item
+        t0 = time.monotonic()
         try:
             if con is None:
                 _connect()
@@ -113,9 +156,15 @@ def _writer_loop(db_path: Path) -> None:
             else:
                 con.execute(op.sql, op.params or [])
             _pending += 1
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            with _stats_lock:
+                _stats["writes_total"] += 1
+                _stats["last_write_latency_ms"] = elapsed_ms
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             op.error = exc
+            with _stats_lock:
+                _stats["writes_error"] += 1
             _connect()  # reset connection after an error
         finally:
             # Unblock the caller immediately — never make callers wait for CHECKPOINT.

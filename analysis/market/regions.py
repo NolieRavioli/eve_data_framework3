@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.queue.esi_req import esi_get
-from core.queue.writer import db_write_nowait
+from core.db.writer import db_write_nowait
 
 logger = logging.getLogger(__name__)
 

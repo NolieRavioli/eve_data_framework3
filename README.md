@@ -285,11 +285,13 @@ core/                    # infrastructure — never import from applications/
     personal/            # AUTO-GENERATED domain wrappers (character-scoped)
     corp/                # AUTO-GENERATED domain wrappers (corporation-scoped)
     public/              # AUTO-GENERATED domain wrappers (public)
+  db/
+    reader.py            # query_rows(), query_one(), query_scalar(), get_db_file_stats()
+    writer.py            # DuckDB write thread (serialises public DB writes)
   queue/
     esi_req.py           # esi_request(), esi_get(), esi_post() — ALL ESI HTTP
     scheduler.py         # enqueue(), get_task(), cancel_task()
     streams.py           # SSE rate_stream(), log_stream()
-    writer.py            # DuckDB write thread (serialises public DB writes)
   sde/
     cache.py             # in-memory SDE lookup caches
   scheduler/
@@ -576,7 +578,8 @@ The `core/` layer is the infrastructure backbone. Applications import from `appl
 | `core.esi.generated.client` | `execute_operation()`, `fetch_all_pages()` — typed ESI calls |
 | `core.queue.esi_req` | Rate-limited `esi_get()`, `esi_post()`, `esi_request()` |
 | `core.queue.scheduler` | `enqueue()`, `get_task()`, `cancel_task()`, task queue internals |
-| `core.queue.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()` |
+| `core.db.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()`, `get_writer_stats()` |
+| `core.db.reader` | Read helpers — `query_rows()`, `query_one()`, `query_scalar()`, `get_db_file_stats()` |
 | `core.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
 | `core.scheduler` | `SchedulerEngine`, `get_engine()` — background job scheduler |
 | `core.plugin.base` | `BaseTool`, `ToolManifest`, `ToolRegistry` |
@@ -617,7 +620,7 @@ finally:
 For writes that must be serialised (to avoid DuckDB write contention), use the write thread:
 
 ```python
-from core.queue.writer import db_write, db_executemany
+from core.db.writer import db_write, db_executemany
 
 db_write("INSERT INTO my_table VALUES (?, ?)", [1, "value"])
 db_executemany("INSERT INTO my_table VALUES (?, ?)", [(1, "a"), (2, "b")])

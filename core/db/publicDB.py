@@ -605,7 +605,7 @@ def upsert_market_orders(rows: list[dict]) -> int:
         for row in rows
         if row.get("order_id") is not None
     ]
-    from core.queue.writer import db_executemany_nowait
+    from core.db.writer import db_executemany_nowait
     return db_executemany_nowait(
         """
         INSERT OR REPLACE INTO market_orders (
@@ -713,7 +713,7 @@ def upsert_structures(rows: list[dict]) -> int:
         for row in rows
         if row.get("structure_id") is not None
     ]
-    from core.queue.writer import db_executemany
+    from core.db.writer import db_executemany
     return db_executemany(
         """
         INSERT OR REPLACE INTO structures (
@@ -737,7 +737,7 @@ def mark_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.queue.writer import db_write
+    from core.db.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -758,7 +758,7 @@ def mark_structures_enrich_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.queue.writer import db_write
+    from core.db.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -779,7 +779,7 @@ def mark_market_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.queue.writer import db_write
+    from core.db.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -800,7 +800,7 @@ def mark_structures_market_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.queue.writer import db_write
+    from core.db.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -848,7 +848,7 @@ def mark_region_market_refreshed(
 ) -> None:
     """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
     from datetime import timedelta
-    from core.queue.writer import db_write_nowait
+    from core.db.writer import db_write_nowait
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     db_write_nowait(
         """
@@ -875,7 +875,7 @@ def upsert_market_structures(rows: list[dict]) -> int:
         for row in rows
         if row.get("structure_id") is not None
     ]
-    from core.queue.writer import db_executemany
+    from core.db.writer import db_executemany
     return db_executemany(
         """
         INSERT OR REPLACE INTO market_structures (

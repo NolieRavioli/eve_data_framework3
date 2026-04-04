@@ -1,4 +1,4 @@
-﻿"""Core infrastructure for the applications layer.
+"""Core infrastructure for the applications layer.
 
 To expose new core functionality to an application:
     1. Import it here from core.* (or analysis.* for collector functions).
@@ -23,6 +23,12 @@ import core.sde as sde  # the module itself is the public API
 # ── DB ────────────────────────────────────────────────────────────────────────
 from core.db import publicDB as _pub
 from core.db.privateDB import get_private_session as _get_private_session
+from core.db.reader import (
+    query_rows as _query_rows,
+    query_one as _query_one,
+    query_scalar as _query_scalar,
+    get_db_file_stats,
+)
 
 
 class _DB:
@@ -31,25 +37,13 @@ class _DB:
     connect = staticmethod(_pub.connect)
 
     def query(self, sql: str, params: list | None = None) -> list[dict]:
-        con = _pub.connect()
-        try:
-            cur = con.execute(sql, params or [])
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
-        finally:
-            con.close()
+        return _query_rows(sql, params)
 
     def query_one(self, sql: str, params: list | None = None) -> dict | None:
-        rows = self.query(sql, params)
-        return rows[0] if rows else None
+        return _query_one(sql, params)
 
     def scalar(self, sql: str, params: list | None = None) -> Any:
-        con = _pub.connect()
-        try:
-            row = con.execute(sql, params or []).fetchone()
-            return row[0] if row is not None else None
-        finally:
-            con.close()
+        return _query_scalar(sql, params)
 
     def private_query(self, owner_id: int, sql: str, params: dict | None = None) -> list[dict]:
         session = _get_private_session(owner_id)
@@ -270,6 +264,10 @@ def get_regions() -> list[dict]:
 # ── Market write helpers (for application workers that need to write orders) ──
 upsert_market_orders = _pub.upsert_market_orders
 mark_region_market_refreshed = _pub.mark_region_market_refreshed
+
+# ── System status / monitoring ────────────────────────────────────────────────
+from core.db.writer import get_writer_stats
+
 __all__ = [
     "sde",
     "db",
@@ -288,4 +286,6 @@ __all__ = [
     "DEFAULT_REGION",
     "upsert_market_orders",
     "mark_region_market_refreshed",
+    "get_writer_stats",
+    "get_db_file_stats",
 ]

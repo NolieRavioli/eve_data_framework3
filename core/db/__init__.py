@@ -3,6 +3,28 @@
 import logging
 import os
 
+from core.db.reader import (
+    query_rows,
+    query_one,
+    query_scalar,
+    table_count,
+    get_db_file_stats,
+)
+
+__all__ = [
+    "ensure_data_dirs",
+    "ensure_public_database",
+    "initialize_private_database",
+    "ensure_schema",
+    "warm_caches",
+    "initialize_all",
+    "query_rows",
+    "query_one",
+    "query_scalar",
+    "table_count",
+    "get_db_file_stats",
+]
+
 logger = logging.getLogger(__name__)
 
 
