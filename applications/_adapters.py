@@ -56,6 +56,10 @@ class _DB:
             session.close()
 
     def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
+        from core.db.market_buffer import try_market_price
+        hit, price = try_market_price(type_id, region_id, buy)
+        if hit:
+            return price
         if buy:
             return self.scalar(
                 "SELECT MAX(price) FROM market_orders"
