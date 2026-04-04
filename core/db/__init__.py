@@ -10,6 +10,12 @@ from core.db.reader import (
     table_count,
     get_db_file_stats,
 )
+from core.db.stats import (
+    get_table_stats,
+    get_write_rate_stats,
+    optimization_hints,
+    table_optimization_hints,
+)
 
 __all__ = [
     "ensure_data_dirs",
@@ -23,6 +29,10 @@ __all__ = [
     "query_scalar",
     "table_count",
     "get_db_file_stats",
+    "get_table_stats",
+    "get_write_rate_stats",
+    "optimization_hints",
+    "table_optimization_hints",
 ]
 
 logger = logging.getLogger(__name__)

@@ -25,6 +25,7 @@ import logging
 import queue as _queue_module
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -65,11 +66,14 @@ _db_path: Path | None = None
 # ── Metrics ────────────────────────────────────────────────────────────────────
 
 _stats_lock = threading.Lock()
+_latencies: deque = deque(maxlen=500)  # rolling window of execute_ms values
 _stats: dict[str, Any] = {
     "writes_total": 0,
     "writes_error": 0,
-    "last_write_latency_ms": 0.0,
-    "last_checkpoint_at": None,   # float (monotonic) or None
+    "last_enqueue_wait_ms": 0.0,        # time op spent waiting in the queue
+    "last_execute_ms": 0.0,             # time to execute the statement and commit
+    "last_write_latency_ms": 0.0,       # backward-compat alias = last_execute_ms
+    "last_checkpoint_at": None,         # float (monotonic) or None
     "last_checkpoint_ms": 0.0,
     "checkpoints_total": 0,
 }
@@ -79,19 +83,31 @@ def get_writer_stats() -> dict:
     """Return a snapshot of writer thread metrics.
 
     Keys returned:
-        thread_alive        — bool: is the writer thread running
-        queue_depth         — int: number of ops currently queued
-        writes_total        — int: total completed write ops
-        writes_error        — int: total failed write ops
-        last_write_latency_ms — float: latency of the most recent op (ms)
-        last_checkpoint_at  — float | None: monotonic timestamp of last checkpoint
-        last_checkpoint_ms  — float: duration of last checkpoint (ms)
-        checkpoints_total   — int: total checkpoint ops fired
+        thread_alive          — bool: is the writer thread running
+        queue_depth           — int: number of ops currently queued
+        writes_total          — int: total completed write ops
+        writes_error          — int: total failed write ops
+        last_enqueue_wait_ms  — float: time most recent op sat in the queue (ms)
+        last_execute_ms       — float: execution + commit time of most recent op (ms)
+        last_write_latency_ms — float: backward-compat alias for last_execute_ms
+        last_checkpoint_at    — float | None: monotonic timestamp of last checkpoint
+        last_checkpoint_ms    — float: duration of last checkpoint (ms)
+        checkpoints_total     — int: total checkpoint ops fired
+        p50_ms / p95_ms / p99_ms — float | None: execute latency percentiles (last 500 ops)
     """
     with _stats_lock:
         snap = dict(_stats)
+        lats = list(_latencies)  # copy under lock
     snap["thread_alive"] = is_running()
     snap["queue_depth"] = _write_queue.qsize()
+    if lats:
+        lats_s = sorted(lats)
+        n = len(lats_s)
+        snap["p50_ms"] = lats_s[int(n * 0.50)]
+        snap["p95_ms"] = lats_s[min(int(n * 0.95), n - 1)]
+        snap["p99_ms"] = lats_s[min(int(n * 0.99), n - 1)]
+    else:
+        snap["p50_ms"] = snap["p95_ms"] = snap["p99_ms"] = None
     return snap
 
 
@@ -112,6 +128,11 @@ def _writer_loop(db_path: Path) -> None:
                     pass
             con = duckdb.connect(str(db_path), read_only=False)
             con.execute("PRAGMA threads=4")
+            # Disable DuckDB's automatic WAL checkpoint during active writes.
+            # Our explicit 30 s idle checkpoint keeps the WAL bounded without
+            # blocking mid-burst.  The default 16 MB threshold causes a multi-
+            # second stall after a large market-order executemany() fires it.
+            con.execute("SET checkpoint_threshold='10GB'")
             logger.debug("[writer] Connected to %s", db_path)
         except Exception as exc:
             logger.error("[writer] Failed to open connection: %s", exc)
@@ -120,6 +141,7 @@ def _writer_loop(db_path: Path) -> None:
     def _checkpoint() -> None:
         nonlocal _pending
         if _pending and con is not None:
+            to_flush = _pending
             t0 = time.monotonic()
             try:
                 con.execute("CHECKPOINT")
@@ -129,6 +151,7 @@ def _writer_loop(db_path: Path) -> None:
                     _stats["last_checkpoint_at"] = time.monotonic()
                     _stats["last_checkpoint_ms"] = elapsed_ms
                     _stats["checkpoints_total"] += 1
+                logger.info("[writer] checkpoint %.0fms — %d ops flushed to disk", elapsed_ms, to_flush)
             except Exception as exc:
                 logger.debug("[writer] Checkpoint failed: %s", exc)
 
@@ -146,20 +169,41 @@ def _writer_loop(db_path: Path) -> None:
             break
 
         op: _Op = item
+        enqueue_wait_ms = (time.monotonic() - op.enqueued_at) * 1000
         t0 = time.monotonic()
+        depth = _write_queue.qsize()
+        if depth > 100:
+            logger.warning("[writer] queue depth %d — writes are backing up", depth)
         try:
             if con is None:
                 _connect()
-            if op.many:
-                if op.rows:
-                    con.executemany(op.sql, op.rows)
-            else:
-                con.execute(op.sql, op.params or [])
+            con.execute("BEGIN")
+            try:
+                if op.many:
+                    if op.rows:
+                        con.executemany(op.sql, op.rows)
+                else:
+                    con.execute(op.sql, op.params or [])
+                con.execute("COMMIT")
+            except Exception:
+                try:
+                    con.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
             _pending += 1
-            elapsed_ms = (time.monotonic() - t0) * 1000
+            execute_ms = (time.monotonic() - t0) * 1000
+            if execute_ms > 500:
+                logger.warning(
+                    "[writer] slow write %.0fms (queued %.0fms) | %s",
+                    execute_ms, enqueue_wait_ms, op.sql[:80],
+                )
             with _stats_lock:
                 _stats["writes_total"] += 1
-                _stats["last_write_latency_ms"] = elapsed_ms
+                _stats["last_enqueue_wait_ms"] = enqueue_wait_ms
+                _stats["last_execute_ms"] = execute_ms
+                _stats["last_write_latency_ms"] = execute_ms
+                _latencies.append(execute_ms)
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             op.error = exc
@@ -170,10 +214,9 @@ def _writer_loop(db_path: Path) -> None:
             # Unblock the caller immediately — never make callers wait for CHECKPOINT.
             op.event.set()
 
-        # No inline checkpoint here — DuckDB auto-checkpoints at the WAL size
-        # threshold, and the 30 s idle timeout above handles explicit flushing
-        # after a burst completes.  Firing checkpoint between writes would block
-        # the next caller for the full flush duration (~14 s on large tables).
+        # No inline checkpoint here — checkpoint_threshold is set to 10 GB so
+        # DuckDB will not auto-checkpoint during write bursts.  The 30 s idle
+        # timeout above handles explicit flushing once the burst completes.
 
     _checkpoint()
     if con is not None:

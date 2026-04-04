@@ -11,6 +11,7 @@ import os
 from typing import Optional
 
 from flask import Flask, redirect, request, url_for
+from flask_sock import Sock
 
 from core.config import RuntimeSettings, get_runtime_settings
 from core.web.auth import auth_bp
@@ -29,6 +30,16 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     app = Flask(__name__, template_folder="templates")
     app.secret_key = settings.session_secret or os.getenv("FLASK_SECRET_KEY", "nolieravioli")
     app.config["RUNTIME_SETTINGS"] = settings
+
+    # Install the centralized telemetry handler before any blueprint imports
+    # so that blueprint-level log calls are captured from the start.
+    from core.telemetry import install as _install_telemetry
+    _install_telemetry()
+
+    # Attach the flask-sock WebSocket extension and register the telemetry endpoint.
+    sock = Sock(app)
+    from core.telemetry.websocket import telemetry_ws
+    sock.route("/telemetry/ws")(telemetry_ws)
 
     # Public home page and setup wizard are core infrastructure.
     app.register_blueprint(home_bp)

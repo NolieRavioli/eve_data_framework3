@@ -267,6 +267,9 @@ mark_region_market_refreshed = _pub.mark_region_market_refreshed
 
 # ── System status / monitoring ────────────────────────────────────────────────
 from core.db.writer import get_writer_stats
+from core.db.stats import get_table_stats, get_write_rate_stats, optimization_hints, table_optimization_hints
+from core.telemetry.handler import telemetry_handler
+from core.telemetry import get_topic_log, get_all_topics, get_recent
 
 __all__ = [
     "sde",
@@ -288,4 +291,12 @@ __all__ = [
     "mark_region_market_refreshed",
     "get_writer_stats",
     "get_db_file_stats",
+    "get_table_stats",
+    "get_write_rate_stats",
+    "optimization_hints",
+    "table_optimization_hints",
+    "telemetry_handler",
+    "get_topic_log",
+    "get_all_topics",
+    "get_recent",
 ]
