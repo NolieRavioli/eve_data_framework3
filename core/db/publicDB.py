@@ -585,8 +585,8 @@ def public_table_counts(
         con.close()
 
 
-def upsert_market_orders(rows: list[dict]) -> int:
-    payload = [
+def _market_order_payload(rows: list[dict]) -> list:
+    return [
         (
             _as_int(row.get("order_id")),
             _as_int(row.get("type_id")),
@@ -605,13 +605,24 @@ def upsert_market_orders(rows: list[dict]) -> int:
         for row in rows
         if row.get("order_id") is not None
     ]
+
+
+def upsert_market_orders(rows: list[dict]) -> int:
+    """Upsert market orders — inserts new rows, updates price/volume on conflict."""
+    payload = _market_order_payload(rows)
+    if not payload:
+        return 0
     from core.db.writer import db_executemany_nowait
     return db_executemany_nowait(
         """
-        INSERT OR REPLACE INTO market_orders (
+        INSERT INTO market_orders (
             order_id, type_id, location_id, region_id, is_buy_order, issued, duration,
             price, order_range, volume_remain, volume_total, min_volume, last_seen
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (order_id) DO UPDATE SET
+            price         = excluded.price,
+            volume_remain = excluded.volume_remain,
+            last_seen     = excluded.last_seen
         """,
         payload,
     )

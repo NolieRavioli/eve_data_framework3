@@ -7,16 +7,19 @@ ALL page blueprints to the application tool registry, which auto-discovers
 every package that exposes a ``Tool = <BaseTool subclass instance>`` attribute.
 """
 
+import logging
 import os
 from typing import Optional
 
 from flask import Flask, redirect, request, url_for
-from flask_sock import Sock
 
 from core.config import RuntimeSettings, get_runtime_settings
+
 from core.web.auth import auth_bp
 from core.web.home import home_bp
 from core.web.setup import setup_bp
+
+logger = logging.getLogger(__name__)
 
 
 def _credentials_exist() -> bool:
@@ -37,9 +40,18 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     _install_telemetry()
 
     # Attach the flask-sock WebSocket extension and register the telemetry endpoint.
-    sock = Sock(app)
-    from core.telemetry.websocket import telemetry_ws
-    sock.route("/telemetry/ws")(telemetry_ws)
+    # flask-sock is an optional dependency — the app starts normally without it,
+    # but the /telemetry/ws endpoint will be unavailable until it is installed.
+    try:
+        from flask_sock import Sock
+        from core.telemetry.websocket import telemetry_ws
+        sock = Sock(app)
+        sock.route("/telemetry/ws")(telemetry_ws)
+    except ImportError:
+        logger.warning(
+            "[web] flask-sock not installed — /telemetry/ws WebSocket disabled. "
+            "Run: pip install flask-sock"
+        )
 
     # Public home page and setup wizard are core infrastructure.
     app.register_blueprint(home_bp)
