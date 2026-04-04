@@ -640,7 +640,7 @@ def replace_market_orders_for_region(region_id: int, rows: list[dict]) -> int:
     df = pd.DataFrame(payload, columns=_COLUMNS).drop_duplicates(subset="order_id", keep="last")
     db_write("DELETE FROM market_orders WHERE region_id = ?", [region_id])
     return db_write_dataframe(
-        "INSERT INTO market_orders SELECT * FROM _df_staging", df
+        "INSERT OR REPLACE INTO market_orders SELECT * FROM _df_staging", df
     )
 
 

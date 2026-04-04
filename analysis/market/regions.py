@@ -57,14 +57,10 @@ def ensure_tables(con) -> None:
     Idempotent and safe to call on every startup or before any write.
     Owns the DDL for both ``market_orders`` and ``market_region_cooldowns``.
 
-    If ``market_orders`` exists without a PRIMARY KEY on ``order_id`` (legacy
-    schema), the table is migrated in-place: renamed, recreated with the PK,
-    deduplicated data copied across, and the old table dropped.
-
     :param con: An open, writable DuckDB connection.
     """
-    _MARKET_ORDERS_DDL = """
-        CREATE TABLE market_orders (
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS market_orders (
             order_id      BIGINT PRIMARY KEY,
             type_id       BIGINT,
             location_id   BIGINT,
@@ -79,33 +75,7 @@ def ensure_tables(con) -> None:
             min_volume    BIGINT,
             last_seen     TIMESTAMP
         )
-    """
-    has_table = con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'market_orders'"
-    ).fetchone()[0] > 0
-    if has_table:
-        has_pk = con.execute(
-            "SELECT COUNT(*) FROM duckdb_constraints() "
-            "WHERE table_name = 'market_orders' AND constraint_type = 'PRIMARY KEY'"
-        ).fetchone()[0] > 0
-        if not has_pk:
-            logger.info(
-                "[ensure_tables] Migrating market_orders: adding PRIMARY KEY on order_id"
-            )
-            con.execute("DROP TABLE IF EXISTS market_orders_old")
-            con.execute("DROP INDEX IF EXISTS idx_market_orders_region")
-            con.execute("ALTER TABLE market_orders RENAME TO market_orders_old")
-            con.execute(_MARKET_ORDERS_DDL)
-            con.execute("""
-                INSERT INTO market_orders
-                SELECT DISTINCT ON (order_id) *
-                FROM market_orders_old
-                ORDER BY order_id, last_seen DESC NULLS LAST
-            """)
-            con.execute("DROP TABLE market_orders_old")
-    else:
-        con.execute(_MARKET_ORDERS_DDL)
-
+    """)
     con.execute("""
         CREATE INDEX IF NOT EXISTS idx_market_orders_region
         ON market_orders (region_id)
