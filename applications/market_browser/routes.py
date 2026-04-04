@@ -39,31 +39,54 @@ def _fmt_expires(issued, duration_days) -> str:
 
 
 def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
-    region_filter = "AND mo.region_id = ?" if region_id else ""
-    params = [type_id, region_id] if region_id else [type_id]
-    sql = f"""
-        SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
-               mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
-               COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
-        FROM market_orders mo
-        LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
-        WHERE mo.type_id = ? {region_filter}
-    """
-    try:
-        rows = db.query(sql, params)
-    except Exception:
-        sql_plain = f"""
-            SELECT order_id, is_buy_order, price, volume_remain, volume_total,
-                   order_range AS range, location_id, issued, duration, min_volume,
-                   CAST(location_id AS VARCHAR) AS location_name
-            FROM market_orders
-            WHERE type_id = ? {region_filter}
+    from core.db.market_buffer import query_orders as _buf_query, buffered_region_ids
+
+    buf_hit, buf_rows = _buf_query(type_id, region_id)
+
+    if buf_hit and region_id:
+        # Specific region is fully buffered — use buffer data only.
+        rows = buf_rows
+    else:
+        # Query DuckDB, excluding any currently-buffered regions so we don't
+        # mix stale DB rows with fresh buffer rows.
+        buffered = buffered_region_ids()
+        exclude_clause = ""
+        params: list = [type_id]
+        if region_id:
+            exclude_clause = "AND mo.region_id = ?"
+            params.append(region_id)
+        elif buffered:
+            placeholders = ", ".join(["?"] * len(buffered))
+            exclude_clause = f"AND mo.region_id NOT IN ({placeholders})"
+            params.extend(sorted(buffered))
+
+        sql = f"""
+            SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
+                   mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
+                   COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
+            FROM market_orders mo
+            LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
+            WHERE mo.type_id = ? {exclude_clause}
         """
         try:
-            rows = db.query(sql_plain, params)
-        except Exception as exc:
-            logger.warning("Orders query failed: %s", exc)
-            return [], []
+            rows = db.query(sql, params)
+        except Exception:
+            sql_plain = f"""
+                SELECT order_id, is_buy_order, price, volume_remain, volume_total,
+                       order_range AS range, location_id, issued, duration, min_volume,
+                       CAST(location_id AS VARCHAR) AS location_name
+                FROM market_orders
+                WHERE type_id = ? {exclude_clause}
+            """
+            try:
+                rows = db.query(sql_plain, params)
+            except Exception as exc:
+                logger.warning("Orders query failed: %s", exc)
+                rows = []
+
+        # Merge buffer rows for the universe case.
+        if buf_hit and not region_id:
+            rows.extend(buf_rows)
 
     for o in rows:
         o["expires_in"] = _fmt_expires(o.get("issued"), o.get("duration"))

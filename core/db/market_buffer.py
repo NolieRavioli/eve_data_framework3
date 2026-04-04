@@ -116,3 +116,47 @@ def try_market_price(
     if not prices:
         return True, None
     return True, max(prices) if buy else min(prices)
+
+
+def query_orders(type_id: int, region_id: int = 0) -> tuple[bool, list[dict]]:
+    """Query buffered orders matching *type_id* and optionally *region_id*.
+
+    If *region_id* is non-zero and that region is buffered, returns
+    ``(True, matching_orders)``.
+
+    If *region_id* is ``0`` (universe) and **any** region is buffered,
+    returns ``(True, matching_orders_across_all_buffered_regions)``.
+    The caller must merge these with a DuckDB query that excludes the
+    buffered region IDs.
+
+    Returns ``(False, [])`` when no relevant region is buffered.
+    """
+    with _lock:
+        if region_id:
+            buf = _regions.get(region_id)
+            if buf is None:
+                return False, []
+            matches = [o for o in buf if o.get("type_id") == type_id]
+        else:
+            if not _regions:
+                return False, []
+            matches = []
+            for buf in _regions.values():
+                matches.extend(o for o in buf if o.get("type_id") == type_id)
+    # Normalise ESI dict keys to the shape _query_orders expects.
+    out = []
+    for o in matches:
+        out.append({
+            "order_id": o.get("order_id"),
+            "is_buy_order": bool(o.get("is_buy_order")),
+            "price": o.get("price"),
+            "volume_remain": o.get("volume_remain"),
+            "volume_total": o.get("volume_total"),
+            "range": o.get("order_range") or o.get("range", ""),
+            "location_id": o.get("location_id"),
+            "issued": o.get("issued"),
+            "duration": o.get("duration"),
+            "min_volume": o.get("min_volume"),
+            "location_name": str(o.get("location_id", "")),
+        })
+    return True, out
