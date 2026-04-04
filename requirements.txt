@@ -8,3 +8,4 @@ pyjwt
 pyyaml
 ruamel.yaml
 duckdb
+pandas

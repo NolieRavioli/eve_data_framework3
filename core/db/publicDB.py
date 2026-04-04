@@ -618,16 +618,30 @@ _MARKET_INSERT_SQL = """
 def replace_market_orders_for_region(region_id: int, rows: list[dict]) -> int:
     """Replace all market orders for a region with a fresh set.
 
-    Enqueues a blocking DELETE for the region followed by a fire-and-forget
-    plain INSERT (no conflict clause).  Because the writer is a serial queue
-    the DELETE is guaranteed to complete before the INSERT begins.
+    Sends a blocking DELETE for the region to the writer, then bulk-loads the
+    fresh rows via pandas DataFrame ingestion (DuckDB's vectorised columnar
+    import).  Both operations block sequentially so the caller knows the write
+    is committed when this function returns.
+
+    Using DataFrame ingestion instead of ``executemany`` is ~100× faster for
+    large regions (e.g. Jita at 400k+ rows) because it bypasses per-row
+    Python binding and uses DuckDB's internal columnar copy path.
     """
     payload = _market_order_payload(rows)
     if not payload:
         return 0
-    from core.db.writer import db_write, db_executemany_nowait
+    import pandas as pd
+    from core.db.writer import db_write, db_write_dataframe
+    _COLUMNS = [
+        "order_id", "type_id", "location_id", "region_id", "is_buy_order",
+        "issued", "duration", "price", "order_range", "volume_remain",
+        "volume_total", "min_volume", "last_seen",
+    ]
+    df = pd.DataFrame(payload, columns=_COLUMNS)
     db_write("DELETE FROM market_orders WHERE region_id = ?", [region_id])
-    return db_executemany_nowait(_MARKET_INSERT_SQL, payload)
+    return db_write_dataframe(
+        "INSERT INTO market_orders SELECT * FROM _df_staging", df
+    )
 
 
 def upsert_market_orders(rows: list[dict]) -> int:

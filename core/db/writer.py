@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Op:
-    __slots__ = ("sql", "params", "many", "rows", "event", "error", "enqueued_at")
+    __slots__ = ("sql", "params", "many", "rows", "df", "event", "error", "enqueued_at")
 
     def __init__(
         self,
@@ -45,11 +45,13 @@ class _Op:
         params: list[Any] | None,
         many: bool,
         rows: list[Sequence[Any]] | None,
+        df: Any = None,
     ) -> None:
         self.sql = sql
         self.params = params
         self.many = many
         self.rows = rows
+        self.df = df
         self.event: threading.Event = threading.Event()
         self.error: BaseException | None = None
         self.enqueued_at: float = time.monotonic()
@@ -213,7 +215,16 @@ def _writer_loop(db_path: Path) -> None:
                 _connect()
             con.execute("BEGIN")
             try:
-                if op.many:
+                if op.df is not None:
+                    # Fast path: bulk DataFrame insert via DuckDB's vectorised
+                    # columnar import.  ~100× faster than executemany for large
+                    # batches because it bypasses per-row Python binding.
+                    con.register("_df_staging", op.df)
+                    try:
+                        con.execute(op.sql)
+                    finally:
+                        con.unregister("_df_staging")
+                elif op.many:
                     combined: list = []
                     for b in batch:
                         combined.extend(b.rows)
@@ -392,3 +403,39 @@ def db_executemany_nowait(sql: str, rows: list[Sequence[Any]]) -> int:
     op = _Op(sql=sql, params=None, many=True, rows=rows)
     _write_queue.put(op)
     return len(rows)
+
+
+def db_write_dataframe(sql: str, df: Any) -> int:
+    """Bulk-load a pandas DataFrame via the writer thread, blocking until done.
+
+    The DataFrame is registered as ``_df_staging`` on the writer's persistent
+    connection and the caller-supplied *sql* executes against it — typically::
+
+        INSERT INTO my_table SELECT * FROM _df_staging
+
+    This uses DuckDB's vectorised columnar import path, which is ~100× faster
+    than ``executemany`` for large row counts.
+
+    :param sql: INSERT (or other DML) referencing ``_df_staging``.
+    :param df: A ``pandas.DataFrame`` whose columns match the target table.
+    :returns: Number of rows in the DataFrame.
+    """
+    if df is None or len(df) == 0:
+        return 0
+    if not is_running():
+        # Fallback: direct connection
+        from core.db.publicDB import connect, get_database_path
+        con = connect(get_database_path())
+        try:
+            con.register("_df_staging", df)
+            try:
+                con.execute(sql)
+                con.execute("CHECKPOINT")
+            finally:
+                con.unregister("_df_staging")
+        finally:
+            con.close()
+        return len(df)
+    op = _Op(sql=sql, params=None, many=False, rows=None, df=df)
+    _submit(op)
+    return len(df)

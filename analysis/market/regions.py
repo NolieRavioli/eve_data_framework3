@@ -202,8 +202,7 @@ def fetch_all_market_data() -> None:
             continue
 
         total_pages = int(resp.headers.get("X-Pages", 1))
-        sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-        total_orders = len(orders)
+        all_orders = [{**o, "region_id": region_id} for o in orders]
         logger.info("Region %s page 1/%s — %s orders", region_id, total_pages, len(orders))
 
         for page in range(2, total_pages + 1):
@@ -217,13 +216,13 @@ def fetch_all_market_data() -> None:
             orders = resp.json()
             if not orders:
                 break
-            sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-            total_orders += len(orders)
+            all_orders.extend([{**o, "region_id": region_id} for o in orders])
             logger.info("Region %s page %s/%s — %s orders", region_id, page, total_pages, len(orders))
 
+        sde_store.replace_market_orders_for_region(region_id, all_orders)
         sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
         _mark_stations_refreshed(region_id)
-        logger.info("Region %s done — %s total orders upserted", region_id, total_orders)
+        logger.info("Region %s done — %s total orders written", region_id, len(all_orders))
 
     logger.info("Completed")
 
