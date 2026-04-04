@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import shutil
-import sys
 import tempfile
 import time
 import zipfile
@@ -66,24 +65,9 @@ FIELDS_TO_CLEAN = [
     "operationNameID",
 ]
 
-_LAST_PROGRESS_LENGTH = 0
-
-
 # ---------------------------------------------------------------------------
 # Progress / UI helpers
 # ---------------------------------------------------------------------------
-
-def _progress_print(message: str, *, final: bool = False) -> None:
-    global _LAST_PROGRESS_LENGTH
-    text = str(message)
-    padding = " " * max(0, _LAST_PROGRESS_LENGTH - len(text))
-    sys.stdout.write(f"\r{text}{padding}")
-    if final:
-        sys.stdout.write("\n")
-        _LAST_PROGRESS_LENGTH = 0
-    else:
-        _LAST_PROGRESS_LENGTH = len(text)
-    sys.stdout.flush()
 
 
 def _yaml_loader():
@@ -789,14 +773,12 @@ def download_sde(url: str = SDE_URL, dest: Path = SDE_ZIP_PATH, retries: int = 3
     for attempt in range(1, retries + 1):
         try:
             logger.info("Downloading SDE (attempt %s)...", attempt)
-            _progress_print(f"[SDE] downloading archive (attempt {attempt})")
             response = requests.get(url, stream=True, timeout=60)
             response.raise_for_status()
             with dest.open("wb") as handle:
                 for chunk in response.iter_content(chunk_size=8192):
                     handle.write(chunk)
             logger.info("SDE download complete.")
-            _progress_print("[SDE] download complete", final=True)
             return {
                 "etag": response.headers.get("ETag"),
                 "last_modified": response.headers.get("Last-Modified"),
@@ -818,11 +800,9 @@ def unzip_sde(zip_path: Path = SDE_ZIP_PATH, extract_to: Path = SDE_PATH) -> Non
         shutil.rmtree(extract_to)
     extract_to.mkdir(parents=True, exist_ok=True)
     logger.info("Extracting %s to %s", zip_path, extract_to)
-    _progress_print(f"[SDE] extracting archive to {extract_to}")
     with zipfile.ZipFile(zip_path, "r") as archive:
         archive.extractall(extract_to)
     logger.info("SDE extraction complete.")
-    _progress_print("[SDE] extraction complete", final=True)
 
 
 def cleanup(zip_path: Path = SDE_ZIP_PATH) -> None:
@@ -855,12 +835,10 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
     logger.info("Pruning FSD language maps to supported languages: %s", ", ".join(_supported_languages()))
     if not yaml_paths:
         logger.info("No FSD YAML files found under %s; skipping language pruning.", fsd_dir)
-        _progress_print("[SDE] pruning language maps skipped (no yaml files)", final=True)
         return
-    _progress_print(f"[SDE] pruning language maps 0/{len(yaml_paths)}")
     for index, path in enumerate(yaml_paths, start=1):
         relative_path = path.relative_to(fsd_dir).as_posix()
-        _progress_print(f"[SDE] pruning language maps {index}/{len(yaml_paths)} {relative_path}")
+        logger.debug("[SDE] pruning %s/%s %s", index, len(yaml_paths), relative_path)
         try:
             with path.open("r", encoding="utf-8") as handle:
                 data = yaml.load(handle, Loader=_yaml_loader())
@@ -870,7 +848,6 @@ def migrate_sde_inplace(fsd_dir: Path | None = None) -> None:
         except Exception as exc:
             logger.error("Error pruning %s: %s", path, exc)
     logger.info("SDE language pruning complete.")
-    _progress_print("[SDE] language pruning complete", final=True)
 
 
 # ---------------------------------------------------------------------------
@@ -901,7 +878,6 @@ def build_sde_warehouse(
     universe_counts = {"dim_regions": 0, "dim_constellations": 0, "dim_systems": 0}
 
     logger.info("Building SDE warehouse at %s", target_path)
-    _progress_print(f"[SDE Warehouse] building {target_path}")
     con = connect(temp_path, read_only=False)
     try:
         _bootstrap_schema(con)
@@ -913,7 +889,7 @@ def build_sde_warehouse(
 
         for path in fsd_paths:
             current_step += 1
-            _progress_print(f"[SDE Warehouse] {current_step}/{total_steps} loading fsd/{path.name}")
+            logger.info("[SDE Warehouse] %s/%s loading fsd/%s", current_step, total_steps, path.name)
             data = _load_yaml_file(path) or {}
             table_name, row_count = _build_raw_table(con, "fsd", path, data, sde_version)
             _record_dataset(dataset_stats, "raw", path.stem, table_name, str(path), row_count)
@@ -946,7 +922,7 @@ def build_sde_warehouse(
 
         for path in bsd_paths:
             current_step += 1
-            _progress_print(f"[SDE Warehouse] {current_step}/{total_steps} loading bsd/{path.name}")
+            logger.info("[SDE Warehouse] %s/%s loading bsd/%s", current_step, total_steps, path.name)
             data = _load_yaml_file(path) or []
             table_name, row_count = _build_raw_table(con, "bsd", path, data, sde_version)
             _record_dataset(dataset_stats, "raw", path.stem, table_name, str(path), row_count)
@@ -967,7 +943,7 @@ def build_sde_warehouse(
         universe_root = source_root_path / "universe"
         if universe_root.exists():
             current_step += 1
-            _progress_print(f"[SDE Warehouse] {current_step}/{total_steps} loading universe")
+            logger.info("[SDE Warehouse] %s/%s loading universe", current_step, total_steps)
             logger.info("[SDE Warehouse] building universe dimensions from %s", universe_root)
             universe_counts = _insert_universe(con, universe_root)
             for tbl, rc in universe_counts.items():
@@ -1006,11 +982,10 @@ def build_sde_warehouse(
         finally:
             if temp_path.exists():
                 temp_path.unlink()
-        _progress_print(f"[SDE Warehouse] build failed for {target_path}", final=True)
+        logger.error("[SDE Warehouse] build failed for %s", target_path)
         raise
 
     logger.info("SDE warehouse build complete: %s", target_path)
-    _progress_print(f"[SDE Warehouse] build complete: {target_path}", final=True)
     return get_warehouse_status(target_path)
 
 
@@ -1020,7 +995,6 @@ def build_sde_warehouse(
 
 def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
     source_meta = source_meta or {}
-    _progress_print(f"[SDE] rebuilding warehouse at {get_database_path()}")
     build_sde_warehouse(
         source_root=SDE_PATH,
         supported_languages=_supported_languages(),
@@ -1035,7 +1009,7 @@ def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
     except (FileNotFoundError, ImportError):
         logger.info("No ESI registry present yet; skipping DuckDB registry sync after SDE rebuild.")
     refresh_all_caches()
-    _progress_print("[SDE] warehouse rebuild complete", final=True)
+    logger.info("[SDE] warehouse rebuild complete")
     return get_warehouse_status()
 
 

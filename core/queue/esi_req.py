@@ -4,6 +4,8 @@ import logging
 import re
 import threading
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -122,6 +124,22 @@ def _refresh_cache_ttl(key: _CacheKey, ttl: int) -> None:
             _CACHE[key] = (time.time() + ttl, entry[1])
 
 
+def _effective_ttl(headers: dict, fallback_ttl: int) -> int:
+    """Return the best cache TTL in seconds derived from the ``Expires`` response
+    header.  Falls back to *fallback_ttl* (from routes.json ``cache_age``) when
+    the header is absent, unparseable, or already in the past."""
+    expires_str = headers.get("Expires") or headers.get("expires")
+    if expires_str:
+        try:
+            expires_dt = parsedate_to_datetime(expires_str)
+            delta = int((expires_dt - datetime.now(timezone.utc)).total_seconds())
+            if delta > 0:
+                return delta
+        except Exception:
+            pass
+    return fallback_ttl
+
+
 
 
 
@@ -156,6 +174,24 @@ class EsiRateLimiter:
         self._error_limit_lock = threading.Lock()
         self._error_limit_remain: Optional[int] = None
         self._error_limit_reset: Optional[int] = None
+
+        # Pre-seed URL→group and group→limits from routes.json static data so
+        # throttling is accurate from the very first request in each group.
+        try:
+            from core.esi.cache import get_static_rate_limit_seeds
+            _path_to_group, _group_limits = get_static_rate_limit_seeds()
+            for norm_path, group_name in _path_to_group.items():
+                if norm_path not in self._url_to_group:
+                    self._url_to_group[norm_path] = group_name
+            for gname, gdata in _group_limits.items():
+                if gname not in self._group_states:
+                    self._group_states[gname] = gdata
+            logger.debug(
+                "[RateLimiter] Pre-seeded %d URL→group mappings, %d groups from routes.json",
+                len(_path_to_group), len(_group_limits),
+            )
+        except Exception as _seed_exc:
+            logger.debug("[RateLimiter] Rate-limit pre-seed skipped: %s", _seed_exc)
 
         # Pre-seed URL→group mapping for endpoints that don't return X-Ratelimit-Group headers.
         for norm_path, group_name in _STATIC_URL_GROUPS:
@@ -258,12 +294,21 @@ class EsiRateLimiter:
                     kwargs["headers"] = req_hdrs
 
                 kwargs.setdefault("timeout", 30)
+                _t0 = time.time()
                 response = requests.request(method, url, **kwargs)
+                _elapsed_ms = int((time.time() - _t0) * 1000)
+
+                if _post_request_detail_hook is not None:
+                    try:
+                        _post_request_detail_hook(method.upper(), url, response.status_code, _elapsed_ms, dict(response.headers))
+                    except Exception:
+                        pass
 
                 self._update_limits_from_headers(response.headers, url)
 
                 if ttl and cache_key and 200 <= response.status_code < 300:
-                    _store_cached_response(cache_key, response, ttl, prepared)
+                    actual_ttl = _effective_ttl(dict(response.headers), ttl)
+                    _store_cached_response(cache_key, response, actual_ttl, prepared)
                     # L2: persist to DuckDB (non-blocking via writer thread).
                     try:
                         from core.esi import cache as _esi_cache
@@ -280,7 +325,7 @@ class EsiRateLimiter:
                             params=kwargs.get("params"),
                             response_body=response.text,
                             status_code=response.status_code,
-                            ttl=ttl,
+                            ttl=actual_ttl,
                             headers=dict(response.headers),
                         )
                     except Exception as _dbs_exc:
@@ -288,7 +333,8 @@ class EsiRateLimiter:
 
                 # 304 Not Modified: refresh cache TTL and return stored payload (1 token, already adjusted).
                 if response.status_code == 304 and cache_key and ttl:
-                    _refresh_cache_ttl(cache_key, ttl)
+                    actual_ttl = _effective_ttl(dict(response.headers), ttl)
+                    _refresh_cache_ttl(cache_key, actual_ttl)
                     # Also refresh DuckDB TTL.
                     try:
                         from core.esi import cache as _esi_cache
@@ -297,7 +343,7 @@ class EsiRateLimiter:
                             kwargs.get("params"),
                             (kwargs.get("headers") or {}).get("Authorization"),
                         )
-                        _esi_cache.refresh_ttl(_db_cache_key, ttl)
+                        _esi_cache.refresh_ttl(_db_cache_key, actual_ttl)
                     except Exception:
                         pass
                     stale = _get_cache_entry(cache_key)
@@ -382,8 +428,12 @@ class EsiRateLimiter:
 
         summary: dict = {}
         if groups:
+            # Only consider groups that have received at least one real ESI response
+            # (remaining=None means pre-seeded only — no live data yet).
+            real_groups = {k: v for k, v in groups.items() if v["tokens_remaining"] is not None}
+            candidates = real_groups if real_groups else groups
             worst = min(
-                groups.values(),
+                candidates.values(),
                 key=lambda g: (g["tokens_remaining"] or 0) / max(g["tokens_limit"], 1) if g["tokens_limit"] else 1.0,
             )
             summary = dict(worst)
@@ -551,6 +601,14 @@ _post_request_hook: Optional[Callable] = None
 def set_post_request_hook(fn) -> None:
     global _post_request_hook
     _post_request_hook = fn
+
+
+_post_request_detail_hook: Optional[Callable] = None
+
+
+def set_post_request_detail_hook(fn) -> None:
+    global _post_request_detail_hook
+    _post_request_detail_hook = fn
 
 
 def get_esi_rate_limiter() -> EsiRateLimiter:

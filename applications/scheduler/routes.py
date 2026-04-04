@@ -45,4 +45,4 @@ def run_now(job_id: str):
     task_id = scheduler.run_now(job_id)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify({"task_id": task_id})
-    return redirect(url_for("queue_viewer.index"))
+    return redirect(url_for("queue_viewer.esi_queue_list"))

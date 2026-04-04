@@ -1,4 +1,4 @@
-# tools/industry_calculator/worker.py
+# applications/industry_calculator/worker.py
 """Synchronous manufacturing cost calculator (no background task needed)."""
 
 from __future__ import annotations

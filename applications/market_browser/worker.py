@@ -1,12 +1,11 @@
-# tools/market_browser/worker.py
+# applications/market_browser/worker.py
 """Background worker for refreshing market data for a single region."""
 
 from __future__ import annotations
 
 import logging
 
-from core.db import publicDB as sde_store
-from core.queue.esi_req import esi_get
+from applications._adapters import raw_esi, replace_market_orders_for_region, mark_region_market_refreshed
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ def refresh_region(region_id: int) -> None:
     url = f"{ESI_BASE}/markets/{region_id}/orders/"
     total_orders = 0
 
-    resp = esi_get(url, params={"order_type": "all", "page": 1, "datasource": "tranquility"})
+    resp = raw_esi.get(url, params={"order_type": "all", "page": 1, "datasource": "tranquility"})
     if not resp.ok:
         logger.warning("ESI %s fetching region %s — aborting", resp.status_code, region_id)
         return
@@ -28,21 +27,22 @@ def refresh_region(region_id: int) -> None:
         logger.info("No orders for region %s", region_id)
         return
     total_pages = int(resp.headers.get("X-Pages", 1))
-    sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-    sde_store.mark_region_market_refreshed(region_id)
-    total_orders += len(orders)
+    all_orders = [{**o, "region_id": region_id} for o in orders]
+    total_orders = len(orders)
     logger.info("  Page 1/%d — %d orders", total_pages, len(orders))
 
     for page in range(2, total_pages + 1):
-        resp = esi_get(url, params={"order_type": "all", "page": page, "datasource": "tranquility"})
+        resp = raw_esi.get(url, params={"order_type": "all", "page": page, "datasource": "tranquility"})
         if not resp.ok:
             logger.warning("ESI %s on page %d — skipping", resp.status_code, page)
             continue
         orders = resp.json()
         if not orders:
             break
-        sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
+        all_orders.extend([{**o, "region_id": region_id} for o in orders])
         total_orders += len(orders)
         logger.info("  Page %d/%d — %d orders", page, total_pages, len(orders))
 
+    replace_market_orders_for_region(region_id, all_orders)
+    mark_region_market_refreshed(region_id)
     logger.info("Market refresh complete for region %s — %d total orders", region_id, total_orders)

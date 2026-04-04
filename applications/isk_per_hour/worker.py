@@ -1,4 +1,4 @@
-# tools/isk_per_hour/worker.py
+# applications/isk_per_hour/worker.py
 """Background worker that computes ISK/hr rankings for all blueprints in a category."""
 
 from __future__ import annotations

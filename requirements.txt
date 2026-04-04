@@ -1,9 +1,11 @@
 sqlalchemy
 requests
 flask
+flask-sock
 cryptography
 requests-oauthlib
 pyjwt
 pyyaml
 ruamel.yaml
 duckdb
+pandas

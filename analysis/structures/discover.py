@@ -20,13 +20,6 @@ from core.db import publicDB as sde_store
 from core.queue.esi_req import esi_get as _esi_get
 import core.sde as sde
 from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
-import types as _types
-raw_esi = _types.SimpleNamespace(get=_esi_get)
-token_resolution = _types.SimpleNamespace(
-    resolve_default_owner_id=resolve_default_owner_id,
-    pick_token=pick_token,
-    fresh_token=fresh_token,
-)
 from core.config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)
@@ -63,40 +56,12 @@ def ensure_columns(con) -> None:
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS enrich_refreshed_until TIMESTAMP")
 
 
-# ── config helpers ────────────────────────────────────────────────────────────
-
-def _cfg_enrich_unauthorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Structures", {}).get("unauthorized_cooldown_days", 7))
-    except Exception:
-        days = 7
-    return days * 24 * 3600
-
-
-def _cfg_enrich_forbidden_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        days = int(cfg.get("Structures", {}).get("forbidden_cooldown_days", 21))
-    except Exception:
-        days = 21
-    return days * 24 * 3600
-
-
-def _cfg_enrich_authorized_cooldown() -> int:
-    try:
-        cfg = load_config(CONFIG_PATH)
-        return int(cfg.get("Structures", {}).get("authorized_cooldown_seconds", 3600))
-    except Exception:
-        return 3600
-
-
 # ── ESI calls ─────────────────────────────────────────────────────────────────
 
 def _fetch_public_structure_ids() -> list[int]:
     url = f"{ESI_BASE}/universe/structures/"
     try:
-        resp = raw_esi.get(url, params=DATASOURCE)
+        resp = _esi_get(url, params=DATASOURCE)
         if resp.ok:
             return [int(x) for x in resp.json()]
         logger.warning("[DiscoverStructures] /universe/structures/ returned %s", resp.status_code)
@@ -109,7 +74,7 @@ def _fetch_structure_details(structure_id: int, token: str) -> tuple[dict | None
     url = f"{ESI_BASE}/universe/structures/{structure_id}/"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
-        resp = raw_esi.get(url, headers=headers, params=DATASOURCE, timeout=15)
+        resp = _esi_get(url, headers=headers, params=DATASOURCE, timeout=15)
     except Exception as exc:
         logger.warning("[DiscoverStructures] Request error for %s: %s", structure_id, exc)
         return None, "error"
@@ -130,10 +95,19 @@ def _fetch_structure_details(structure_id: int, token: str) -> tuple[dict | None
 def discover_structures(owner_id: int | None = None) -> None:
     """Discover public structures and enrich them with metadata."""
     if owner_id is None:
-        owner_id = token_resolution.resolve_default_owner_id()
+        owner_id = resolve_default_owner_id()
     if owner_id is None:
         logger.error("[DiscoverStructures] No owner available for authentication; aborting.")
         return
+
+    try:
+        _raw_cfg = load_config(CONFIG_PATH)
+    except Exception:
+        _raw_cfg = {}
+    _sc = _raw_cfg.get("Structures", {})
+    enrich_unauthorized_cooldown = int(_sc.get("unauthorized_cooldown_days", 7)) * 86400
+    enrich_forbidden_cooldown    = int(_sc.get("forbidden_cooldown_days", 21)) * 86400
+    enrich_authorized_cooldown   = int(_sc.get("authorized_cooldown_seconds", 3600))
 
     # Ensure our table and enrichment columns exist before any writes
     con = public_connect(read_only=False)
@@ -170,7 +144,7 @@ def discover_structures(owner_id: int | None = None) -> None:
         logger.info("[DiscoverStructures] Nothing left to enrich; done.")
         return
 
-    _char_id, token_data = token_resolution.pick_token(owner_id)
+    _char_id, token_data = pick_token(owner_id)
     token = token_data["access_token"]
 
     succeeded = failed_403 = failed_404 = errors = 0
@@ -179,7 +153,7 @@ def discover_structures(owner_id: int | None = None) -> None:
 
     for count, structure_id in enumerate(sorted(needs_enrichment), start=1):
         try:
-            _char_id, token_data = token_resolution.fresh_token(owner_id, _char_id, token_data)
+            _char_id, token_data = fresh_token(owner_id, _char_id, token_data)
             token = token_data["access_token"]
 
             data, status = _fetch_structure_details(structure_id, token)
@@ -197,19 +171,19 @@ def discover_structures(owner_id: int | None = None) -> None:
                     row["region_id"] = sde.region_id_from_system_id(row["solar_system_id"])
                 sde_store.upsert_structures([row])
                 sde_store.mark_structures_enrich_refreshed(
-                    [structure_id], _cfg_enrich_authorized_cooldown()
+                    [structure_id], enrich_authorized_cooldown
                 )
                 succeeded += 1
 
             elif status == "unauthorized":
                 sde_store.mark_structures_forbidden(
-                    [structure_id], _cfg_enrich_unauthorized_cooldown()
+                    [structure_id], enrich_unauthorized_cooldown
                 )
                 failed_403 += 1
 
             elif status == "forbidden":
                 sde_store.mark_structures_forbidden(
-                    [structure_id], _cfg_enrich_forbidden_cooldown()
+                    [structure_id], enrich_forbidden_cooldown
                 )
                 failed_404 += 1
 

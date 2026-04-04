@@ -1,4 +1,4 @@
-# tools/isk_per_hour/__init__.py
+# applications/isk_per_hour/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint
@@ -16,6 +16,8 @@ class IskPerHourTool(BaseTool):
         url_prefix="/isk_per_hour",
         required_scopes=[],
         nav_weight=30,
+        access_level="user",
+        required_role="isk_per_hour",
     )
 
     def create_blueprint(self) -> Blueprint:

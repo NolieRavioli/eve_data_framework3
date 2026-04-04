@@ -108,9 +108,14 @@ def set_enabled(con, job_id: str, enabled: bool) -> None:
 
 
 def run_job_now(con, job_id: str) -> None:
-    """Reset next_run to now so the engine fires the job on its next tick."""
+    """Mark job as run now and advance next_run by its interval to prevent double-fire on tick."""
     now = datetime.now(timezone.utc)
     con.execute(
-        "UPDATE scheduler_jobs SET next_run = ? WHERE job_id = ?",
-        [now, job_id],
+        """
+        UPDATE scheduler_jobs
+        SET last_run = ?,
+            next_run = CAST(? AS TIMESTAMPTZ) + INTERVAL (interval_seconds) SECOND
+        WHERE job_id = ?
+        """,
+        [now, now, job_id],
     )

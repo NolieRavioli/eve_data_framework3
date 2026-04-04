@@ -48,13 +48,6 @@ def initialize_private_database(owner_id: int):
         _PrivateSessions[owner_id] = sessionmaker(bind=engine)
     return _private_engines[owner_id]
 
-
-def get_public_session():
-    raise RuntimeError(
-        "Public SQLite sessions have been retired. Use core.db.publicDB helpers against _publicData/public.duckdb."
-    )
-
-
 def get_private_session(owner_id: int):
     if owner_id not in _PrivateSessions:
         initialize_private_database(owner_id)

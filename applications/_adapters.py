@@ -1,4 +1,4 @@
-﻿"""Core infrastructure for the applications layer.
+"""Core infrastructure for the applications layer.
 
 To expose new core functionality to an application:
     1. Import it here from core.* (or analysis.* for collector functions).
@@ -23,6 +23,12 @@ import core.sde as sde  # the module itself is the public API
 # ── DB ────────────────────────────────────────────────────────────────────────
 from core.db import publicDB as _pub
 from core.db.privateDB import get_private_session as _get_private_session
+from core.db.reader import (
+    query_rows as _query_rows,
+    query_one as _query_one,
+    query_scalar as _query_scalar,
+    get_db_file_stats,
+)
 
 
 class _DB:
@@ -31,25 +37,13 @@ class _DB:
     connect = staticmethod(_pub.connect)
 
     def query(self, sql: str, params: list | None = None) -> list[dict]:
-        con = _pub.connect()
-        try:
-            cur = con.execute(sql, params or [])
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
-        finally:
-            con.close()
+        return _query_rows(sql, params)
 
     def query_one(self, sql: str, params: list | None = None) -> dict | None:
-        rows = self.query(sql, params)
-        return rows[0] if rows else None
+        return _query_one(sql, params)
 
     def scalar(self, sql: str, params: list | None = None) -> Any:
-        con = _pub.connect()
-        try:
-            row = con.execute(sql, params or []).fetchone()
-            return row[0] if row is not None else None
-        finally:
-            con.close()
+        return _query_scalar(sql, params)
 
     def private_query(self, owner_id: int, sql: str, params: dict | None = None) -> list[dict]:
         session = _get_private_session(owner_id)
@@ -62,6 +56,10 @@ class _DB:
             session.close()
 
     def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
+        from core.db.market_buffer import try_market_price
+        hit, price = try_market_price(type_id, region_id, buy)
+        if hit:
+            return price
         if buy:
             return self.scalar(
                 "SELECT MAX(price) FROM market_orders"
@@ -96,6 +94,25 @@ class _CharData:
                 "scopes": char.scopes,
                 "token_expires": getattr(char, "token_expires", None),
             }
+        finally:
+            session.close()
+
+    def get_characters(self, owner_id: int) -> list[dict]:
+        """Return all character dicts for an owner."""
+        session = _get_private_session(owner_id)
+        try:
+            chars = session.query(_Character).all()
+            return [
+                {
+                    "character_id": c.character_id,
+                    "name": c.name,
+                    "scopes": c.scopes,
+                    "token_expires": getattr(c, "token_expires", None),
+                }
+                for c in chars
+            ]
+        except Exception:
+            return []
         finally:
             session.close()
 
@@ -235,6 +252,30 @@ db_admin = types.SimpleNamespace(
     delete_site_admin=_pub.delete_site_admin,
 )
 
+# ── Shared UI helpers ─────────────────────────────────────────────────────────
+
+DEFAULT_REGION: int = 10000002  # The Forge (Jita)
+
+
+def get_regions() -> list[dict]:
+    """Return all market regions sorted by name."""
+    try:
+        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
+    except Exception:
+        return []
+
+# ── Market write helpers (for application workers that need to write orders) ──
+upsert_market_orders = _pub.upsert_market_orders
+replace_market_orders_for_region = _pub.replace_market_orders_for_region
+mark_region_market_refreshed = _pub.mark_region_market_refreshed
+
+# ── System status / monitoring ────────────────────────────────────────────────
+from core.db.writer import get_writer_stats
+from core.db.stats import get_table_stats, get_write_rate_stats, optimization_hints, table_optimization_hints
+from core.telemetry.handler import telemetry_handler
+from core.telemetry import get_topic_log, get_all_topics, get_recent
+
 __all__ = [
     "sde",
     "db",
@@ -249,4 +290,19 @@ __all__ = [
     "esi_registry",
     "esi_manifest",
     "db_admin",
+    "get_regions",
+    "DEFAULT_REGION",
+    "upsert_market_orders",
+    "replace_market_orders_for_region",
+    "mark_region_market_refreshed",
+    "get_writer_stats",
+    "get_db_file_stats",
+    "get_table_stats",
+    "get_write_rate_stats",
+    "optimization_hints",
+    "table_optimization_hints",
+    "telemetry_handler",
+    "get_topic_log",
+    "get_all_topics",
+    "get_recent",
 ]

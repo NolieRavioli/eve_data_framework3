@@ -1,5 +1,6 @@
 function cancelTask(taskId, button) {
-  fetch('/queue/' + taskId + '/cancel', { method: 'POST' })
+  var _esiCard = document.getElementById('esi-rate-card');
+  fetch(_esiCard.dataset.urlCancel.replace('PLACEHOLDER', taskId), { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function (payload) {
       if (!payload.cancelled) {
@@ -16,7 +17,8 @@ function cancelTask(taskId, button) {
 }
 
 function clearDone() {
-  fetch('/queue/clear', { method: 'POST' })
+  var _esiCard = document.getElementById('esi-rate-card');
+  fetch(_esiCard.dataset.urlClear, { method: 'POST' })
     .then(function (response) { return response.json(); })
     .then(function () { location.reload(); });
 }
@@ -26,6 +28,8 @@ function clearDone() {
   var esiCard   = document.getElementById('esi-rate-card');
   var esiGroups = document.getElementById('esi-groups');
   var esiReqs   = document.getElementById('esi-reqs');
+  var isAdmin   = esiCard ? esiCard.dataset.isAdmin === 'true' : false;
+  var _URL_RATE_STREAM = esiCard ? esiCard.dataset.urlRateStream : '/queue/rate_stream';
 
   function applyRateStats(d) {
     var s = d.limiter;
@@ -35,13 +39,23 @@ function clearDone() {
 
     // Render one tile per floating window
     var groups = s.groups || {};
+    var runningTask = (d.tasks || []).find(function (t) { return t.status === 'running'; });
     Object.keys(groups).forEach(function (gname) {
-      var g      = groups[gname];
+      var g             = groups[gname];
+      var effectiveUsed = (g.tokens_remaining != null && g.tokens_limit > 0)
+                          ? Math.max(0, g.tokens_limit - g.tokens_remaining)
+                          : (g.tokens_used || 0);
       var wspec  = g.tokens_limit + '/' + (g.window_str || g.window_seconds + 's');
-      var pct    = g.tokens_limit > 0 ? (g.tokens_used / g.tokens_limit * 100) : 0;
+      var pct    = g.tokens_limit > 0 ? (effectiveUsed / g.tokens_limit * 100) : 0;
       var col    = pct >= 90 ? 'var(--bad)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)';
+      var charName = (isAdmin && runningTask && runningTask.char_name) ? runningTask.char_name : '';
+      // Hide buckets with no activity
       var elId   = 'esi-grp-' + gname;
       var el     = document.getElementById(elId);
+      if (effectiveUsed === 0) {
+        if (el) el.remove();
+        return;
+      }
       if (!el) {
         el = document.createElement('div');
         el.id = elId;
@@ -51,14 +65,15 @@ function clearDone() {
       el.innerHTML =
         '<div style="margin-bottom:0.35rem">' +
           '<span class="mono" style="font-size:0.82rem;color:var(--txt);font-weight:600">' + wspec + '</span>' +
-          '<span class="muted" style="font-size:0.68rem;margin-left:0.45rem">' + gname + '</span>' +
+          (charName ? '<span class="muted" style="font-size:0.68rem;margin-left:0.45rem">&middot; ' + charName + '</span>' : '') +
+          '<span class="muted" style="font-size:0.68rem;margin-left:0.45rem">&middot; ' + gname + '</span>' +
         '</div>' +
         '<div style="background:rgba(255,255,255,0.08);border-radius:999px;height:6px;overflow:hidden;margin-bottom:0.35rem">' +
           '<div style="height:100%;border-radius:999px;width:' + pct.toFixed(1) + '%;background:' + col + ';transition:width 0.5s"></div>' +
         '</div>' +
         '<div style="display:flex;justify-content:space-between;font-size:0.7rem">' +
-          '<span class="muted">' + g.tokens_used.toLocaleString() + ' used</span>' +
-          '<span class="muted">' + g.tokens_remaining.toLocaleString() + ' / ' + g.tokens_limit.toLocaleString() + ' remaining</span>' +
+          '<span class="muted">' + effectiveUsed.toLocaleString() + ' used</span>' +
+          '<span class="muted">' + (g.tokens_remaining != null ? g.tokens_remaining.toLocaleString() : '—') + ' / ' + g.tokens_limit.toLocaleString() + ' remaining</span>' +
         '</div>';
     });
 
@@ -94,8 +109,11 @@ function clearDone() {
       // ESI rate mini-bar
       var cell = row.querySelector('.esi-rate-cell');
       if (cell && t.esi_rate) {
-        var r   = t.esi_rate;
-        var p   = r.tokens_limit > 0 ? (r.tokens_used / r.tokens_limit * 100) : 0;
+        var r            = t.esi_rate;
+        var effectiveUsed = r.tokens_limit > 0
+                            ? Math.max(0, r.tokens_limit - (r.tokens_remaining || 0))
+                            : (r.tokens_used || 0);
+        var p   = r.tokens_limit > 0 ? (effectiveUsed / r.tokens_limit * 100) : 0;
         var bar = cell.querySelector('.esi-mini-bar');
         var lbl = cell.querySelector('.esi-mini-label');
         if (!bar) {
@@ -113,7 +131,7 @@ function clearDone() {
         }
         if (lbl) lbl.textContent =
           r.requests_total.toLocaleString() + ' req  ' +
-          r.tokens_remaining.toLocaleString() + '/' + r.tokens_limit.toLocaleString();
+          effectiveUsed.toLocaleString() + '/' + r.tokens_limit.toLocaleString();
       }
 
       // Cancel button visibility
@@ -135,7 +153,7 @@ function clearDone() {
   }
 
   (function openRateStream() {
-    var es = new EventSource('/queue/rate_stream');
+    var es = new EventSource(_URL_RATE_STREAM);
     es.onmessage = function (ev) {
       try { applyRateStats(JSON.parse(ev.data)); } catch (e) {}
     };
@@ -145,3 +163,12 @@ function clearDone() {
     };
   }());
 }());
+
+document.addEventListener('DOMContentLoaded', function () {
+  var clearBtn = document.getElementById('clear-done-btn');
+  if (clearBtn) clearBtn.addEventListener('click', clearDone);
+
+  document.querySelectorAll('.cancel-btn[data-task-id]').forEach(function (btn) {
+    btn.addEventListener('click', function () { cancelTask(this.dataset.taskId, this); });
+  });
+});

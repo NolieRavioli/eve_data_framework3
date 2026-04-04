@@ -7,6 +7,7 @@ registry and the two single-threaded executor pools (public + private).
 import logging
 import threading
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -36,6 +37,7 @@ class Task:
         self.started_at: Optional[datetime] = None
         self.finished_at: Optional[datetime] = None
         self.esi_rate: Optional[dict] = None
+        self._esi_log: deque[dict] = deque(maxlen=500)
 
     def add_log(self, line: str) -> None:
         with self._lock:
@@ -49,6 +51,15 @@ class Task:
     def snapshot(self) -> list[str]:
         with self._lock:
             return list(self._log)
+
+    def add_esi_request(self, entry: dict) -> None:
+        with self._lock:
+            self._esi_log.append(entry)
+        self._event.set()
+
+    def esi_requests_snapshot(self) -> list[dict]:
+        with self._lock:
+            return list(self._esi_log)
 
     def _set_status(self, s: str) -> None:
         self.status = s

@@ -10,12 +10,13 @@ from core.queue.scheduler import (
     clear_tasks,
 )
 from core.queue.streams import rate_stream, log_stream
-from core.queue.writer import (
+from core.db.writer import (
     start_writer,
     stop_writer,
-    is_running as writer_is_running,
     db_write,
+    db_write_nowait,
     db_executemany,
+    db_executemany_nowait,
 )
 
 __all__ = [
@@ -30,7 +31,8 @@ __all__ = [
     "log_stream",
     "start_writer",
     "stop_writer",
-    "writer_is_running",
     "db_write",
+    "db_write_nowait",
     "db_executemany",
+    "db_executemany_nowait",
 ]

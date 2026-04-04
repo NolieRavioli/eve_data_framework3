@@ -1,0 +1,239 @@
+﻿{% extends "base.html" %}
+{% block title %}System Status - EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>System Status</h1>
+    <div class="pg-sub">Writer performance, database analysis, and live telemetry logs</div>
+  </div>
+</div>
+
+<div class="pg-body"
+     id="sys-root"
+     data-url-stream="{{ url_for('sys_status.stream') }}"
+     data-url-table-stats="{{ url_for('sys_status.api_table_stats') }}"
+     data-url-ws-base="{{ request.host_url.rstrip('/') }}">
+
+  {# -- Writer Thread ------------------------------------------------------ #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">DuckDB Writer Thread</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="w-alive">{{ 'Yes' if snapshot.writer.thread_alive else 'No' }}</span>
+        <span class="l">Thread Alive</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-queue">{{ snapshot.writer.queue_depth }}</span>
+        <span class="l">Queue Depth</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-total">{{ snapshot.writer.writes_total }}</span>
+        <span class="l">Writes Total</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-err">{{ snapshot.writer.writes_error }}</span>
+        <span class="l">Write Errors</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-ago">
+          {%- if snapshot.writer.last_checkpoint_seconds_ago is not none -%}
+            {{ snapshot.writer.last_checkpoint_seconds_ago }}s ago
+          {%- else -%}-{%- endif -%}
+        </span>
+        <span class="l">Last Checkpoint</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-ms">{{ '%.1f' % snapshot.writer.last_checkpoint_ms }}ms</span>
+        <span class="l">Checkpoint Duration</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-cp-total">{{ snapshot.writer.checkpoints_total }}</span>
+        <span class="l">Total Checkpoints</span>
+      </div>
+    </div>
+  </div>
+
+  {# -- Write Performance -------------------------------------------------- #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Write Performance <span class="muted" style="font-size:0.75rem;font-weight:normal">(rolling 500 ops)</span></div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="w-wait">{{ '%.1f' % (snapshot.writer.last_enqueue_wait_ms or 0) }}ms</span>
+        <span class="l">Last Queue Wait</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-exec">{{ '%.1f' % (snapshot.writer.last_execute_ms or 0) }}ms</span>
+        <span class="l">Last Execute</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-p50">
+          {%- if snapshot.writer.p50_ms is not none -%}{{ '%.0f' % snapshot.writer.p50_ms }}ms{%- else -%}-{%- endif -%}
+        </span>
+        <span class="l">p50 Latency</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-p95">
+          {%- if snapshot.writer.p95_ms is not none -%}{{ '%.0f' % snapshot.writer.p95_ms }}ms{%- else -%}-{%- endif -%}
+        </span>
+        <span class="l">p95 Latency</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="w-p99">
+          {%- if snapshot.writer.p99_ms is not none -%}{{ '%.0f' % snapshot.writer.p99_ms }}ms{%- else -%}-{%- endif -%}
+        </span>
+        <span class="l">p99 Latency</span>
+      </div>
+    </div>
+  </div>
+
+  {# -- Database File + Hints ---------------------------------------------- #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Database File</div>
+    <div class="muted mono" style="font-size:0.8rem;margin-bottom:0.75rem">{{ snapshot.db_file.path }}</div>
+    <div class="stat-row" style="margin-bottom:0.75rem">
+      <div class="stat">
+        <span class="v" id="db-size">{{ (snapshot.db_file.file_size_bytes / 1048576) | round(1) }} MB</span>
+        <span class="l">DB File Size</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="db-wal">{{ 'Yes' if snapshot.db_file.wal_exists else 'No' }}</span>
+        <span class="l">WAL Active</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="db-wal-size">{{ (snapshot.db_file.wal_size_bytes / 1048576) | round(2) }} MB</span>
+        <span class="l">WAL Size</span>
+      </div>
+    </div>
+    {# Optimisation hints #}
+    {% if snapshot.hints %}
+    <div id="hints-container" style="display:flex;flex-direction:column;gap:0.4rem">
+      {% for h in snapshot.hints %}
+      <div class="hint hint-{{ h.severity }}" style="border-left:3px solid {{ '#f8a84b' if h.severity == 'warn' else '#e74c3c' if h.severity == 'critical' else '#4a9eda' }};padding:0.4rem 0.75rem;background:rgba(0,0,0,.15);border-radius:0 4px 4px 0">
+        <span style="font-size:0.75rem;text-transform:uppercase;opacity:.6">{{ h.severity }} / {{ h.category }}</span>
+        <div style="font-size:0.9rem;margin:0.15rem 0">{{ h.message }}</div>
+        <div class="muted" style="font-size:0.8rem">{{ h.recommendation }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {# Table stats (loaded async) #}
+    <div style="margin-top:0.75rem;display:flex;align-items:center;gap:0.75rem">
+      <button id="btn-load-tables" class="btn btn-sm" onclick="loadTableStats()">Load Table Stats</button>
+      <span class="muted" id="table-stats-status" style="font-size:0.8rem"></span>
+    </div>
+    <div id="table-stats-container" style="margin-top:0.5rem"></div>
+  </div>
+
+  {# -- Task Queues -------------------------------------------------------- #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Task Queues</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v" id="tq-pending">{{ snapshot.task_counts.get('pending', 0) }}</span>
+        <span class="l">Pending</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-running">{{ snapshot.task_counts.get('running', 0) }}</span>
+        <span class="l">Running</span>
+      </div>
+      <div class="stat">
+        <span class="v ok" id="tq-complete">{{ snapshot.task_counts.get('complete', 0) }}</span>
+        <span class="l">Complete</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-failed">{{ snapshot.task_counts.get('failed', 0) }}</span>
+        <span class="l">Failed</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-pub">{{ snapshot.queue_counts.get('public', 0) }}</span>
+        <span class="l">Public Queue</span>
+      </div>
+      <div class="stat">
+        <span class="v" id="tq-prv">{{ snapshot.queue_counts.get('private', 0) }}</span>
+        <span class="l">Private Queue</span>
+      </div>
+    </div>
+  </div>
+
+  {# -- Process ------------------------------------------------------------ #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Process</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v">{{ snapshot.process.pid }}</span>
+        <span class="l">PID</span>
+      </div>
+      {% if snapshot.process.memory_rss_mb is not none %}
+      <div class="stat">
+        <span class="v" id="proc-rss">{{ snapshot.process.memory_rss_mb }} MB</span>
+        <span class="l">Memory (RSS)</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# -- Scheduler Jobs ----------------------------------------------------- #}
+  {% if snapshot.jobs %}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Scheduler Jobs</div>
+    <table class="data-tbl" style="width:100%">
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Enabled</th>
+          <th>Interval</th>
+          <th>Last Run</th>
+          <th>Next Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in snapshot.jobs %}
+        <tr>
+          <td>{{ job.label or job.job_id }}</td>
+          <td>{{ 'Yes' if job.enabled else 'No' }}</td>
+          <td>{{ job.interval_s }}s</td>
+          <td class="mono muted">{{ job.last_run_at or '-' }}</td>
+          <td class="mono muted">{{ job.next_run_at or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# -- Live Telemetry Logs ------------------------------------------------ #}
+  <div class="card stack">
+    <div class="ct" style="margin:0 0 0.75rem">
+      Live Telemetry Logs
+      <span id="ws-status" style="font-size:0.75rem;font-weight:normal;margin-left:0.75rem;opacity:.7">connecting...</span>
+    </div>
+    {# Topic selector #}
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.75rem" id="topic-selectors">
+      {% for topic in telemetry_topics %}
+      <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;font-size:0.85rem;padding:0.2rem 0.5rem;border-radius:4px;border:1px solid rgba(255,255,255,.15)">
+        <input type="checkbox" class="topic-cb" data-topic="{{ topic }}"
+               {% if topic in ['db', 'market', 'scheduler'] %}checked{% endif %}>
+        {{ topic }}
+      </label>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+      <button class="btn btn-sm" onclick="logFeedClear()">Clear</button>
+      <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem">
+        <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+      </label>
+      <span class="muted" style="font-size:0.8rem" id="log-count">0 entries</span>
+    </div>
+    <div id="log-feed"
+         style="height:400px;overflow-y:auto;font-family:monospace;font-size:0.78rem;background:rgba(0,0,0,.25);border-radius:4px;padding:0.5rem">
+      <div class="muted" style="text-align:center;padding:2rem 0">Waiting for WebSocket connection...</div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sys_status.static', filename='sys_status.js') }}"></script>
+{% endblock %}

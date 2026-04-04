@@ -14,6 +14,22 @@ own retry loops.
 
 - ``market_orders`` — owned by this collector via :func:`ensure_tables`
 - ``market_region_cooldowns`` — owned by this collector via :func:`ensure_tables`
+
+**Write strategy — buffered per-region bulk replace:**
+
+As ESI pages arrive they are accumulated in an in-memory buffer
+(:mod:`core.db.market_buffer`) rather than written to DuckDB immediately.
+The buffer is queryable — any ``market_price()`` call for a buffered region
+returns the freshest in-flight data without touching disk.
+
+Once all pages for a region have been collected the buffer is flushed:
+a blocking DELETE + vectorised DataFrame INSERT replaces the region's orders
+in ``market_orders`` atomically.  The ESI fetch for the next region can then
+overlap with any DuckDB WAL housekeeping.
+
+Crash safety: if the process dies mid-region, the in-memory buffer is lost
+and the previous run's data remains on disk.  Because market orders are
+public ESI data refreshed every hour the impact is negligible.
 """
 
 import logging
@@ -21,8 +37,9 @@ from datetime import datetime, timedelta, timezone
 
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
+from core.db.market_buffer import begin_region, add_page, finish_region, discard_region
 from core.queue.esi_req import esi_get
-from core.queue.writer import db_write
+from core.db.writer import db_write_nowait
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +77,10 @@ def ensure_tables(con) -> None:
         )
     """)
     con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_market_orders_region
+        ON market_orders (region_id)
+    """)
+    con.execute("""
         CREATE TABLE IF NOT EXISTS market_region_cooldowns (
             region_id       BIGINT PRIMARY KEY,
             refreshed_until TIMESTAMP
@@ -87,7 +108,7 @@ def ensure_columns(con) -> None:
 def _mark_stations_refreshed(region_id: int) -> None:
     """Set market_refreshed_until on all dim_stations rows for this region."""
     refreshed_until = datetime.now(timezone.utc) + timedelta(seconds=_REGION_COOLDOWN_SECONDS)
-    db_write(
+    db_write_nowait(
         "UPDATE dim_stations SET market_refreshed_until = ? WHERE region_id = ?",
         [refreshed_until, region_id],
     )
@@ -96,7 +117,7 @@ def _mark_stations_refreshed(region_id: int) -> None:
 def _mark_stations_forbidden(region_id: int) -> None:
     """Set market_forbidden_until on all dim_stations rows for this region."""
     forbidden_until = datetime.now(timezone.utc) + timedelta(days=_STATION_FORBIDDEN_DAYS)
-    db_write(
+    db_write_nowait(
         "UPDATE dim_stations SET market_forbidden_until = ? WHERE region_id = ?",
         [forbidden_until, region_id],
     )
@@ -115,13 +136,15 @@ def fetch_all_market_data() -> None:
     1. **Page 1** is fetched to discover the total page count from the
        ``X-Pages`` response header.  Regions that return a non-OK status or
        an empty order list are skipped entirely.
-    2. Page 1 orders are written to ``market_orders`` immediately and the
-       region cooldown is recorded via
-       :func:`core.db.publicDB.mark_region_market_refreshed`.
-    3. **Pages 2 through X-Pages** are fetched sequentially.  Each page is
-       written to ``market_orders`` as soon as it arrives.  A non-OK status
-       on any subsequent page is logged as a warning and the loop moves on to
-       the next page rather than aborting the region.
+    2. The region buffer is opened (:func:`begin_region`).  Each page's
+       orders are appended to the in-memory buffer as they arrive — the
+       data is immediately queryable by ``market_price()`` and other
+       buffer-aware callers.
+    3. Once all pages have been collected, :func:`finish_region` flushes
+       the buffer to DuckDB via a blocking DELETE + vectorised DataFrame
+       INSERT (``replace_market_orders_for_region``).  No per-row conflict
+       checking is needed because the entire region is replaced.
+    4. Region cooldown and station timestamps are updated.
 
     Rate limiting, ETag caching, and 429 back-off are delegated to
     :func:`core.queue.esi_req.esi_get`.
@@ -139,7 +162,6 @@ def fetch_all_market_data() -> None:
 
     region_ids = sde_store.list_market_region_ids(skip_recently_refreshed=True)
     if not region_ids:
-        # Distinguish between "all on cooldown" and "dim_regions not loaded"
         all_ids = sde_store.list_market_region_ids(skip_recently_refreshed=False)
         if not all_ids:
             logger.warning(
@@ -168,30 +190,38 @@ def fetch_all_market_data() -> None:
             continue
 
         total_pages = int(resp.headers.get("X-Pages", 1))
-        sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
+        total_rows = len(orders)
+        logger.info("Region %s page 1/%s — %s orders", region_id, total_pages, len(orders))
+
+        # Buffer all pages in RAM — queryable immediately.
+        begin_region(region_id)
+        try:
+            add_page(region_id, [{**o, "region_id": region_id} for o in orders])
+
+            for page in range(2, total_pages + 1):
+                resp = esi_get(url, params={**params_base, "page": page})
+                if not resp.ok:
+                    logger.warning(
+                        "%s on region %s page %s — skipping page",
+                        resp.status_code, region_id, page,
+                    )
+                    continue
+                orders = resp.json()
+                if not orders:
+                    break
+                total_rows += len(orders)
+                logger.info("Region %s page %s/%s — %s orders", region_id, page, total_pages, len(orders))
+                add_page(region_id, [{**o, "region_id": region_id} for o in orders])
+
+            # Flush buffer → DELETE + bulk INSERT (blocking).
+            finish_region(region_id)
+        except Exception:
+            discard_region(region_id)
+            raise
+
         sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
         _mark_stations_refreshed(region_id)
-        logger.info(
-            "Region %s page 1/%s — %s orders inserted",
-            region_id, total_pages, len(orders),
-        )
-
-        for page in range(2, total_pages + 1):
-            resp = esi_get(url, params={**params_base, "page": page})
-            if not resp.ok:
-                logger.warning(
-                    "%s on region %s page %s — skipping",
-                    resp.status_code, region_id, page,
-                )
-                continue
-            orders = resp.json()
-            if not orders:
-                break
-            sde_store.upsert_market_orders([{**o, "region_id": region_id} for o in orders])
-            logger.info(
-                "Region %s page %s/%s — %s orders inserted",
-                region_id, page, total_pages, len(orders),
-            )
+        logger.info("Region %s done — %s orders written", region_id, total_rows)
 
     logger.info("Completed")
 

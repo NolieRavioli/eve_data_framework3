@@ -13,12 +13,14 @@ class QueueViewerTool(BaseTool):
     manifest = ToolManifest(
         id="queue_viewer",
         name="Queue Viewer",
-        icon="=",
+        icon="📋",
         description="Monitor background tasks, stream live logs, and inspect ESI rate stats.",
         url_prefix="/queue",
         required_scopes=[],
         nav_weight=-50,
         nav_section="tools",
+        access_level="user",
+        required_role="queue",
     )
 
     def create_blueprint(self) -> Blueprint:

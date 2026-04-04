@@ -1,5 +1,8 @@
 var _currentOpId = null;
 var allRows = Array.from(document.querySelectorAll('.op-row'));
+var _esiApp    = document.getElementById('esi-app');
+var _URL_OP    = _esiApp.dataset.urlOp;
+var _URL_RUN   = _esiApp.dataset.urlRun;
 
 function filterOps(q) {
   var term = q.toLowerCase().trim();
@@ -25,7 +28,7 @@ function selectOp(opId) {
 
   allRows.forEach(function(r) { r.classList.toggle('selected', r.dataset.id === opId); });
 
-  fetch('/admin/esi/' + encodeURIComponent(opId))
+  fetch(_URL_OP.replace('PLACEHOLDER', encodeURIComponent(opId)))
     .then(function(r) { return r.json(); })
     .then(function(op) { populateDetail(op); });
 }
@@ -106,7 +109,7 @@ function runOp() {
 
   var allPages = document.getElementById('dp-all-pages').checked;
 
-  fetch('/admin/esi/' + encodeURIComponent(_currentOpId) + '/run', {
+  fetch(_URL_RUN.replace('PLACEHOLDER', encodeURIComponent(_currentOpId)), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({path_params: pathParams, query_params: queryParams, all_pages: allPages}),
@@ -141,3 +144,26 @@ function runOp() {
 
 // Init count
 filterOps('');
+
+document.addEventListener('DOMContentLoaded', function () {
+  var qInput = document.getElementById('q');
+  if (qInput) qInput.addEventListener('input', function () { filterOps(this.value); });
+
+  var methodFilter = document.getElementById('method-filter');
+  if (methodFilter) methodFilter.addEventListener('change', function () {
+    filterOps(document.getElementById('q').value);
+  });
+
+  var authFilter = document.getElementById('auth-filter');
+  if (authFilter) authFilter.addEventListener('change', function () {
+    filterOps(document.getElementById('q').value);
+  });
+
+  document.querySelectorAll('.op-row').forEach(function (row) {
+    row.addEventListener('click', function () { selectOp(this.dataset.id); });
+  });
+
+  var runBtn = document.getElementById('dp-run-btn');
+  if (runBtn) runBtn.addEventListener('click', runOp);
+});
+

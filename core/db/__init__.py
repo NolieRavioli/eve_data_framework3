@@ -3,6 +3,38 @@
 import logging
 import os
 
+from core.db.reader import (
+    query_rows,
+    query_one,
+    query_scalar,
+    table_count,
+    get_db_file_stats,
+)
+from core.db.stats import (
+    get_table_stats,
+    get_write_rate_stats,
+    optimization_hints,
+    table_optimization_hints,
+)
+
+__all__ = [
+    "ensure_data_dirs",
+    "ensure_public_database",
+    "initialize_private_database",
+    "ensure_schema",
+    "warm_caches",
+    "initialize_all",
+    "query_rows",
+    "query_one",
+    "query_scalar",
+    "table_count",
+    "get_db_file_stats",
+    "get_table_stats",
+    "get_write_rate_stats",
+    "optimization_hints",
+    "table_optimization_hints",
+]
+
 logger = logging.getLogger(__name__)
 
 

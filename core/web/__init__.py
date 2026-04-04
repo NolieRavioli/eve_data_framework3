@@ -7,15 +7,19 @@ ALL page blueprints to the application tool registry, which auto-discovers
 every package that exposes a ``Tool = <BaseTool subclass instance>`` attribute.
 """
 
+import logging
 import os
 from typing import Optional
 
-from flask import Flask, redirect, request, url_for
+from flask import Flask, Response, redirect, request, url_for
 
 from core.config import RuntimeSettings, get_runtime_settings
+
 from core.web.auth import auth_bp
 from core.web.home import home_bp
 from core.web.setup import setup_bp
+
+logger = logging.getLogger(__name__)
 
 
 def _credentials_exist() -> bool:
@@ -29,6 +33,25 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     app = Flask(__name__, template_folder="templates")
     app.secret_key = settings.session_secret or os.getenv("FLASK_SECRET_KEY", "nolieravioli")
     app.config["RUNTIME_SETTINGS"] = settings
+
+    # Install the centralized telemetry handler before any blueprint imports
+    # so that blueprint-level log calls are captured from the start.
+    from core.telemetry import install as _install_telemetry
+    _install_telemetry()
+
+    # Attach the flask-sock WebSocket extension and register the telemetry endpoint.
+    # flask-sock is an optional dependency — the app starts normally without it,
+    # but the /telemetry/ws endpoint will be unavailable until it is installed.
+    try:
+        from flask_sock import Sock
+        from core.telemetry.websocket import telemetry_ws
+        sock = Sock(app)
+        sock.route("/telemetry/ws")(telemetry_ws)
+    except ImportError:
+        logger.warning(
+            "[web] flask-sock not installed — /telemetry/ws WebSocket disabled. "
+            "Run: pip install flask-sock"
+        )
 
     # Public home page and setup wizard are core infrastructure.
     app.register_blueprint(home_bp)
@@ -64,5 +87,72 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
         if not _credentials_exist():
             return redirect(url_for("setup.index"))
         return None
+
+    @app.errorhandler(404)
+    def _not_found(e):
+        notfound_msg = """Hello,
+
+This resource is in a restricted administrative area and is not available for public access.
+
+Unauthorized access attempts are logged and monitored.
+Most offenses are reported.
+
+If you believe you should have access,
+please contact the administrator.
+
+.--.--.--.--.--.--.--.  .--.--.--.--.--.--.--.
+|                    |        |     |     |  |
+:  :--:  :--:--:--:--:  :--:  :  :  :  :  :  :
+|     |     |              |     |     |  |  |
+:--:  :--:  :  :--:--:--:  :--:--:--:  :  :  :
+|     |     |     |     |           |  |  |  |
+:--:--:  :--:  :--:  :  :--:--:  :  :  :  :  :
+|        |     |     |           |  |  |     |
+:  :--:--:  :--:  :  :--:  :--:--:  :  :--:--:
+|           |     |     |  |     |  |  |     |
+:--:--:--:--:  :--:--:  :--:  :--:  :  :  :  :
+|           |  |     |     |     |  |     |  |
+:  :  :  :--:  :  :  :--:  :--:  :  :--:--:  :
+|  |  |     |  |  |     |        |     |  |  |
+:  :  :--:  :  :  :--:  :--:--:--:--:  :  :  :
+|  |     |           |  |           |  |     |
+:--:--:  :--:--:--:  :--:  :--:--:  :  :--:--:
+|     |  |     |           |     |  |  |     |
+:  :  :--:  :  :  :--:--:--:  :  :  :  :  :  :
+|  |  |     |  |           |  |  |  |     |  |
+:  :  :  :--:--:  :--:--:  :  :  :--:--:--:  :
+|  |  |  |     |     |     |  |        |     |
+:  :  :  :  :  :--:  :  :--:--:  :--:  :  :--:
+|  |     |  |  |     |        |     |  |     |
+:  :--:--:  :  :--:--:--:--:  :  :  :--:--:  :
+|        |  |     |     |     |  |  |     |  |
+:  :--:  :  :--:  :  :  :  :--:--:  :  :  :  :
+|  |     |  |     |  |     |     |  |  |  |  |
+:  :  :--:  :  :--:  :--:--:  :  :  :  :--:  :
+|  |     |  |  |              |     |     |  |
+:  :  :--:  :--:  :--:--:--:--:  :--:  :  :  :
+|  |     |        |           |     |  |     |
+:  :--:  :--:--:--:  :--:--:  :--:  :--:--:--:
+|  |     |           |        |  |           |
+:  :  :--:--:--:--:  :  :--:--:  :  :--:--:  :
+|  |     |     |     |  |     |     |     |  |
+:  :--:  :  :  :  :--:  :  :--:  :--:  :  :--:
+|  |     |  |  |     |     |     |     |     |
+:  :--:--:  :  :  :  :--:--:  :--:  :--:--:  :
+|  |        |  |  |  |     |  |        |     |
+:  :  :  :--:  :  :  :  :  :  :--:--:  :  :--:
+|     |     |  |  |  |  |  |           |  |  |
+:  :--:--:  :  :  :  :  :--:  :--:--:--:  :  :
+|     |     |     |  |  |     |        |  |  |
+:--:--:  :--:--:  :--:  :  :  :  :--:  :  :  :
+|        |     |  |     |  |  |     |  |  |  |
+:  :--:--:  :--:  :  :--:  :  :  :  :--:  :  :
+|        |     |  |        |  |  |     |  |  |
+:--:--:  :  :  :  :--:--:--:--:  :  :  :  :  :
+|     |  |  |  |     |     |     |  |  |     |
+:  :  :  :--:  :  :--:  :  :  :  :--:  :  :--:
+|  |           |        |     |  |           |
+:--:--:--:--:--:--:--:--:--:--:--:  :--:--:--:"""
+        return Response(notfound_msg, status=404, mimetype="text/plain")
 
     return app

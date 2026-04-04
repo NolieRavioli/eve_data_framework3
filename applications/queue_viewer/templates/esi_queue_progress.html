@@ -1,0 +1,86 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ task.name }} - EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('queue_viewer.static', filename='progress.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ task.name }}</h1>
+    <div class="pg-sub">Job ID <span class="mono">{{ task.task_id }}</span></div>
+  </div>
+  <span id="status-badge" class="task-status {{ task.status }}">{{ task.status }}</span>
+</div>
+
+<div id="task-app" class="pg-body" data-task-id="{{ task.task_id }}"
+     data-url-stream="{{ url_for('queue_viewer.esi_queue_stream', task_id=task.task_id) }}"
+     data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id=task.task_id) }}">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v mono">{{ task.task_id }}</span>
+      <span class="l">Job ID</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task.status }}</span>
+      <span class="l">Current Status</span>
+    </div>
+    <div class="stat">
+      <span class="v mono">{{ task.created_at or '-' }}</span>
+      <span class="l">Queued</span>
+    </div>
+    <div class="stat">
+      <span class="v mono">{{ task.finished_at or task.started_at or '-' }}</span>
+      <span class="l">Latest Timestamp</span>
+    </div>
+  </div>
+
+  <div id="esi-rate-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">ESI Rate Limit</div>
+    <div class="esi-rate-bar-wrap"><div id="esi-rate-bar" class="esi-rate-bar"></div></div>
+    <div class="esi-rate-stats">
+      <span>Tokens&nbsp;<span id="esi-tokens-used" class="hi">—</span>&nbsp;/&nbsp;<span id="esi-tokens-limit" class="hi">—</span></span>
+      <span>Remaining&nbsp;<span id="esi-tokens-remaining" class="hi">—</span></span>
+      <span>Window&nbsp;<span id="esi-window" class="hi">—</span>s</span>
+      <span>Requests&nbsp;<span id="esi-requests-total" class="hi">—</span></span>
+    </div>
+  </div>
+
+  <div id="esi-buckets-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">Rate Limit Buckets</div>
+    <div id="esi-buckets-list"></div>
+  </div>
+
+  <div id="esi-req-card" class="card stack" style="display:none">
+    <div class="ct" style="margin-bottom:0.5rem">ESI Request Log</div>
+    <div id="esi-req-log" class="esi-req-log"></div>
+  </div>
+
+  <div class="card stack">
+    <div class="section-head">
+      <div>
+        <div class="ct" style="margin-bottom:0.35rem">Live Output</div>
+        <div class="muted" style="font-size:0.78rem">Logs stream in via SSE and remain available after the task finishes.</div>
+      </div>
+      <div class="toolbar">
+        {% if task.status == 'pending' %}
+        <button id="cancel-btn" class="btn btn-g">Cancel</button>
+        {% endif %}
+        <a href="{{ url_for('queue_viewer.esi_queue_list') }}" class="btn btn-g">ESI Queue</a>
+        <a href="{{ url_for('dashboard.home') }}" class="btn btn-a">Dashboard</a>
+      </div>
+    </div>
+
+    <div id="console" class="task-console"></div>
+
+    <div class="pill-row">
+      {% if task.created_at %}<span class="pill">Queued {{ task.created_at }}</span>{% endif %}
+      {% if task.started_at %}<span class="pill">Started {{ task.started_at }}</span>{% endif %}
+      {% if task.finished_at %}<span class="pill">Finished {{ task.finished_at }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('queue_viewer.static', filename='esi_queue_progress.js') }}"></script>
+{% endblock %}

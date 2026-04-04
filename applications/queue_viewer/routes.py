@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
 import logging
 
 from flask import Blueprint, Response, abort, jsonify, render_template, session
 
 from applications._base import base_ctx, require_role
-from applications._adapters import queue_info
+from applications._adapters import queue_info, char_data
 
 logger = logging.getLogger(__name__)
 tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")
@@ -18,6 +19,45 @@ tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", stat
 def _owns_task(task) -> bool:
     """True if the current user owns the task or is an admin."""
     return task.owner_id == session.get("owner_id") or bool(session.get("is_admin"))
+
+
+def _make_char_name_lookup():
+    """Return a closure that maps owner_id → character name (cached for connection lifetime)."""
+    _cache: dict[int, str] = {}
+
+    def _lookup(owner_id: int) -> str:
+        if owner_id in _cache:
+            return _cache[owner_id]
+        if not owner_id:
+            _cache[owner_id] = ""
+            return ""
+        try:
+            chars = char_data.get_characters(owner_id)
+            name = chars[0]["name"] if chars else str(owner_id)
+        except Exception:
+            name = str(owner_id)
+        _cache[owner_id] = name
+        return name
+
+    return _lookup
+
+
+def _enriched_rate_stream_gen(viewer_owner_id: int = 0):
+    """Wrap queue_info.rate_stream(), injecting char_name into each task dict."""
+    _char_name = _make_char_name_lookup()
+    for raw in queue_info.rate_stream():
+        if not isinstance(raw, str) or not raw.startswith("data:"):
+            yield raw
+            continue
+        try:
+            data = json.loads(raw[6:].strip())
+            for t in data.get("tasks", []):
+                oid = t.get("owner_id") or 0
+                # public/scheduler tasks have owner_id=0 — fall back to the viewing user
+                t["char_name"] = _char_name(oid if oid else viewer_owner_id)
+            yield "data: " + json.dumps(data) + "\n\n"
+        except Exception:
+            yield raw
 
 
 @tasks_bp.route("/rate_stats")
@@ -37,8 +77,9 @@ def rate_stats():
 @require_role("queue")
 def rate_stream():
     """SSE endpoint that streams ESI rate-limiter stats on every request."""
+    viewer_owner_id = session.get("owner_id", 0)
     return Response(
-        queue_info.rate_stream(),
+        _enriched_rate_stream_gen(viewer_owner_id),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -46,7 +87,7 @@ def rate_stream():
 
 @tasks_bp.route("/")
 @require_role("queue")
-def task_list():
+def esi_queue_list():
     is_admin = bool(session.get("is_admin"))
     owner_id = session["owner_id"]
     tasks    = queue_info.get_all_tasks() if is_admin else queue_info.get_tasks_for_owner(owner_id)
@@ -54,7 +95,7 @@ def task_list():
     summary   = Counter(task["status"] for task in task_rows)
 
     return render_template(
-        "task_list.html",
+        "esi_queue_list.html",
         **base_ctx("queue_viewer"),
         tasks=task_rows,
         is_admin=is_admin,
@@ -71,7 +112,7 @@ def task_list():
 
 @tasks_bp.route("/<task_id>")
 @require_role("queue")
-def task_progress(task_id: str):
+def esi_queue_progress(task_id: str):
     task = queue_info.get_task(task_id)
     if not task:
         abort(404)
@@ -79,7 +120,7 @@ def task_progress(task_id: str):
         abort(403)
 
     return render_template(
-        "task_progress.html",
+        "esi_queue_progress.html",
         **base_ctx("queue_viewer"),
         task=task.as_dict(),
     )
@@ -87,7 +128,7 @@ def task_progress(task_id: str):
 
 @tasks_bp.route("/<task_id>/stream")
 @require_role("queue")
-def task_stream(task_id: str):
+def esi_queue_stream(task_id: str):
     """SSE endpoint that streams log lines for a task."""
     task = queue_info.get_task(task_id)
     if not task:

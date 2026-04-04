@@ -1,4 +1,4 @@
-# tools/market_browser/routes.py
+# applications/market_browser/routes.py
 """Flask blueprint for the Market Browser tool."""
 
 from __future__ import annotations
@@ -8,8 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-from applications._adapters import db, tasks
+from applications._adapters import db, tasks, get_regions
 from applications._base import base_ctx
+from applications.market_browser.worker import refresh_region
+from analysis.market.regions import fetch_all_market_data
 
 logger = logging.getLogger(__name__)
 
@@ -36,40 +38,55 @@ def _fmt_expires(issued, duration_days) -> str:
         return "—"
 
 
-def _get_regions() -> list[dict]:
-    try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
-        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
-    except Exception:
-        return []
-
-
 def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
-    region_filter = "AND mo.region_id = ?" if region_id else ""
-    params = [type_id, region_id] if region_id else [type_id]
-    sql = f"""
-        SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
-               mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
-               COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
-        FROM market_orders mo
-        LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
-        WHERE mo.type_id = ? {region_filter}
-    """
-    try:
-        rows = db.query(sql, params)
-    except Exception:
-        sql_plain = f"""
-            SELECT order_id, is_buy_order, price, volume_remain, volume_total,
-                   order_range AS range, location_id, issued, duration, min_volume,
-                   CAST(location_id AS VARCHAR) AS location_name
-            FROM market_orders
-            WHERE type_id = ? {region_filter}
+    from core.db.market_buffer import query_orders as _buf_query, buffered_region_ids
+
+    buf_hit, buf_rows = _buf_query(type_id, region_id)
+
+    if buf_hit and region_id:
+        # Specific region is fully buffered — use buffer data only.
+        rows = buf_rows
+    else:
+        # Query DuckDB, excluding any currently-buffered regions so we don't
+        # mix stale DB rows with fresh buffer rows.
+        buffered = buffered_region_ids()
+        exclude_clause = ""
+        params: list = [type_id]
+        if region_id:
+            exclude_clause = "AND mo.region_id = ?"
+            params.append(region_id)
+        elif buffered:
+            placeholders = ", ".join(["?"] * len(buffered))
+            exclude_clause = f"AND mo.region_id NOT IN ({placeholders})"
+            params.extend(sorted(buffered))
+
+        sql = f"""
+            SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
+                   mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
+                   COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
+            FROM market_orders mo
+            LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
+            WHERE mo.type_id = ? {exclude_clause}
         """
         try:
-            rows = db.query(sql_plain, params)
-        except Exception as exc:
-            logger.warning("Orders query failed: %s", exc)
-            return [], []
+            rows = db.query(sql, params)
+        except Exception:
+            sql_plain = f"""
+                SELECT order_id, is_buy_order, price, volume_remain, volume_total,
+                       order_range AS range, location_id, issued, duration, min_volume,
+                       CAST(location_id AS VARCHAR) AS location_name
+                FROM market_orders
+                WHERE type_id = ? {exclude_clause}
+            """
+            try:
+                rows = db.query(sql_plain, params)
+            except Exception as exc:
+                logger.warning("Orders query failed: %s", exc)
+                rows = []
+
+        # Merge buffer rows for the universe case.
+        if buf_hit and not region_id:
+            rows.extend(buf_rows)
 
     for o in rows:
         o["expires_in"] = _fmt_expires(o.get("issued"), o.get("duration"))
@@ -83,7 +100,7 @@ def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
 def index():
     ctx = base_ctx("market_browser")
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "sells": None, "buys": None,
         "type_id": None, "type_name": "",
         "region_id": 0,
@@ -120,7 +137,7 @@ def orders():
         buy_volume = sum(o["volume_remain"] for o in buys)
 
     ctx.update({
-        "regions": _get_regions(),
+        "regions": get_regions(),
         "sells": sells, "buys": buys,
         "type_id": type_id, "type_name": type_name,
         "region_id": region_id,
@@ -140,7 +157,6 @@ def refresh():
     if not region_id:
         return redirect(url_for("market_browser.index"))
 
-    from applications.market_browser.worker import refresh_region
     task_id = tasks.enqueue(
         f"Market refresh — region {region_id}",
         refresh_region,
@@ -153,7 +169,6 @@ def refresh():
 
 @market_bp.route("/refresh_all", methods=["POST"])
 def refresh_all():
-    from analysis.market.regions import fetch_all_market_data
     task_id = tasks.enqueue(
         "Market refresh — all regions",
         fetch_all_market_data,

@@ -1,4 +1,4 @@
-# tools/market_browser/__init__.py
+# applications/market_browser/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint
@@ -16,6 +16,7 @@ class MarketBrowserTool(BaseTool):
         url_prefix="/market",
         required_scopes=[],
         nav_weight=10,
+        access_level="public",
     )
 
     def create_blueprint(self) -> Blueprint:

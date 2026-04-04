@@ -1,18 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Task Queue - EVE Data Framework{% endblock %}
+{% block title %}ESI Queue - EVE Data Framework{% endblock %}
 
 {% block content %}
 <div class="pg-hd">
   <div>
-    <h1>Task Queue</h1>
+    <h1>ESI Queue</h1>
     <div class="pg-sub">{{ 'Admin view across all owners' if is_admin else 'Your background work and live sync state' }}</div>
   </div>
   <div class="toolbar">
-    <button class="btn btn-g" onclick="clearDone()">Clear Completed</button>
+    <button class="btn btn-g" id="clear-done-btn">Clear Completed</button>
   </div>
 </div>
 
-<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem">
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem"
+     data-is-admin="{{ 'true' if is_admin else 'false' }}"
+     data-url-rate-stream="{{ url_for('queue_viewer.rate_stream') }}"
+     data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id='PLACEHOLDER') }}"
+     data-url-clear="{{ url_for('queue_viewer.clear_tasks') }}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
     <div>
       <div class="ct" style="margin:0;margin-bottom:0.2rem">ESI Floating Window Rate Limits</div>
@@ -27,7 +31,7 @@
   <div class="stat-row">
     <div class="stat">
       <span class="v">{{ task_summary.total }}</span>
-      <span class="l">Visible Tasks</span>
+      <span class="l">Visible Jobs</span>
     </div>
     <div class="stat">
       <span class="v">{{ task_summary.running }}</span>
@@ -58,10 +62,10 @@
       {% endif %}
     </div>
     <div class="tw tw-scroll">
-      <table id="task-table">
+      <table id="esi-queue-table">
         <thead>
           <tr>
-            <th>Task</th>
+            <th>Job</th>
             {% if is_admin %}<th>Owner</th>{% endif %}
             <th>Status</th>
             <th>Queue</th>
@@ -76,7 +80,7 @@
           {% for t in tasks | reverse %}
           <tr id="row-{{ t.task_id }}">
             <td>
-              <a href="{{ url_for('queue_viewer.task_progress', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
+              <a href="{{ url_for('queue_viewer.esi_queue_progress', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
               <div class="mono muted" style="margin-top:0.18rem">{{ t.task_id }}</div>
             </td>
             {% if is_admin %}
@@ -98,7 +102,7 @@
             <td class="mono muted" style="white-space:nowrap" data-col="finished">{{ t.finished_at or '\u2014' }}</td>
             <td class="esi-rate-cell">
               {% if t.esi_rate %}
-              {% set pct = (t.esi_rate.tokens_used / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
+              {% set pct = ((t.esi_rate.tokens_limit - (t.esi_rate.tokens_remaining or 0)) / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
               <div style="width:90px;background:rgba(0,0,0,0.35);border-radius:999px;height:5px;overflow:hidden;margin-bottom:0.3rem">
                 <div class="esi-mini-bar" style="height:100%;border-radius:999px;width:{{ pct|round(1) }}%;background:{% if pct >= 90 %}var(--bad){% elif pct >= 70 %}var(--warn){% else %}var(--accent){% endif %}"></div>
               </div>
@@ -109,9 +113,9 @@
             </td>
             <td style="white-space:nowrap" data-col="action">
               {% if t.status == 'pending' %}
-              <button class="btn btn-g cancel-btn" style="padding:0.3rem 0.65rem;font-size:0.72rem" onclick="cancelTask('{{ t.task_id }}', this)">Cancel</button>
+              <button class="btn btn-g cancel-btn" data-task-id="{{ t.task_id }}" style="padding:0.3rem 0.65rem;font-size:0.72rem">Cancel</button>
               {% endif %}
-              <a href="{{ url_for('queue_viewer.task_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
+              <a href="{{ url_for('queue_viewer.esi_queue_progress', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
             </td>
           </tr>
           {% endfor %}
@@ -122,7 +126,7 @@
   {% else %}
   <div class="empty card">
     <div class="ei">~</div>
-    <p>No tasks in queue.</p>
+    <p>No jobs in queue.</p>
     <p>Use the <a href="{{ url_for('dashboard.home') }}" class="lnk">Dashboard</a> to start collection.</p>
   </div>
   {% endif %}
@@ -130,5 +134,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('queue_viewer.static', filename='task_list.js') }}"></script>
+<script src="{{ url_for('queue_viewer.static', filename='esi_queue_list.js') }}"></script>
 {% endblock %}

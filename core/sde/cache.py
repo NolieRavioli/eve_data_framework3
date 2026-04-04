@@ -73,18 +73,13 @@ def _connect_ro():
 
 
 def _query_rows(sql: str, params: list[Any] | None = None) -> list[dict]:
-    con = _connect_ro()
-    try:
-        result = con.execute(sql, params or [])
-        columns = [desc[0] for desc in result.description]
-        return [dict(zip(columns, row)) for row in result.fetchall()]
-    finally:
-        con.close()
+    from core.db.reader import query_rows
+    return query_rows(sql, params, _warehouse_path())
 
 
 def _query_one(sql: str, params: list[Any] | None = None) -> dict | None:
-    rows = _query_rows(sql, params)
-    return rows[0] if rows else None
+    from core.db.reader import query_one
+    return query_one(sql, params, _warehouse_path())
 
 
 def _load_yaml(rel_path: str) -> Any:

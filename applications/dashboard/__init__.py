@@ -13,12 +13,14 @@ class DashboardTool(BaseTool):
     manifest = ToolManifest(
         id="dashboard",
         name="Dashboard",
-        icon="[]",
+        icon="🏠︎",
         description="Character overview, active ESI spec status, and granted scopes.",
         url_prefix="/dashboard",
         required_scopes=[],
         nav_weight=-100,
         nav_section="overview",
+        access_level="user",
+        required_role="dashboard",
     )
 
     def create_blueprint(self) -> Blueprint:
