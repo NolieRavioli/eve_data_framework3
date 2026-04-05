@@ -17,10 +17,28 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── Read stats ─────────────────────────────────────────────────────────────────
+
+_stats_lock = threading.Lock()
+_read_stats: dict[str, int | float] = {
+    "reads_total": 0,
+    "rows_total": 0,
+    "latency_sum_ms": 0.0,
+    "last_latency_ms": 0.0,
+}
+
+
+def get_read_stats() -> dict:
+    """Return a snapshot of public DuckDB read metrics."""
+    with _stats_lock:
+        return dict(_read_stats)
 
 
 def _resolve_path(db_path: str | Path | None) -> Path:
@@ -42,12 +60,20 @@ def query_rows(
 ) -> list[dict]:
     """Execute *sql* and return all rows as a list of dicts."""
     con = _open(_resolve_path(db_path))
+    t0 = time.monotonic()
     try:
         result = con.execute(sql, params or [])
         columns = [desc[0] for desc in result.description]
-        return [dict(zip(columns, row)) for row in result.fetchall()]
+        rows = [dict(zip(columns, row)) for row in result.fetchall()]
     finally:
         con.close()
+    elapsed_ms = (time.monotonic() - t0) * 1000
+    with _stats_lock:
+        _read_stats["reads_total"] += 1
+        _read_stats["rows_total"] += len(rows)
+        _read_stats["latency_sum_ms"] += elapsed_ms
+        _read_stats["last_latency_ms"] = elapsed_ms
+    return rows
 
 
 def query_one(
@@ -67,11 +93,19 @@ def query_scalar(
 ) -> Any:
     """Execute *sql* and return the first column of the first row, or None."""
     con = _open(_resolve_path(db_path))
+    t0 = time.monotonic()
     try:
         row = con.execute(sql, params or []).fetchone()
-        return row[0] if row is not None else None
+        result = row[0] if row is not None else None
     finally:
         con.close()
+    elapsed_ms = (time.monotonic() - t0) * 1000
+    with _stats_lock:
+        _read_stats["reads_total"] += 1
+        _read_stats["rows_total"] += (1 if row is not None else 0)
+        _read_stats["latency_sum_ms"] += elapsed_ms
+        _read_stats["last_latency_ms"] = elapsed_ms
+    return result
 
 
 def table_count(table_name: str, db_path: str | Path | None = None) -> int:

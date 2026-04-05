@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Op:
-    __slots__ = ("sql", "params", "many", "rows", "df", "event", "error", "enqueued_at")
+    __slots__ = ("sql", "params", "many", "rows", "df", "event", "error", "enqueued_at", "task_id")
 
     def __init__(
         self,
@@ -46,6 +46,7 @@ class _Op:
         many: bool,
         rows: list[Sequence[Any]] | None,
         df: Any = None,
+        task_id: str | None = None,
     ) -> None:
         self.sql = sql
         self.params = params
@@ -55,6 +56,7 @@ class _Op:
         self.event: threading.Event = threading.Event()
         self.error: BaseException | None = None
         self.enqueued_at: float = time.monotonic()
+        self.task_id: str | None = task_id
 
 
 _STOP = object()  # sentinel
@@ -69,6 +71,7 @@ _db_path: Path | None = None
 
 _stats_lock = threading.Lock()
 _latencies: deque = deque(maxlen=500)  # rolling window of execute_ms values
+_attr_stats: dict[str, dict[str, int]] = {}  # task_id → {"ops": int, "rows": int}
 _stats: dict[str, Any] = {
     "writes_total": 0,
     "writes_error": 0,
@@ -111,6 +114,12 @@ def get_writer_stats() -> dict:
     else:
         snap["p50_ms"] = snap["p95_ms"] = snap["p99_ms"] = None
     return snap
+
+
+def get_attribution_snapshot() -> dict[str, dict[str, int]]:
+    """Return per-task write attribution: ``{task_id: {"ops": N, "rows": N}}``."""
+    with _stats_lock:
+        return {tid: dict(vals) for tid, vals in _attr_stats.items()}
 
 
 # ── Writer loop ────────────────────────────────────────────────────────────────
@@ -257,6 +266,20 @@ def _writer_loop(db_path: Path) -> None:
                 _stats["last_execute_ms"] = execute_ms
                 _stats["last_write_latency_ms"] = execute_ms
                 _latencies.append(execute_ms)
+                # ── Attribution: accumulate per-task op/row counts ────────
+                for b in batch:
+                    if b.task_id:
+                        entry = _attr_stats.get(b.task_id)
+                        if entry is None:
+                            entry = {"ops": 0, "rows": 0}
+                            _attr_stats[b.task_id] = entry
+                        entry["ops"] += 1
+                        if b.many and b.rows:
+                            entry["rows"] += len(b.rows)
+                        elif b.df is not None:
+                            entry["rows"] += len(b.df)
+                        else:
+                            entry["rows"] += 1
         except Exception as exc:
             logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
             for b in batch:
@@ -340,6 +363,12 @@ def _submit(op: _Op) -> None:
         raise op.error
 
 
+def _current_task_id() -> str | None:
+    """Read the calling thread's active task_id (if any)."""
+    from core.queue._context import _thread_task
+    return getattr(_thread_task, "task_id", None)
+
+
 def _fallback_write(sql: str, params: list[Any] | None) -> None:
     """Direct-connection fallback used when the writer is not running."""
     from core.db.publicDB import connect, get_database_path
@@ -368,7 +397,8 @@ def db_write(sql: str, params: Sequence[Any] | None = None) -> None:
     if not is_running():
         _fallback_write(sql, list(params) if params else None)
         return
-    op = _Op(sql=sql, params=list(params) if params else [], many=False, rows=None)
+    op = _Op(sql=sql, params=list(params) if params else [], many=False, rows=None,
+             task_id=_current_task_id())
     _submit(op)
 
 
@@ -377,7 +407,8 @@ def db_write_nowait(sql: str, params: Sequence[Any] | None = None) -> None:
     if not is_running():
         _fallback_write(sql, list(params) if params else None)
         return
-    op = _Op(sql=sql, params=list(params) if params else [], many=False, rows=None)
+    op = _Op(sql=sql, params=list(params) if params else [], many=False, rows=None,
+             task_id=_current_task_id())
     _write_queue.put(op)
 
 
@@ -388,7 +419,8 @@ def db_executemany(sql: str, rows: list[Sequence[Any]]) -> int:
     if not is_running():
         _fallback_executemany(sql, rows)
         return len(rows)
-    op = _Op(sql=sql, params=None, many=True, rows=rows)
+    op = _Op(sql=sql, params=None, many=True, rows=rows,
+             task_id=_current_task_id())
     _submit(op)
     return len(rows)
 
@@ -400,7 +432,8 @@ def db_executemany_nowait(sql: str, rows: list[Sequence[Any]]) -> int:
     if not is_running():
         _fallback_executemany(sql, rows)
         return len(rows)
-    op = _Op(sql=sql, params=None, many=True, rows=rows)
+    op = _Op(sql=sql, params=None, many=True, rows=rows,
+             task_id=_current_task_id())
     _write_queue.put(op)
     return len(rows)
 
@@ -436,6 +469,7 @@ def db_write_dataframe(sql: str, df: Any) -> int:
         finally:
             con.close()
         return len(df)
-    op = _Op(sql=sql, params=None, many=False, rows=None, df=df)
+    op = _Op(sql=sql, params=None, many=False, rows=None, df=df,
+             task_id=_current_task_id())
     _submit(op)
     return len(df)

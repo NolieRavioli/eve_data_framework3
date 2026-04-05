@@ -10,7 +10,7 @@ import logging
 from flask import Blueprint, Response, abort, jsonify, render_template, session
 
 from applications._base import base_ctx, require_role
-from applications._adapters import queue_info, char_data
+from applications._adapters import queue_info, char_data, get_db_gateway_stats
 
 logger = logging.getLogger(__name__)
 tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")
@@ -83,6 +83,20 @@ def rate_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@tasks_bp.route("/db_stats")
+@require_role("queue")
+def db_stats():
+    """JSON snapshot of DB gateway stats (writer, reads, private queues, attribution)."""
+    stats = get_db_gateway_stats()
+    is_admin = bool(session.get("is_admin"))
+    owner_id = session.get("owner_id")
+    # Non-admin users only see their own private queue stats.
+    if not is_admin and stats.get("private_queues"):
+        filtered = {k: v for k, v in stats["private_queues"].items() if k == owner_id}
+        stats["private_queues"] = filtered
+    return jsonify(stats)
 
 
 @tasks_bp.route("/")

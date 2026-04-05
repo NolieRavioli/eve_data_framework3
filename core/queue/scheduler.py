@@ -12,9 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-
-# ── Per-thread task tracking ─────────────────────────────────────────────────
-_thread_task: threading.local = threading.local()
+from core.queue._context import _thread_task
 
 # ── Registry ─────────────────────────────────────────────────────────────────
 _registry: dict[str, "Task"] = {}

@@ -39,7 +39,7 @@ from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.db.market_buffer import begin_region, add_page, finish_region, discard_region
 from core.queue.esi_req import esi_get
-from core.db.writer import db_write_nowait
+from core.queue.db import write_public_nowait
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def ensure_columns(con) -> None:
 def _mark_stations_refreshed(region_id: int) -> None:
     """Set market_refreshed_until on all dim_stations rows for this region."""
     refreshed_until = datetime.now(timezone.utc) + timedelta(seconds=_REGION_COOLDOWN_SECONDS)
-    db_write_nowait(
+    write_public_nowait(
         "UPDATE dim_stations SET market_refreshed_until = ? WHERE region_id = ?",
         [refreshed_until, region_id],
     )
@@ -117,7 +117,7 @@ def _mark_stations_refreshed(region_id: int) -> None:
 def _mark_stations_forbidden(region_id: int) -> None:
     """Set market_forbidden_until on all dim_stations rows for this region."""
     forbidden_until = datetime.now(timezone.utc) + timedelta(days=_STATION_FORBIDDEN_DAYS)
-    db_write_nowait(
+    write_public_nowait(
         "UPDATE dim_stations SET market_forbidden_until = ? WHERE region_id = ?",
         [forbidden_until, region_id],
     )

@@ -12,7 +12,8 @@ import sys
 import threading
 from datetime import datetime, timezone
 
-from core.queue.scheduler import _thread_task, _registry, _registry_lock, get_all_tasks
+from core.queue._context import _thread_task
+from core.queue.scheduler import _registry, _registry_lock, get_all_tasks
 
 
 # ── Thread-aware stdout/stderr interceptor ───────────────────────────────────

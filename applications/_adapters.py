@@ -23,12 +23,14 @@ import core.sde as sde  # the module itself is the public API
 # ── DB ────────────────────────────────────────────────────────────────────────
 from core.db import publicDB as _pub
 from core.db.privateDB import get_private_session as _get_private_session
-from core.db.reader import (
-    query_rows as _query_rows,
-    query_one as _query_one,
-    query_scalar as _query_scalar,
-    get_db_file_stats,
+from core.queue.db import (
+    read_public as _read_public,
+    read_public_one as _read_public_one,
+    read_public_scalar as _read_public_scalar,
+    read_private as _read_private,
+    get_db_gateway_stats,
 )
+from core.db.reader import get_db_file_stats
 
 
 class _DB:
@@ -37,23 +39,16 @@ class _DB:
     connect = staticmethod(_pub.connect)
 
     def query(self, sql: str, params: list | None = None) -> list[dict]:
-        return _query_rows(sql, params)
+        return _read_public(sql, params)
 
     def query_one(self, sql: str, params: list | None = None) -> dict | None:
-        return _query_one(sql, params)
+        return _read_public_one(sql, params)
 
     def scalar(self, sql: str, params: list | None = None) -> Any:
-        return _query_scalar(sql, params)
+        return _read_public_scalar(sql, params)
 
     def private_query(self, owner_id: int, sql: str, params: dict | None = None) -> list[dict]:
-        session = _get_private_session(owner_id)
-        try:
-            with session.bind.connect() as con:
-                cur = con.execute(_sa.text(sql), params or {})
-                cols = list(cur.keys())
-                return [dict(zip(cols, row)) for row in cur.fetchall()]
-        finally:
-            session.close()
+        return _read_private(owner_id, sql, params)
 
     def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
         from core.db.market_buffer import try_market_price
@@ -271,10 +266,8 @@ replace_market_orders_for_region = _pub.replace_market_orders_for_region
 mark_region_market_refreshed = _pub.mark_region_market_refreshed
 
 # ── System status / monitoring ────────────────────────────────────────────────
-from core.db.writer import get_writer_stats
-from core.db.stats import get_table_stats, get_write_rate_stats, optimization_hints, table_optimization_hints
-from core.telemetry.handler import telemetry_handler
-from core.telemetry import get_topic_log, get_all_topics, get_recent
+from core.bus.handler import bus_handler
+from core.bus import get_bus_log, get_all_topics, get_recent, publish as bus_publish
 
 __all__ = [
     "sde",
@@ -295,14 +288,11 @@ __all__ = [
     "upsert_market_orders",
     "replace_market_orders_for_region",
     "mark_region_market_refreshed",
-    "get_writer_stats",
     "get_db_file_stats",
-    "get_table_stats",
-    "get_write_rate_stats",
-    "optimization_hints",
-    "table_optimization_hints",
-    "telemetry_handler",
-    "get_topic_log",
+    "get_db_gateway_stats",
+    "bus_handler",
+    "get_bus_log",
     "get_all_topics",
     "get_recent",
+    "bus_publish",
 ]

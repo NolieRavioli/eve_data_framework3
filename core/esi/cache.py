@@ -17,8 +17,8 @@ This module owns two DuckDB tables:
 
 Threading
 ---------
-All writes go through ``core.db.writer.db_write()`` (the serialised writer
-thread) so they are non-blocking and thread-safe.  Reads use a fresh
+All writes go through ``core.queue.db`` (the unified DB gateway)
+so they are non-blocking and thread-safe.  Reads use a fresh
 ``publicDB.connect()`` per call.
 
 Cache key
@@ -317,7 +317,7 @@ def store(
     Both writes are fire-and-forget so callers (e.g. the ESI rate limiter) are
     not blocked waiting for disk I/O on every cached response.
     """
-    from core.db.writer import db_write_nowait
+    from core.queue.db import write_public_nowait
 
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(seconds=ttl)).isoformat()
@@ -336,9 +336,9 @@ def store(
     x_esi_err_reset = _int_header(headers, "X-ESI-Error-Limit-Reset")
 
     # Prune expired rows first (best-effort — ignore errors).
-    db_write_nowait("DELETE FROM esi_cache WHERE expires_at < now()", [])
+    write_public_nowait("DELETE FROM esi_cache WHERE expires_at < now()", [])
 
-    db_write_nowait(
+    write_public_nowait(
         """
         INSERT INTO esi_cache (
             cache_key, operation_id, method, full_url, params_json,
@@ -375,10 +375,10 @@ def store(
 
 def refresh_ttl(cache_key: str, ttl: int) -> None:
     """Extend ``expires_at`` for an existing cache row (called on HTTP 304 responses)."""
-    from core.db.writer import db_write
+    from core.queue.db import write_public
 
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
-    db_write(
+    write_public(
         "UPDATE esi_cache SET expires_at = ? WHERE cache_key = ?",
         [expires_at, cache_key],
     )
@@ -397,9 +397,9 @@ def update_route_rl(operation_id: str, headers: dict) -> None:
     if rl_remaining is None and rl_used is None and not rl_limit_str:
         return  # No rate-limit headers on this response — skip update.
 
-    from core.db.writer import db_write
+    from core.queue.db import write_public
 
-    db_write(
+    write_public(
         """
         UPDATE esi_route_specs
         SET rl_remaining = ?,
