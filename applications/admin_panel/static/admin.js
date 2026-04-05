@@ -3,7 +3,7 @@ var statusDot = document.getElementById('status-dot');
 var sseStatus = document.getElementById('sse-status');
 var autoScroll = true;
 var _adminApp = document.getElementById('admin-app');
-var _URL_STREAM  = _adminApp.dataset.urlStream;
+var _URL_BUS     = _adminApp.dataset.urlBus;
 var _URL_PROMOTE = _adminApp.dataset.urlPromote;
 var _URL_DEMOTE  = _adminApp.dataset.urlDemote;
 
@@ -46,19 +46,45 @@ function filterUsers(value) {
   });
 }
 
-(function connectSSE() {
-  var es = new EventSource(_URL_STREAM);
-  es.onopen = function () {
+(function connectBus() {
+  var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var wsUrl = protocol + '//' + location.host + _URL_BUS;
+  var ws = new WebSocket(wsUrl);
+  var _reconnectTimeout = null;
+
+  ws.onopen = function () {
     statusDot.className = 'status-dot';
     sseStatus.textContent = 'Connected';
+    // Subscribe to all log topics via wildcard
+    ws.send(JSON.stringify({ action: 'subscribe', topics: ['log/*'] }));
+    // Request recent history
+    ws.send(JSON.stringify({ action: 'history', topic: 'log/system', limit: 100 }));
   };
-  es.onmessage = function (event) {
-    try { appendLine(JSON.parse(event.data)); }
-    catch (err) { appendLine(event.data); }
+  ws.onmessage = function (event) {
+    try {
+      var msg = JSON.parse(event.data);
+      if (msg.type === 'entry' && msg.message) {
+        appendLine(msg.message);
+      } else if (msg.type === 'history' && msg.entries) {
+        msg.entries.forEach(function (e) { if (e.message) appendLine(e.message); });
+      }
+    } catch (err) {
+      appendLine(event.data);
+    }
   };
-  es.onerror = function () {
+  ws.onclose = function () {
     statusDot.className = 'status-dot offline';
     sseStatus.textContent = 'Disconnected';
+    if (!_reconnectTimeout) {
+      _reconnectTimeout = window.setTimeout(function () {
+        _reconnectTimeout = null;
+        connectBus();
+      }, 5000);
+    }
+  };
+  ws.onerror = function () {
+    statusDot.className = 'status-dot offline';
+    sseStatus.textContent = 'Error';
   };
 }());
 

@@ -3,12 +3,9 @@
 
 from __future__ import annotations
 
-import collections
 import datetime
 import json
 import logging
-import threading
-import time
 
 from flask import (
     Blueprint,
@@ -17,7 +14,6 @@ from flask import (
     render_template,
     request,
     session,
-    stream_with_context,
 )
 
 from applications._base import require_admin, base_ctx, get_runtime_settings
@@ -25,40 +21,6 @@ from applications._adapters import db_admin, esi_registry
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__, template_folder="templates", static_folder="static")
-
-
-# ── In-process log buffer ─────────────────────────────────────────────────────
-
-class _AdminLogHandler(logging.Handler):
-    _buffer: collections.deque[tuple[int, str]] = collections.deque(maxlen=500)
-    _cursor = 0
-    _lock = threading.Lock()
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            line = self.format(record)
-            with _AdminLogHandler._lock:
-                _AdminLogHandler._cursor += 1
-                _AdminLogHandler._buffer.append((_AdminLogHandler._cursor, line))
-        except Exception:
-            pass
-
-    @classmethod
-    def snapshot(cls, limit: int | None = None) -> list[tuple[int, str]]:
-        with cls._lock:
-            rows = list(cls._buffer)
-        return rows[-limit:] if limit else rows
-
-    @classmethod
-    def lines_after(cls, cursor: int) -> list[tuple[int, str]]:
-        with cls._lock:
-            return [row for row in cls._buffer if row[0] > cursor]
-
-
-_handler = _AdminLogHandler()
-_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-_handler.setLevel(getattr(logging, get_runtime_settings().admin_panel_log_level, logging.DEBUG))
-logging.getLogger().addHandler(_handler)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,7 +68,6 @@ def index():
         "users":            users,
         "total_owners":     len(users),
         "admin_count":      sum(1 for row in users if row["is_admin"]),
-        "log_lines":        [line for _, line in _AdminLogHandler.snapshot(limit=100)],
         "sde_status":       sde_status,
         "esi_status":       esi_status,
     }
@@ -116,31 +77,6 @@ def index():
         stats=stats,
         owner_id=session.get("owner_id"),
         is_site_owner=_is_site_owner(session.get("owner_id", 0)),
-    )
-
-
-@admin_bp.route("/stream")
-@require_admin
-def stream():
-    def _generate():
-        cursor = 0
-        initial = _AdminLogHandler.snapshot(limit=100)
-        for cursor, line in initial:
-            yield f"data: {json.dumps(line)}\n\n"
-
-        while True:
-            new_lines = _AdminLogHandler.lines_after(cursor)
-            if new_lines:
-                for cursor, line in new_lines:
-                    yield f"data: {json.dumps(line)}\n\n"
-            else:
-                yield ": keep-alive\n\n"
-            time.sleep(1.0)
-
-    return Response(
-        stream_with_context(_generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

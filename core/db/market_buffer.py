@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _regions: dict[int, list[dict]] = {}  # region_id → accumulated ESI order dicts
+_cache_hits: int = 0
+_cache_misses: int = 0
+
+
+def get_cache_stats() -> dict:
+    """Return buffer cache hit/miss counters."""
+    with _lock:
+        return {"cache_hits": _cache_hits, "cache_misses": _cache_misses}
 
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
@@ -103,10 +111,13 @@ def try_market_price(
     ``None`` when no matching orders exist).  Returns ``(False, None)`` if
     the region is **not** buffered — the caller should fall through to DuckDB.
     """
+    global _cache_hits, _cache_misses
     with _lock:
         buf = _regions.get(region_id)
         if buf is None:
+            _cache_misses += 1
             return False, None
+        _cache_hits += 1
         if buy:
             prices = [o["price"] for o in buf
                       if o.get("type_id") == type_id and o.get("is_buy_order")]

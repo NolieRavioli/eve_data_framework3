@@ -1,5 +1,5 @@
 # applications/sys_status/__init__.py
-"""System Status application — live DB writer metrics, file stats, and scheduler health."""
+"""System Status application — process health metrics and live bus log viewer."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ class SysStatusTool(BaseTool):
         id="sys_status",
         name="System Status",
         icon="⊞",
-        description="Live writer queue depth, database file stats, and process health.",
+        description="Process health metrics and live bus log viewer.",
         url_prefix="/admin/sys_status",
         required_scopes=[],
         nav_weight=90,

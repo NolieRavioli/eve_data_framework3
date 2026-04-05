@@ -171,4 +171,24 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.cancel-btn[data-task-id]').forEach(function (btn) {
     btn.addEventListener('click', function () { cancelTask(this.dataset.taskId, this); });
   });
+
+  // ── Tab switching ──────────────────────────────────────────────────
+  var tabBtns  = document.querySelectorAll('.tab-btn[data-tab]');
+  var tabPanes = document.querySelectorAll('.tab-panel');
+
+  tabBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = this.dataset.tab;
+      tabBtns.forEach(function (b) {
+        var isActive = b.dataset.tab === target;
+        b.classList.toggle('active', isActive);
+        b.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
+        b.style.color             = isActive ? 'var(--txt)' : 'var(--muted)';
+        b.style.fontWeight        = isActive ? '600' : '';
+      });
+      tabPanes.forEach(function (p) {
+        p.style.display = p.id === 'tab-' + target ? '' : 'none';
+      });
+    });
+  });
 });

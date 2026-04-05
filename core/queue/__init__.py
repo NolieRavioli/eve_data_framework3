@@ -1,4 +1,4 @@
-"""Task queue — re-exports the public API from scheduler, streams, and writer."""
+"""Task queue — re-exports the public API from scheduler, streams, writer, and db gateway."""
 
 from core.queue.scheduler import (
     Task,
@@ -18,6 +18,22 @@ from core.db.writer import (
     db_executemany,
     db_executemany_nowait,
 )
+from core.queue.db import (
+    write_public,
+    write_public_many,
+    write_public_nowait,
+    write_public_many_nowait,
+    write_public_dataframe,
+    read_public,
+    read_public_one,
+    read_public_scalar,
+    write_private,
+    write_private_many,
+    read_private,
+    read_private_one,
+    get_db_gateway_stats,
+    start_db_stats_publisher,
+)
 
 __all__ = [
     "Task",
@@ -35,4 +51,19 @@ __all__ = [
     "db_write_nowait",
     "db_executemany",
     "db_executemany_nowait",
+    # DB gateway
+    "write_public",
+    "write_public_many",
+    "write_public_nowait",
+    "write_public_many_nowait",
+    "write_public_dataframe",
+    "read_public",
+    "read_public_one",
+    "read_public_scalar",
+    "write_private",
+    "write_private_many",
+    "read_private",
+    "read_private_one",
+    "get_db_gateway_stats",
+    "start_db_stats_publisher",
 ]

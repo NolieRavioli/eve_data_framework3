@@ -34,22 +34,26 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     app.secret_key = settings.session_secret or os.getenv("FLASK_SECRET_KEY", "nolieravioli")
     app.config["RUNTIME_SETTINGS"] = settings
 
-    # Install the centralized telemetry handler before any blueprint imports
+    # Install the centralized bus handler before any blueprint imports
     # so that blueprint-level log calls are captured from the start.
-    from core.telemetry import install as _install_telemetry
-    _install_telemetry()
+    from core.bus import install_bus_handler as _install_bus_handler
+    _install_bus_handler()
 
-    # Attach the flask-sock WebSocket extension and register the telemetry endpoint.
+    # Start the periodic db/stats publisher (publishes to the bus every 5s).
+    from core.queue.db import start_db_stats_publisher
+    start_db_stats_publisher()
+
+    # Attach the flask-sock WebSocket extension and register the bus endpoint.
     # flask-sock is an optional dependency — the app starts normally without it,
-    # but the /telemetry/ws endpoint will be unavailable until it is installed.
+    # but the /bus endpoint will be unavailable until it is installed.
     try:
         from flask_sock import Sock
-        from core.telemetry.websocket import telemetry_ws
+        from core.bus.websocket import bus_ws
         sock = Sock(app)
-        sock.route("/telemetry/ws")(telemetry_ws)
+        sock.route("/bus")(bus_ws)
     except ImportError:
         logger.warning(
-            "[web] flask-sock not installed — /telemetry/ws WebSocket disabled. "
+            "[web] flask-sock not installed — /bus WebSocket disabled. "
             "Run: pip install flask-sock"
         )
 
