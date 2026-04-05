@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.esi_browser import routes
 
 

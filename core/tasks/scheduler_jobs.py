@@ -1,4 +1,4 @@
-"""core/scheduler/jobs.py — hardcoded job catalog.
+"""core/tasks/scheduler_jobs.py — hardcoded job catalog.
 
 Call register_all_jobs(engine) once at startup.  The scheduler engine calls
 this after its own table is ready so that job rows exist before the first tick.
@@ -16,7 +16,6 @@ Fields:
 
 from __future__ import annotations
 
-import importlib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -97,7 +96,7 @@ CATALOG: list[dict] = _build_catalog()
 
 def register_all_jobs(engine) -> None:
     """Upsert all catalog entries into the scheduler_jobs table via *engine*."""
-    from core.scheduler.db import upsert_job_registration
+    from core.tasks.scheduler_db import upsert_job_registration
     for job in CATALOG:
         engine.register(
             job_id=job["job_id"],

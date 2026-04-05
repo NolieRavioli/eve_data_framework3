@@ -1,24 +1,157 @@
-"""Core infrastructure for the applications layer.
+"""applications/_api.py — single interface for all application development.
 
-To expose new core functionality to an application:
+Every application (BlueprintTool, routes, workers) imports exclusively from here.
+This file is the boundary between core infrastructure and the applications layer.
+
+Usage:
+    from applications._api import BaseTool, ToolManifest, base_ctx, require_role
+    from applications._api import db, tasks, scheduler, sde, esi, char_data
+
+Plugin framework (BaseTool, ToolManifest, ToolRegistry) lives here rather than
+in core/ — it only exists to support applications and has no business in core
+infrastructure.
+
+To expose new core functionality:
     1. Import it here from core.* (or analysis.* for collector functions).
     2. Add the name to __all__.
-    No adapter class or wrapper needed.
-
-Namespace objects (db, raw_esi, tasks, …) preserve the existing call-site API
-(e.g. ``db.query(...)``, ``tasks.enqueue(...)``).  Two thin inline classes
-(``_DB``, ``_CharData``) exist because they manage connection lifecycles or
-ORM sessions — not as an architectural pattern to copy.
+    No wrapper class needed unless connection lifecycle management is required.
 """
 from __future__ import annotations
 
 import types
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any
 
-import sqlalchemy as _sa
+from flask import Blueprint, Flask
+
+# ── Auth / nav helpers (re-exported from core.web) ────────────────────────────
+from core.web.context import base_ctx
+from core.web.auth import require_login, require_admin, require_role
+
+# ── Config ────────────────────────────────────────────────────────────────────
+from core.config import get_runtime_settings
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plugin framework — BaseTool, ToolManifest, ToolRegistry
+# (previously in core/plugin/base.py)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+#: Valid values for ToolManifest.access_level.
+ACCESS_LEVELS = ("public", "user", "admin", "site_owner")
+
+
+@dataclass
+class ToolManifest:
+    """Static metadata about a tool, used for nav injection and scope-gating."""
+
+    #: Short, URL-safe identifier (e.g. "market_browser").
+    id: str
+    #: Human-readable display name shown in the sidebar.
+    name: str
+    #: Single emoji or symbol used as the nav icon.
+    icon: str
+    #: One-line description shown in tooltips / future tool catalogue.
+    description: str
+    #: URL prefix for the tool's blueprint (e.g. "/tools/market").
+    url_prefix: str
+    #: ESI scopes required to use this tool; empty list = public tool.
+    required_scopes: list[str] = field(default_factory=list)
+    #: Lower value = higher position in the nav list.
+    nav_weight: int = 50
+    #: Sidebar section this tool appears in (visual grouping only).
+    #: "overview" | "tools" | "apps" | "admin" | "" (hidden)
+    nav_section: str = "apps"
+    #: Who can access this tool.
+    #: "public" = no login | "user" = logged-in | "admin" = site admin
+    #: "site_owner" = site owner only
+    access_level: str = "user"
+    #: Named role required to access this tool (in addition to access_level).
+    required_role: str | None = None
+
+
+class BaseTool(ABC):
+    """Abstract base that every tool must implement."""
+
+    manifest: ToolManifest
+
+    @abstractmethod
+    def create_blueprint(self) -> Blueprint:
+        """Return a configured Flask Blueprint for this tool."""
+        ...
+
+
+class ToolRegistry:
+    """Central registry that collects tools and exposes them to Flask and templates."""
+
+    def __init__(self) -> None:
+        self._tools: list[BaseTool] = []
+
+    def register(self, tool: BaseTool) -> None:
+        self._tools.append(tool)
+
+    def register_blueprints(self, app: Flask) -> None:
+        """Register each tool's blueprint with the Flask app."""
+        for tool in self._tools:
+            bp = tool.create_blueprint()
+            prefix = tool.manifest.url_prefix
+            if prefix:
+                app.register_blueprint(bp, url_prefix=prefix)
+            else:
+                app.register_blueprint(bp)
+
+    def nav_entries(self) -> list[ToolManifest]:
+        """Return manifests sorted by nav_weight (ascending)."""
+        return sorted((t.manifest for t in self._tools), key=lambda m: m.nav_weight)
+
+    def check_scopes(self, granted: list[str]) -> dict[str, bool]:
+        """Return tool_id → bool: whether all required scopes are in *granted*."""
+        granted_set = set(granted)
+        return {
+            t.manifest.id: all(s in granted_set for s in t.manifest.required_scopes)
+            for t in self._tools
+        }
+
+    def check_access(
+        self,
+        *,
+        is_logged_in: bool = False,
+        is_admin: bool = False,
+        is_site_owner: bool = False,
+        roles: list[str] | None = None,
+    ) -> dict[str, bool]:
+        """Return tool_id → bool indicating whether the current session may see this tool."""
+        roles_set = set(roles or [])
+        result: dict[str, bool] = {}
+        for t in self._tools:
+            level = t.manifest.access_level
+            required_role = t.manifest.required_role
+            if level == "public":
+                ok = True
+            elif level == "user":
+                if is_admin or is_site_owner:
+                    ok = True
+                elif is_logged_in:
+                    ok = (not required_role) or (required_role in roles_set)
+                else:
+                    ok = False
+            elif level == "admin":
+                ok = is_admin or is_site_owner
+            elif level == "site_owner":
+                ok = is_site_owner
+            else:
+                ok = False
+            result[t.manifest.id] = ok
+        return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Infrastructure adapters
+# (previously in applications/_adapters.py)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 # ── SDE ───────────────────────────────────────────────────────────────────────
-import core.sde as sde  # the module itself is the public API
+import core.db.sde as sde  # the module itself is the public API
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 from core.db import publicDB as _pub
@@ -178,7 +311,7 @@ queue_info = types.SimpleNamespace(
 )
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-from core.scheduler import get_engine as _get_scheduler
+from core.tasks.scheduler import get_engine as _get_scheduler
 
 
 def _scheduler_list_jobs() -> list[dict]:
@@ -260,16 +393,24 @@ def get_regions() -> list[dict]:
     except Exception:
         return []
 
-# ── Market write helpers (for application workers that need to write orders) ──
-upsert_market_orders = _pub.upsert_market_orders
-replace_market_orders_for_region = _pub.replace_market_orders_for_region
-mark_region_market_refreshed = _pub.mark_region_market_refreshed
 
-# ── System status / monitoring ────────────────────────────────────────────────
+# ── Bus / monitoring ──────────────────────────────────────────────────────────
 from core.bus.handler import bus_handler
 from core.bus import get_bus_log, get_all_topics, get_recent, publish as bus_publish
 
 __all__ = [
+    # Plugin framework
+    "ACCESS_LEVELS",
+    "ToolManifest",
+    "BaseTool",
+    "ToolRegistry",
+    # Auth / nav / config
+    "base_ctx",
+    "require_login",
+    "require_admin",
+    "require_role",
+    "get_runtime_settings",
+    # Infrastructure adapters
     "sde",
     "db",
     "char_data",
@@ -285,9 +426,6 @@ __all__ = [
     "db_admin",
     "get_regions",
     "DEFAULT_REGION",
-    "upsert_market_orders",
-    "replace_market_orders_for_region",
-    "mark_region_market_refreshed",
     "get_db_file_stats",
     "get_db_gateway_stats",
     "bus_handler",

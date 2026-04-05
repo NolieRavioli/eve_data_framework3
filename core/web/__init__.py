@@ -71,8 +71,8 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
 
     # Start the background scheduler engine and register all catalog jobs.
     # Import is deferred so collectors are importable at this point.
-    from core.scheduler import get_engine
-    from core.scheduler.jobs import register_all_jobs
+    from core.tasks.scheduler import get_engine
+    from core.tasks.scheduler_jobs import register_all_jobs
     _scheduler = get_engine()
     register_all_jobs(_scheduler)
     _scheduler.start()

@@ -1,4 +1,4 @@
-"""core/scheduler/__init__.py — SchedulerEngine daemon.
+"""core/tasks/scheduler.py — SchedulerEngine daemon.
 
 A background thread that fires registered jobs when their next_run is due.
 Jobs and their state (enabled, last_run, next_run) are persisted in the
@@ -6,11 +6,11 @@ public DuckDB `scheduler_jobs` table so user customisations survive restarts.
 
 Usage (called once from create_app):
 
-    from core.scheduler import SchedulerEngine
-    engine = SchedulerEngine()
+    from core.tasks.scheduler import get_engine
+    engine = get_engine()
     engine.start()          # starts daemon thread; safe to call multiple times
 
-Public interface (also exposed via SchedulerPort adapter):
+Public interface (also exposed via the scheduler adapter in applications/_api.py):
 
     engine.list_jobs()      -> list[dict]
     engine.set_enabled(job_id, enabled)
@@ -19,7 +19,6 @@ Public interface (also exposed via SchedulerPort adapter):
 
 from __future__ import annotations
 
-import importlib
 import logging
 import threading
 import time
@@ -58,7 +57,7 @@ class SchedulerEngine:
             self._fn_registry[job_id] = fn
 
         import core.db.publicDB as db
-        from core.scheduler.db import ensure_tables, upsert_job_registration
+        from core.tasks.scheduler_db import ensure_tables, upsert_job_registration
 
         con = db.connect()
         try:
@@ -87,12 +86,12 @@ class SchedulerEngine:
         logger.info("[Scheduler] Engine started (tick every %ds)", _TICK_INTERVAL)
 
     # ------------------------------------------------------------------
-    # Public interface (used by SchedulerPort adapter)
+    # Public interface (used by scheduler adapter in _api.py)
     # ------------------------------------------------------------------
 
     def list_jobs(self) -> list[dict]:
         import core.db.publicDB as db
-        from core.scheduler.db import ensure_tables, get_all_jobs
+        from core.tasks.scheduler_db import ensure_tables, get_all_jobs
 
         con = db.connect()
         try:
@@ -103,7 +102,7 @@ class SchedulerEngine:
 
     def set_enabled(self, job_id: str, enabled: bool) -> None:
         import core.db.publicDB as db
-        from core.scheduler.db import ensure_tables, set_enabled
+        from core.tasks.scheduler_db import ensure_tables, set_enabled
 
         con = db.connect()
         try:
@@ -116,7 +115,7 @@ class SchedulerEngine:
     def run_now(self, job_id: str) -> str:
         """Schedule *job_id* to fire on the next tick and return the task_id."""
         import core.db.publicDB as db
-        from core.scheduler.db import ensure_tables, run_job_now
+        from core.tasks.scheduler_db import ensure_tables, run_job_now
 
         con = db.connect()
         try:
@@ -142,7 +141,7 @@ class SchedulerEngine:
 
     def _tick(self) -> None:
         import core.db.publicDB as db
-        from core.scheduler.db import ensure_tables, get_due_jobs, mark_job_ran
+        from core.tasks.scheduler_db import ensure_tables, get_due_jobs, mark_job_ran
 
         con = db.connect()
         try:
@@ -170,7 +169,7 @@ class SchedulerEngine:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton — used by adapters.py and create_app()
+# Module-level singleton — used by _api.py and create_app()
 # ---------------------------------------------------------------------------
 
 _engine: SchedulerEngine | None = None

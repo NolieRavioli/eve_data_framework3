@@ -14,8 +14,8 @@ from flask import (
     session,
 )
 
-from applications._base import require_admin, base_ctx
-from applications._adapters import esi, esi_manifest, char_data, tokens
+from applications._api import require_admin, base_ctx
+from applications._api import esi, esi_manifest, char_data, tokens
 
 logger = logging.getLogger(__name__)
 esi_bp = Blueprint("esi_browser", __name__, template_folder="templates", static_folder="static")

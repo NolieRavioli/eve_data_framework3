@@ -9,8 +9,8 @@ import logging
 
 from flask import Blueprint, Response, abort, jsonify, render_template, session
 
-from applications._base import base_ctx, require_role
-from applications._adapters import queue_info, char_data, get_db_gateway_stats
+from applications._api import base_ctx, require_role
+from applications._api import queue_info, char_data, get_db_gateway_stats
 
 logger = logging.getLogger(__name__)
 tasks_bp = Blueprint("queue_viewer", __name__, template_folder="templates", static_folder="static")

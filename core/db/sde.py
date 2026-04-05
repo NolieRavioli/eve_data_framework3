@@ -346,7 +346,7 @@ def startup_load_sde(cfg: dict | None = None) -> None:
     print()
     if not _warehouse_ready():
         print(f"\r[SDE] no warehouse found at {_warehouse_path()} - building before server start", flush=True)
-        from analysis.sde_loader import update_sde
+        from core.tasks.sde_loader import update_sde
         update_sde()
         return
 

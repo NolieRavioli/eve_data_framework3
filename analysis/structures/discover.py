@@ -18,7 +18,7 @@ from datetime import datetime
 from core.db.publicDB import connect as public_connect
 from core.db import publicDB as sde_store
 from core.queue.esi_req import esi_get as _esi_get
-import core.sde as sde
+import core.db.sde as sde
 from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.config import CONFIG_PATH, load_config
 

@@ -43,7 +43,7 @@ This document is the authoritative reference for **human contributors** and **AI
 
 | Layer | Package | Purpose |
 |---|---|---|
-| **Core** | `core/` | Infrastructure: DB connections, ESI wrappers, SDE caches, task queue, scheduler, plugin framework |
+| **Core** | `core/` | Infrastructure: DB connections, ESI wrappers, SDE cache, task queue, scheduler |
 | **Analysis** | `analysis/` | Data-collection workers: market, structures, SDE pipeline, character data |
 | **Applications** | `applications/` | User-facing web tools — auto-discovered via `pkgutil` |
 | **Web** | `core/web/` | Flask app factory, SSO auth, Jinja2 templates |
@@ -80,6 +80,7 @@ core/                    # ── INFRASTRUCTURE ──────────�
     models/
       __init__.py        # re-exports: PublicBase, PrivateBase, User, SiteAdmin, Character
       identity.py        # User, SiteAdmin (DuckDB ORM), Character (SQLite ORM)
+    sde.py               # in-memory SDE caches: name_from_type_id, region_id_from_system_id, etc.
   esi/
     __init__.py          # (empty)
     auth.py              # OAuth token storage (Fernet-encrypted), CredentialManager, TokenDBManager
@@ -98,17 +99,12 @@ core/                    # ── INFRASTRUCTURE ──────────�
     scheduler.py         # enqueue(), get_task(), get_tasks_for_owner(), cancel_task(), clear_tasks()
     streams.py           # rate_stream(), log_stream() — SSE generators
     writer.py            # serialised DuckDB write thread: start_writer(), stop_writer(), db_write(), db_executemany()
-  sde/
-    __init__.py          # re-exports all of core.sde.cache
-    cache.py             # in-memory SDE caches: name_from_type_id, region_id_from_system_id, etc.
-  scheduler/
-    __init__.py          # SchedulerEngine class, get_engine() singleton
-    db.py                # ensure_tables(), upsert_job_registration()
-    jobs.py              # job catalog — add new scheduled jobs here
-  plugin/
-    __init__.py          # (docstring only)
-    base.py              # BaseTool, ToolManifest, ToolRegistry, ACCESS_LEVELS
-    web.py               # re-exports: base_ctx, require_login, require_admin, require_role
+  tasks/
+    __init__.py          # re-exports: get_engine, SchedulerEngine, register_all_jobs
+    sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
+    scheduler.py         # SchedulerEngine class, get_engine() singleton
+    scheduler_db.py      # ensure_tables(), upsert_job_registration()
+    scheduler_jobs.py    # job catalog — add new scheduled jobs here
   web/
     __init__.py          # create_app() — Flask app factory
     app.py               # start_webUI(settings) — entry point called by main.py
@@ -120,7 +116,6 @@ core/                    # ── INFRASTRUCTURE ──────────�
 
 analysis/                # ── DATA COLLECTION ─────────────────────────────────
   __init__.py            # (docstring only — no re-exports)
-  sde_loader.py          # SDE pipeline: download → unzip → prune → DuckDB warehouse
   character/
     __init__.py          # re-exports: populate_all
     populate.py          # per-character ESI → private SQLite (skills, wallet, assets)
@@ -134,8 +129,7 @@ analysis/                # ── DATA COLLECTION ──────────
 
 applications/            # ── USER-FACING TOOLS ───────────────────────────────
   __init__.py            # pkgutil auto-discovery, tool_registry singleton
-  _base.py               # re-exports: BaseTool, ToolManifest, base_ctx, require_*, get_runtime_settings
-  _adapters.py           # core infrastructure singletons for the applications layer (db, sde, tasks, …)
+  _api.py                # single interface: BaseTool, ToolManifest, base_ctx, require_* and all adapters
   dashboard/             # nav_section="overview" — character overview; access_level="user", required_role="dashboard"
   queue_viewer/          # nav_section="tools"    — live job progress + ESI rate SSE; access_level="user", required_role="queue"
   admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; access_level="admin"
@@ -143,8 +137,6 @@ applications/            # ── USER-FACING TOOLS ─────────�
   esi_browser/           # nav_section="admin"    — ESI operation explorer; access_level="admin"
   scheduler/             # nav_section="admin"    — background job management; access_level="admin", required_role="scheduler"
   market_browser/        # nav_section="apps"     — live market orders; access_level="public"
-  industry_calculator/   # nav_section="apps"     — manufacturing cost calc; access_level="user", required_role="industry"
-  isk_per_hour/          # nav_section="apps"     — ISK/hr rankings; access_level="user", required_role="isk_per_hour"
 
 utils/                   # ── UTILITIES & CODE GENERATION ─────────────────────
   build/
@@ -178,13 +170,13 @@ The three main layers have strict import rules. **Never violate these.**
 ### `analysis/`
 
 - Data collection workers. Import from `core.*` only.
-- Use `core.queue.esi_req` functions (`esi_get`, `esi_post`), `core.esi.auth` helpers, and `core.sde` directly.
+- Use `core.queue.esi_req` functions (`esi_get`, `esi_post`), `core.esi.auth` helpers, and `core.db.sde` directly.
 - Use `core.db.publicDB` directly **only** for owned-table DDL and write operations.
 - Never import from `applications/`.
 
 ### `applications/`
 
-- User-facing tools. **Import ONLY from `applications._base` and `applications._adapters`.**
+- User-facing tools. **Import ONLY from `applications._api`.**
 - Never import from `core.*` directly in an application's routes or `__init__`.
 - Worker files within an application may import from `analysis.*` to trigger data collection.
 
@@ -192,13 +184,12 @@ The three main layers have strict import rules. **Never violate these.**
 
 ```python
 # ✅ Correct — application routes.py
-from applications._base import base_ctx, require_role
-from applications._adapters import db, sde, tasks, esi
+from applications._api import base_ctx, require_role, db, sde, tasks, esi
 
 # ✅ Correct — analysis worker
 from core.queue.esi_req import esi_get
 from core.db import publicDB
-import core.sde as sde
+import core.db.sde as sde
 
 # ❌ Wrong — application importing from core directly
 from core.db.publicDB import connect          # forbidden in applications/
@@ -274,14 +265,13 @@ Each collector or application **owns** the DDL for its tables via an `ensure_tab
 | Table | Owner |
 |---|---|
 | `users`, `site_admins`, `user_roles` | `core/db/publicDB.py` |
-| `scheduler_jobs` | `core/scheduler/db.py` |
+| `scheduler_jobs` | `core/tasks/scheduler_db.py` |
 | `structures` | `analysis/structures/discover.py` |
 | `market_orders`, `market_region_cooldowns` | `analysis/market/regions.py` |
 | `market_structures` | `analysis/market/structures.py` |
 | `structures` cooldown columns | `analysis/market/structures.py` (`ensure_columns`) |
-| `isk_per_hour_results` | `applications/isk_per_hour/worker.py` |
 | `character_skills`, `character_wallet`, `character_assets` | `analysis/character/populate.py` |
-| SDE dimension tables (`dim_types`, etc.) | `analysis/sde_loader.py` |
+| SDE dimension tables (`dim_types`, etc.) | `core/tasks/sde_loader.py` |
 | `esi_routes`, `esi_schemas`, `esi_scopes` | `core/esi/registry.py` |
 
 ### Enrichment Pattern
@@ -413,8 +403,8 @@ access_token = fresh_data["access_token"]
 from core.db.publicDB import get_user_roles, grant_user_roles, revoke_user_role
 
 roles = get_user_roles(owner_id)                       # list[str]
-grant_user_roles(owner_id, ["industry"], granted_by=admin_id)
-revoke_user_role(owner_id, "isk_per_hour")
+grant_user_roles(owner_id, ["dashboard", "queue"], granted_by=admin_id)
+revoke_user_role(owner_id, "queue")
 ```
 
 ---
@@ -442,11 +432,11 @@ Use `queue="public"` for market data, SDE, and other public tasks. Use `queue="p
 
 ## Scheduler
 
-`core/scheduler/` runs a background thread (`_TICK_INTERVAL = 30s`) that fires jobs when their `next_run` is due. Job metadata is persisted in `scheduler_jobs` (DuckDB) so enabled/disabled state and intervals survive restarts.
+`core/tasks/scheduler.py` runs a background thread (`_TICK_INTERVAL = 30s`) that fires jobs when their `next_run` is due. Job metadata is persisted in `scheduler_jobs` (DuckDB) so enabled/disabled state and intervals survive restarts.
 
 ### Job Catalog
 
-All jobs are declared in `core/scheduler/jobs.py`. To add a new job, append an entry to `_build_catalog()`:
+All jobs are declared in `core/tasks/scheduler_jobs.py`. To add a new job, append an entry to `_build_catalog()`:
 
 ```python
 try:
@@ -467,7 +457,7 @@ The `try/except` guard prevents import errors in any one collector from blocking
 ### Public Interface
 
 ```python
-from core.scheduler import get_engine
+from core.tasks.scheduler import get_engine
 
 engine = get_engine()
 engine.list_jobs()              # list[dict]
@@ -478,7 +468,7 @@ engine.run_now("job_id")        # returns task_id (str)
 Via the adapter (applications):
 
 ```python
-from applications._adapters import scheduler
+from applications._api import scheduler
 
 scheduler.list_jobs()
 scheduler.set_enabled("market_refresh", False)
@@ -513,7 +503,7 @@ ToolManifest(
 ### Access-Control Decorators
 
 ```python
-from applications._base import require_login, require_admin, require_role
+from applications._api import require_login, require_admin, require_role
 
 @my_bp.route("/")
 @require_role("my_tool")   # preferred — named role; admins bypass automatically
@@ -630,7 +620,7 @@ Otherwise leave `analysis/__init__.py` alone — schedulers and routes import di
 
 ## Plugin Framework
 
-`core/plugin/` provides the base classes that wire infrastructure to applications.
+`applications/_api.py` provides the plugin framework classes that wire infrastructure to applications.
 
 ### `BaseTool` and `ToolManifest`
 
@@ -643,14 +633,14 @@ Otherwise leave `analysis/__init__.py` alone — schedulers and routes import di
 
 `ToolRegistry` is the global singleton that collects all `BaseTool` instances and exposes them to the Flask app factory and sidebar renderer.
 
-### Infrastructure Singletons (`applications/_adapters.py`)
+### Infrastructure Singletons (`applications/_api.py`)
 
-All singletons live directly in `applications/_adapters.py` and are imported from `core.*` without an intermediate adapter layer.
+All singletons live directly in `applications/_api.py` and are imported from `core.*` without an intermediate adapter layer.
 
 | Singleton | Key Methods / Notes |
 |-----------|--------------------|
 | `db` | `query()`, `query_one()`, `scalar()`, `private_query()`, `market_price()`, `connect()` |
-| `sde` | `core.sde` module — all SDE lookup functions |
+| `sde` | `core.db.sde` module — all SDE lookup functions |
 | `raw_esi` | `get()`, `post()`, `request()` |
 | `token_resolution` | `resolve_default_owner_id()`, `pick_token()`, `fresh_token()` |
 | `esi` | `execute(op_id, ...)`, `fetch_pages(op_id, ...)` |
@@ -665,10 +655,10 @@ All singletons live directly in `applications/_adapters.py` and are imported fro
 
 ### Exposing New Core Functionality
 
-No adapter class is needed. Add one import line to `applications/_adapters.py` and add the name to `__all__`:
+No adapter class is needed. Add one import line to `applications/_api.py` and add the name to `__all__`:
 
 ```python
-# applications/_adapters.py
+# applications/_api.py
 from core.my_module import my_function  # ← one line
 
 __all__ = [..., "my_function"]
@@ -677,7 +667,7 @@ __all__ = [..., "my_function"]
 Then use it in an application:
 
 ```python
-from applications._adapters import my_function
+from applications._api import my_function
 ```
 
 ---
@@ -780,7 +770,7 @@ Use this when you need to expose a new piece of core infrastructure to applicati
 
 Decide which `core/` sub-module is the right home. Database-related helpers go in `core/db/publicDB.py`; ESI-related helpers go in `core/esi/`.
 
-**Step 2 — Add an import to `applications/_adapters.py`.**
+**Step 2 — Add an import to `applications/_api.py`.**
 
 ```python
 from core.my_module import my_function
@@ -791,10 +781,10 @@ __all__ = [..., "my_function"]
 No adapter class is needed. Applications then import it normally:
 
 ```python
-from applications._adapters import my_function
+from applications._api import my_function
 ```
 
-If the function needs to be grouped under an existing namespace object (e.g. on `db.my_helper`) add it to the relevant `SimpleNamespace` or inline class in `_adapters.py`.
+If the function needs to be grouped under an existing namespace object (e.g. on `db.my_helper`) add it to the relevant `SimpleNamespace` or inline class in `_api.py`.
 
 ---
 
@@ -860,7 +850,7 @@ See [Registering a New Scheduled Job](#registering-a-new-scheduled-job) below.
 **Step 5 — Optionally enqueue from an application route.**
 
 ```python
-from applications._adapters import tasks
+from applications._api import tasks
 from analysis.my_domain.worker import fetch_my_domain_data
 
 task_id = tasks.enqueue("My Domain Refresh", fetch_my_domain_data, queue="public")
@@ -887,7 +877,7 @@ applications/my_tool/
 **Step 2 — Write `__init__.py`.**
 
 ```python
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.my_tool import routes
 
 
@@ -918,8 +908,7 @@ Set `required_role=None` if no named role is required (access_level check only).
 
 ```python
 from flask import Blueprint, render_template
-from applications._base import base_ctx, require_role
-from applications._adapters import db, sde
+from applications._api import base_ctx, require_role, db, sde
 
 my_bp = Blueprint("my_tool", __name__,
                   template_folder="templates",
@@ -960,7 +949,7 @@ Document the new role name in `example.config.yaml` under the `Auth` section com
 
 ### Registering a New Scheduled Job
 
-**Step 1 — Open `core/scheduler/jobs.py`.**
+**Step 1 — Open `core/tasks/scheduler_jobs.py`.**
 
 Find `_build_catalog()`. Add a new try/except block:
 

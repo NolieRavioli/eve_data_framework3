@@ -1,4 +1,14 @@
-"""Public database initialization — ensures DuckDB schema and private data dirs exist."""
+"""Public database initialization — ensures DuckDB schema and private data dirs exist.
+
+This package owns all persistent data storage:
+  publicDB.py      — DuckDB connections, schema, and write helpers
+  privateDB.py     — per-owner SQLite (ORM via SQLAlchemy)
+  sde.py           — in-memory SDE cache backed by DuckDB (moved from core/sde/)
+  market_buffer.py — ephemeral in-process buffer for market order writes
+  writer.py        — serialized DuckDB write thread
+  reader.py        — thread-safe read helpers
+  stats.py         — DB usage metrics
+"""
 
 import logging
 import os
@@ -65,7 +75,7 @@ def ensure_schema() -> None:
 
 def warm_caches(sde_cfg: dict | None = None) -> None:
     """Load SDE dimension data into the in-memory lookup caches."""
-    from core.sde import startup_load_sde
+    from core.db.sde import startup_load_sde
     logger.info("Warming SDE in-memory caches...")
     startup_load_sde(sde_cfg or {})
     logger.info("SDE caches warm.")

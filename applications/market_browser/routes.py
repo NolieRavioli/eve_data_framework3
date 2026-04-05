@@ -8,9 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-from applications._adapters import db, tasks, get_regions
-from applications._base import base_ctx
-from applications.market_browser.worker import refresh_region
+from applications._api import db, tasks, get_regions, base_ctx
 from analysis.market.regions import fetch_all_market_data
 
 logger = logging.getLogger(__name__)
@@ -145,26 +143,6 @@ def orders():
         "sell_volume": sell_volume, "buy_volume": buy_volume,
     })
     return render_template("market_browser.html", **ctx)
-
-
-@market_bp.route("/refresh", methods=["POST"])
-def refresh():
-    try:
-        region_id = int(request.form.get("region_id", 0))
-    except (ValueError, TypeError):
-        region_id = 0
-
-    if not region_id:
-        return redirect(url_for("market_browser.index"))
-
-    task_id = tasks.enqueue(
-        f"Market refresh — region {region_id}",
-        refresh_region,
-        region_id,
-        owner_id=0,
-        queue="public",
-    )
-    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
 
 
 @market_bp.route("/refresh_all", methods=["POST"])

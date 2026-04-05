@@ -97,8 +97,8 @@ def _discover_loggers(root: Path) -> list[str]:
 
 
 def _get_sde_defaults() -> dict[str, bool]:
-    """Read _SECTION_DEFAULTS from core.sde.cache without side-effects."""
-    from core.sde.cache import _SECTION_DEFAULTS  # type: ignore
+    """Read _SECTION_DEFAULTS from core.db.sde without side-effects."""
+    from core.db.sde import _SECTION_DEFAULTS  # type: ignore
     return dict(_SECTION_DEFAULTS)
 
 

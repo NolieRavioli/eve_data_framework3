@@ -16,8 +16,8 @@ from flask import (
     session,
 )
 
-from applications._base import require_admin, base_ctx, get_runtime_settings
-from applications._adapters import db_admin, esi_registry
+from applications._api import require_admin, base_ctx, get_runtime_settings
+from applications._api import db_admin, esi_registry
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__, template_folder="templates", static_folder="static")

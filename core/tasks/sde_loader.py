@@ -44,7 +44,7 @@ from core.db.publicDB import (
     compute_file_sha256,
 )
 from core.esi.registry import refresh_esi_spec_registry
-from core.sde import refresh_all_caches
+from core.db.sde import refresh_all_caches
 
 logger = logging.getLogger(__name__)
 

@@ -13,8 +13,8 @@ from flask import (
     request,
 )
 
-from applications._base import require_admin, base_ctx
-from applications._adapters import db_admin
+from applications._api import require_admin, base_ctx
+from applications._api import db_admin
 
 logger = logging.getLogger(__name__)
 db_bp = Blueprint("db_browser", __name__, template_folder="templates", static_folder="static")

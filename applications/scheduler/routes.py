@@ -7,8 +7,8 @@ import logging
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-from applications._base import base_ctx, require_admin
-from applications._adapters import scheduler
+from applications._api import base_ctx, require_admin
+from applications._api import scheduler
 
 logger = logging.getLogger(__name__)
 scheduler_bp = Blueprint(

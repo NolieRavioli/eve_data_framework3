@@ -1,4 +1,4 @@
-"""core/scheduler/db.py — DDL and CRUD for the scheduler_jobs table.
+"""core/tasks/scheduler_db.py — DDL and CRUD for the scheduler_jobs table.
 
 The scheduler_jobs table lives in the public DuckDB database.
 Every call to ensure_tables() is idempotent.

@@ -8,8 +8,8 @@ import logging
 import jwt
 from flask import Blueprint, redirect, render_template, session, url_for
 
-from applications._base import base_ctx, require_role
-from applications._adapters import char_data, esi_registry
+from applications._api import base_ctx, require_role
+from applications._api import char_data, esi_registry
 
 logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint("dashboard", __name__, template_folder="templates", static_folder="static")

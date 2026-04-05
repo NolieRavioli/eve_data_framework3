@@ -129,8 +129,8 @@ Change this list to grant or restrict access to applications for new users by de
 ```python
 from core.db.publicDB import grant_user_roles, revoke_user_role
 
-grant_user_roles(owner_id, ["industry", "isk_per_hour"], granted_by=admin_owner_id)
-revoke_user_role(owner_id, "isk_per_hour")
+grant_user_roles(owner_id, ["dashboard", "queue"], granted_by=admin_owner_id)
+revoke_user_role(owner_id, "queue")
 ```
 
 ### Triggering Manual Data Collection
@@ -231,8 +231,6 @@ Cooldown settings that prevent re-fetching recently inaccessible structures. See
 | `market_browser` | `/market` | Public (no login) | Browse live market orders by region and item type |
 | `dashboard` | `/dashboard` | Role: `dashboard` | Character overview and quick links |
 | `queue_viewer` | `/queue` | Role: `queue` | Live job progress and ESI rate monitor |
-| `industry_calculator` | `/industry` | Role: `industry` | Calculate manufacturing costs and margins |
-| `isk_per_hour` | `/isk_per_hour` | Role: `isk_per_hour` | Rank blueprints by ISK earned per hour |
 | `admin_panel` | `/admin` | Admin only | Logs, stats, and user management |
 | `db_browser` | `/admin/db_browser` | Admin only | DuckDB/SQLite schema and query browser |
 | `esi_browser` | `/admin/esi` | Admin only | Browse all available ESI endpoints |
@@ -242,7 +240,7 @@ Cooldown settings that prevent re-fetching recently inaccessible structures. See
 
 ## Background Scheduler
 
-The scheduler (`core/scheduler/`) runs a background thread that ticks every 30 seconds and fires registered jobs when their `next_run` is due. Job state (enabled, last run, next run, interval) is persisted in the DuckDB `scheduler_jobs` table so customizations survive restarts.
+The scheduler (`core/tasks/scheduler.py`) runs a background thread that ticks every 30 seconds and fires registered jobs when their `next_run` is due. Job state (enabled, last run, next run, interval) is persisted in the DuckDB `scheduler_jobs` table so customizations survive restarts.
 
 ### Default Jobs
 
@@ -255,7 +253,7 @@ The scheduler (`core/scheduler/`) runs a background thread that ticks every 30 s
 Manage jobs through the **Scheduler** admin panel (`/admin/scheduler`) or the `scheduler` adapter in code:
 
 ```python
-from applications._adapters import scheduler
+from applications._api import scheduler
 
 scheduler.list_jobs()              # list[dict] — all registered jobs
 scheduler.set_enabled("market_refresh", True)
@@ -278,6 +276,9 @@ core/                    # infrastructure — never import from applications/
     publicDB.py          # DuckDB connect(), CRUD helpers, identity-table DDL
     privateDB.py         # SQLite per-owner: initialize, get_private_session()
     models/identity.py   # User, SiteAdmin (DuckDB ORM), Character (SQLite ORM)
+    sde.py               # in-memory SDE lookup caches
+    reader.py            # query_rows(), query_one(), query_scalar(), get_db_file_stats()
+    writer.py            # DuckDB write thread (serialises public DB writes)
   esi/
     auth.py              # OAuth token storage (Fernet-encrypted), refresh helpers
     registry.py          # ESI OpenAPI spec fetcher and DuckDB registry
@@ -285,23 +286,15 @@ core/                    # infrastructure — never import from applications/
     personal/            # AUTO-GENERATED domain wrappers (character-scoped)
     corp/                # AUTO-GENERATED domain wrappers (corporation-scoped)
     public/              # AUTO-GENERATED domain wrappers (public)
-  db/
-    reader.py            # query_rows(), query_one(), query_scalar(), get_db_file_stats()
-    writer.py            # DuckDB write thread (serialises public DB writes)
   queue/
     esi_req.py           # esi_request(), esi_get(), esi_post() — ALL ESI HTTP
     scheduler.py         # enqueue(), get_task(), cancel_task()
     streams.py           # SSE rate_stream(), log_stream()
-  sde/
-    cache.py             # in-memory SDE lookup caches
-  scheduler/
-    __init__.py          # SchedulerEngine, get_engine()
-    jobs.py              # job catalog — add new scheduled jobs here
-    db.py                # scheduler_jobs table DDL
-  plugin/
-    base.py              # BaseTool, ToolManifest, ToolRegistry
-    adapters.py          # live adapter singletons (db, sde, esi, tasks, —)
-    web.py               # base_ctx(), require_login/admin/role decorators
+  tasks/
+    sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
+    scheduler.py         # SchedulerEngine, get_engine()
+    scheduler_jobs.py    # job catalog — add new scheduled jobs here
+    scheduler_db.py      # scheduler_jobs table DDL
   web/
     __init__.py          # create_app() — Flask app factory
     app.py               # start_webUI() entry point
@@ -310,7 +303,6 @@ core/                    # infrastructure — never import from applications/
     home.py / setup.py   # home and setup wizard blueprints
 
 analysis/                # data collection workers
-  sde_loader.py          # SDE download ? unzip ? prune ? DuckDB warehouse
   character/populate.py  # per-owner ESI ? private SQLite (skills, wallet, assets)
   market/
     regions.py           # NPC region market orders
@@ -318,13 +310,10 @@ analysis/                # data collection workers
   structures/discover.py # discover + enrich public structures
 
 applications/            # user-facing web tools (auto-discovered)
-  _base.py               # re-exports: BaseTool, ToolManifest, require_*, base_ctx
-  _adapters.py           # core infrastructure singletons for the applications layer (db, sde, tasks, …)
+  _api.py                # single interface: BaseTool, ToolManifest, base_ctx, require_* and all adapters
   dashboard/             # character overview
   queue_viewer/          # live task queue + ESI rate monitor
   market_browser/        # live market order browser
-  industry_calculator/   # manufacturing cost calculator
-  isk_per_hour/          # blueprint ISK/hr ranker
   admin_panel/           # logs, stats, user management
   db_browser/            # DuckDB/SQLite query browser
   esi_browser/           # ESI operation explorer
@@ -337,7 +326,7 @@ utils/build/             # ESI client code generation (run via build.py)
 
 - `core/` — infrastructure. No imports from `applications/` or `analysis/`.
 - `analysis/` — data collectors. Import from `core.*` only.
-- `applications/` — web applications. Import from `applications._base` and `applications._adapters` **only** — never directly from `core.*`.
+- `applications/` — web applications. Import from `applications._api` **only** — never directly from `core.*`.
 
 ---
 
@@ -358,7 +347,7 @@ applications/my_tool/
 ### `__init__.py`
 
 ```python
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.my_tool import routes
 
 class MyTool(BaseTool):
@@ -391,8 +380,7 @@ Set `required_role=None` if no named role is required (access_level check only).
 
 ```python
 from flask import Blueprint, render_template
-from applications._base import base_ctx, require_role
-from applications._adapters import db, sde
+from applications._api import base_ctx, require_role, db, sde
 
 my_bp = Blueprint("my_tool", __name__,
                   template_folder="templates",
@@ -422,12 +410,12 @@ Use `@require_admin` for admin-only routes. Avoid bare `@require_login` on new r
 {% endblock %}
 ```
 
-### Available adapters (`applications._adapters`)
+### Available adapters (`applications._api`)
 
 | Adapter | Type | Description |
 |---------|------|-------------|
 | `db` | `_LiveDBAdapter` | `query()`, `query_one()`, `scalar()`, `private_query()`, `market_price()` |
-| `sde` | `core.sde` module | All SDE lookup functions directly |
+| `sde` | `core.db.sde` module | All SDE lookup functions directly |
 | `raw_esi` | `_LiveRawESIAdapter` | `get()`, `post()`, `request()` — rate-limited HTTP |
 | `esi` | `_LiveESIAdapter` | `execute(op_id, ...)`, `fetch_pages(op_id, ...)` — typed client |
 | `tokens` | `_LiveTokenAdapter` | `get(owner_id)` — raw token map |
@@ -445,7 +433,7 @@ Use `@require_admin` for admin-only routes. Avoid bare `@require_login` on new r
 Long-running work (data fetches, calculations) should be enqueued rather than blocking a request:
 
 ```python
-from applications._adapters import tasks
+from applications._api import tasks
 
 def my_worker(owner_id: int) -> None:
     # runs in background thread — logging is streamed to the browser
@@ -541,7 +529,7 @@ total_pages = int(resp.headers.get("X-Pages", 1))
 
 ### Registering a Scheduled Job
 
-Add an entry to `core/scheduler/jobs.py`:
+Add an entry to `core/tasks/scheduler_jobs.py`:
 
 ```python
 try:
@@ -563,7 +551,7 @@ The scheduler will auto-upsert the job on next startup.
 
 ## Developer Guide — Core Layer
 
-The `core/` layer is the infrastructure backbone. Applications import from `applications._adapters` — they should not import from `core.*` directly. Analysis workers import from `core.*` directly.
+The `core/` layer is the infrastructure backbone. Applications import from `applications._api` — they should not import from `core.*` directly. Analysis workers import from `core.*` directly.
 
 ### Key modules
 
@@ -580,10 +568,8 @@ The `core/` layer is the infrastructure backbone. Applications import from `appl
 | `core.queue.scheduler` | `enqueue()`, `get_task()`, `cancel_task()`, task queue internals |
 | `core.db.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()`, `get_writer_stats()` |
 | `core.db.reader` | Read helpers — `query_rows()`, `query_one()`, `query_scalar()`, `get_db_file_stats()` |
-| `core.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
-| `core.scheduler` | `SchedulerEngine`, `get_engine()` — background job scheduler |
-| `core.plugin.base` | `BaseTool`, `ToolManifest`, `ToolRegistry` |
-| `core.plugin.web` | `base_ctx()`, `require_login`, `require_admin`, `require_role` |
+| `core.db.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
+| `core.tasks.scheduler` | `SchedulerEngine`, `get_engine()` — background job scheduler |
 | `core.web` | `create_app()` Flask factory, SSO auth blueprint |
 
 ### Adding a new private DB model

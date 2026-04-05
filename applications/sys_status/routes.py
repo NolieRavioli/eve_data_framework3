@@ -9,7 +9,7 @@ import threading
 
 from flask import Blueprint, jsonify, render_template
 
-from applications._base import base_ctx, require_admin
+from applications._api import base_ctx, require_admin
 
 logger = logging.getLogger(__name__)
 
