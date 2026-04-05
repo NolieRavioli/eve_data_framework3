@@ -106,6 +106,8 @@ def main() -> None:
 
     parser.add_argument("--fullclean", action="store_true", help="Delete all data and generated files (including __pycache__), then exit.")
 
+    parser.add_argument("--example-config", dest="example_config", action="store_true", help="Only generate example.config.yaml (discover all loggers, SDE keys); skip ESI steps.")
+
     args = parser.parse_args()
 
 
@@ -119,6 +121,22 @@ def main() -> None:
     if args.fullclean:
 
         _fullclean()
+
+        sys.exit(0)
+
+
+
+    # --example-config: only generate example.config.yaml then exit.
+
+    if args.example_config:
+
+        print("[build] Generating example.config.yaml\u2026")
+
+        from utils.build.config_codegen import generate_example_config
+
+        generate_example_config()
+
+        print("[build] example.config.yaml written.")
 
         sys.exit(0)
 
@@ -245,6 +263,20 @@ def main() -> None:
             f"  public={result['public_files']}"
 
         )
+
+
+
+    # Step 5: example.config.yaml — skip for narrow spec/gen/cache-only runs.
+
+    if not args.spec_only and not args.gen_only and not args.cache_only:
+
+        print("[build] Generating example.config.yaml\u2026")
+
+        from utils.build.config_codegen import generate_example_config
+
+        generate_example_config()
+
+        print("[build] example.config.yaml written.")
 
 
 

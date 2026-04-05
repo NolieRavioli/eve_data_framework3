@@ -5,7 +5,6 @@
 
 {% block content %}
 <div id="admin-app" hidden
-     data-url-bus="/bus"
      data-url-promote="{{ url_for('admin.promote') }}"
      data-url-demote="{{ url_for('admin.demote') }}"></div>
 <div class="pg-hd">
@@ -30,23 +29,7 @@
       <div class="stat"><span class="v">{{ stats.esi_status.compatibility_date if stats.esi_status.available else 'Missing' }}</span><span class="l">ESI Spec</span></div>
     </div>
 
-    <div class="admin-grid">
-      <section class="card">
-        <div class="section-head" style="margin-bottom:0.75rem">
-          <div>
-            <h2 style="margin-bottom:0.35rem">Live Console</h2>
-            <div class="muted" style="font-size:0.8rem">Server logs stream here continuously. The feed keeps the newest 500 lines.</div>
-          </div>
-          <div class="toolbar">
-            <span class="pill"><span id="status-dot" class="status-dot"></span><span id="sse-status">Connecting</span></span>
-            <button class="btn btn-g" id="toggle-scroll-btn" type="button">Auto-scroll <span id="scroll-label">ON</span></button>
-            <button class="btn btn-g" id="clear-console-btn" type="button">Clear</button>
-          </div>
-        </div>
-        <div id="console-output" class="console"></div>
-      </section>
-
-      <section class="card">
+    <section class="card">
         <div class="section-head" style="margin-bottom:0.75rem">
           <div>
             <h2 style="margin-bottom:0.35rem">User Management</h2>
@@ -97,7 +80,6 @@
           </table>
         </div>
       </section>
-    </div>
 
     <section class="card">
       <div class="section-head" style="margin-bottom:0.75rem">

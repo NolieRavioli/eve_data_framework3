@@ -47,8 +47,6 @@ class RuntimeSettings:
     # Python Console logging (console StreamHandler + per-logger overrides)
     global_log_level: str = "INFO"
     werkzeug_log_level: str = "INFO"
-    # Web Console logging (admin panel in-browser live log)
-    admin_panel_log_level: str = "DEBUG"
 
 
 _runtime_settings: Optional[RuntimeSettings] = None
@@ -77,7 +75,6 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
 
         runtime_cfg   = cfg.get("Runtime", {}) or {}
         py_console    = cfg.get("Python Console", {}) or {}
-        web_console   = cfg.get("Web Console", {}) or {}
 
         debug_mode   = _as_bool(runtime_cfg.get("debug") or os.getenv("EVE_DEBUG"))
         auto_install = _as_bool(runtime_cfg.get("auto_install") or os.getenv("EVE_AUTO_INSTALL"))
@@ -98,7 +95,6 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
 
         global_log_level      = _level(py_console.get("global_log_level"),      "EVE_LOG_LEVEL",         "INFO")
         werkzeug_log_level    = _level(py_console.get("werkzeug_log_level"),    "EVE_WERKZEUG_LOG_LEVEL", "INFO")
-        admin_panel_log_level = _level(web_console.get("admin_panel_global_log_level"), "EVE_ADMIN_LOG_LEVEL", "DEBUG")
 
         # Extra per-logger overrides from "Python Console" — any key that isn't
         # a known builtin is treated as "<logger_name>: LEVEL".
@@ -153,7 +149,6 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             trace_esi=trace_esi,
             global_log_level=global_log_level,
             werkzeug_log_level=werkzeug_log_level,
-            admin_panel_log_level=admin_panel_log_level,
         )
 
         return _runtime_settings
