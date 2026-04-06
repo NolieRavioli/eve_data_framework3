@@ -1,409 +1,926 @@
-"""
-tests/test_db_bench.py
+"""tests/test_db_bench.py
 -----------------------
-DuckDB operation benchmark — measures raw wall-clock time per row for each
-operation category and DERIVES empirical relative weights from those measurements.
+Realistic DuckDB (and SQLite) benchmark that mirrors the actual production
+database interaction patterns used by this codebase.
 
-The configured weights in Appendix B of website layout.md (READ=1, INSERT=1,
-UPSERT=2, …) are what we are trying to VALIDATE here — they are shown in the
-report for comparison only and play no role in the calculation.
+Each test class maps directly to an analysis worker or core write path so the
+timings reflect real serialisation overhead, writer-thread latency, and
+DuckDB/SQLite commit cost — not synthetic microbenchmarks.
 
-Operation counts (as requested):
-  bulk_load  200 000 rows
-  read       100 000 rows
-  insert     100 000 rows
-  upsert      50 000 rows
-  delete      50 000 rows
-  ddl         33 000 iterations  (sampled, extrapolated)
-  update      25 000 rows
-  truncate    20 000 iterations  (sampled, extrapolated)
+Power measurement
+-----------------
+Primary (Linux only):
+    Intel RAPL via sysfs: /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj
+    Reads the package-level µJ counter at the start and end of each test.
+    Watts = Δµ​J / Δt.  Net energy above baseline is reported per-row.
 
-Derived weight formula
-----------------------
-REFERENCE baseline = INSERT (fundamental single-row write)
+Fallback (Windows / no RAPL access):
+    psutil CPU% sampled every 500 ms in a background thread.
+    Reports net CPU% above idle baseline and CPU-seconds as proxy metric.
 
-  ms_per_row(op)   = total_elapsed_s(op) / n_rows(op) × 1000
-  derived_weight   = ms_per_row(op) / ms_per_row(INSERT)
+Baseline:
+    BENCH_BASELINE_S env var (default 60).  Set to 0 to skip baseline phase.
 
-INSERT gets derived_weight = 1.0 by definition.  Every other operation's
-derived weight expresses how many INSERT-equivalents it costs per row.
+Patterns tested
+---------------
+TestMarketRegionRefresh   — publicDB.replace_market_orders_for_region()
+                            (blocking DELETE + vectorised pandas DataFrame INSERT)
+TestStructureMarketOrders — publicDB.upsert_market_orders()
+                            (fire-and-forget db_executemany_nowait, INSERT ON CONFLICT)
+TestWriterCoalescing      — 20× db_executemany_nowait same SQL vs single blocking
+                            db_executemany — demonstrates writer coalesce gain
+TestStructureDiscovery    — batch seed via db_executemany, then per-structure
+                            single-row upsert loop (matches discover.py Phase 2)
+TestCharacterData         — SQLAlchemy SQLite sa.text row-by-row loop + commit
+                            (matches populate.py _fetch_skills/_fetch_assets)
+TestDDLOps                — CREATE TABLE IF NOT EXISTS × N + ALTER TABLE ADD
+                            COLUMN IF NOT EXISTS × N  (ensure_tables pattern)
+TestMarketCooldowns       — db_write_nowait single-row INSERT ON CONFLICT × N
+                            (matches publicDB.mark_region_market_refreshed)
 
-Upsert implementation note
---------------------------
-DuckDB's executemany("INSERT OR REPLACE ...") disables vectorisation when a
-PRIMARY KEY constraint is present and falls back to row-by-row processing
-(~860 µs/row observed).  The correct DuckDB upsert path is a staging-table
-+ INSERT … ON CONFLICT DO UPDATE SET, which lets the engine stay vectorised.
-This benchmark uses that path so the measurement reflects realistic DuckDB
-upsert cost rather than a Python-binding artefact.
-
-All Python-side data construction happens *before* the perf_counter window.
-DuckDB's generate_series() is used for table seeding outside timed windows.
+Setup
+-----
+setUpModule patches SDE_DATABASE_FILE to a temp DuckDB file and starts the
+real core.db.writer thread so all write operations funnel through the actual
+production serialisation path.  The temp DB is torn down in tearDownModule.
 """
 
+from __future__ import annotations
+
+import os
 import sys
+import tempfile
+import threading
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
-
-import duckdb
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# ---------------------------------------------------------------------------
-# Configured weights from Appendix B (shown in report for comparison ONLY —
-# NOT used in any calculation; that would be circular).
-# ---------------------------------------------------------------------------
-CONFIGURED_WEIGHTS = {
-    "read":       1.0,
-    "insert":     1.0,
-    "upsert":     2.0,
-    "update":     4.0,
-    "delete":     2.0,
-    "truncate":   5.0,
-    "ddl":        3.0,
-    "bulk_load":  0.5,
-}
 
 # ---------------------------------------------------------------------------
-# Row / iteration counts requested by the caller
-# ---------------------------------------------------------------------------
-COUNTS = {
-    "bulk_load":  200_000,
-    "read":       100_000,
-    "insert":     100_000,
-    "upsert":      50_000,
-    "delete":      50_000,
-    "ddl":         33_000,
-    "update":      25_000,
-    "truncate":    20_000,
-}
-
-# DDL and TRUNCATE are so fast per-op that we run a representative sample and
-# extrapolate rather than doing tens of thousands of schema-change cycles.
-_TRUNCATE_REAL_ITERS = 200
-_DDL_REAL_ITERS      = 200
-
-# Batch size for the INSERT benchmark (mimics db_write() call cadence).
-_INSERT_BATCH = 10_000
-
-
-# ---------------------------------------------------------------------------
-# Helpers
+# PowerMonitor
 # ---------------------------------------------------------------------------
 
-def _fresh_con() -> duckdb.DuckDBPyConnection:
-    """Open an isolated in-memory DuckDB connection."""
-    con = duckdb.connect(":memory:")
-    con.execute("PRAGMA threads=4")
-    return con
+class PowerMonitor:
+    """Measure system power via Intel RAPL (Linux) or psutil CPU% (fallback).
 
+    Instantiate once at module load.  Call measure_baseline() before any
+    tests run, mark() around each test, and delta() to compute the result.
+    """
 
-def _create_bench_table(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS bench (
-            id      BIGINT PRIMARY KEY,
-            val_a   DOUBLE NOT NULL,
-            val_b   VARCHAR NOT NULL,
-            val_c   INTEGER NOT NULL
+    RAPL_PATH = Path("/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj")
+    RAPL_MAX_PATH = Path("/sys/class/powercap/intel-rapl/intel-rapl:0/max_energy_range_uj")
+
+    def __init__(self) -> None:
+        self.mode = self._detect_mode()
+        self._baseline_mean: float = 0.0
+        self._baseline_stddev: float = 0.0
+        self._psutil_samples: list[tuple[float, float]] = []  # (monotonic, cpu_pct)
+        self._psutil_lock = threading.Lock()
+        self._sampler_stop = threading.Event()
+        if self.mode == "psutil":
+            import psutil
+            self._proc = psutil.Process(os.getpid())
+            # warm up the first call (returns 0 otherwise)
+            self._proc.cpu_percent(interval=None)
+            self._sampler_thread = threading.Thread(
+                target=self._psutil_sampler, daemon=True, name="power-sampler"
+            )
+            self._sampler_thread.start()
+
+    def _detect_mode(self) -> str:
+        if self.RAPL_PATH.exists():
+            try:
+                int(self.RAPL_PATH.read_text().strip())
+                return "rapl"
+            except Exception:
+                pass
+        try:
+            import psutil  # noqa: F401
+            return "psutil"
+        except ImportError:
+            return "none"
+
+    def _read_rapl_uj(self) -> int:
+        return int(self.RAPL_PATH.read_text().strip())
+
+    def _rapl_max_uj(self) -> int:
+        try:
+            return int(self.RAPL_MAX_PATH.read_text().strip())
+        except Exception:
+            return 2 ** 32
+
+    def _psutil_sampler(self) -> None:
+        while not self._sampler_stop.wait(0.5):
+            try:
+                pct = self._proc.cpu_percent(interval=None)
+                with self._psutil_lock:
+                    self._psutil_samples.append((time.monotonic(), pct))
+            except Exception:
+                pass
+
+    def measure_baseline(self, duration: float = 60.0) -> tuple[float, float]:
+        """Sample idle power for *duration* seconds and store as baseline.
+
+        Returns (mean, stddev) in Watts (RAPL) or CPU% (psutil).
+        Immediately returns (0, 0) when duration <= 0 or mode is 'none'.
+        """
+        if duration <= 0 or self.mode == "none":
+            return 0.0, 0.0
+        unit = "W" if self.mode == "rapl" else "CPU%"
+        print(
+            f"\n  [PowerMonitor] Measuring {self.mode.upper()} baseline "
+            f"for {duration:.0f}s …  (set BENCH_BASELINE_S=0 to skip)",
+            flush=True,
         )
-    """)
+        if self.mode == "rapl":
+            samples: list[float] = []
+            tick = 2.0
+            t_end = time.monotonic() + duration
+            prev_uj = self._read_rapl_uj()
+            prev_t = time.monotonic()
+            while time.monotonic() < t_end:
+                time.sleep(tick)
+                cur_uj = self._read_rapl_uj()
+                cur_t = time.monotonic()
+                delta_uj = cur_uj - prev_uj
+                if delta_uj < 0:
+                    delta_uj += self._rapl_max_uj()
+                dt = cur_t - prev_t
+                if dt > 0:
+                    samples.append(delta_uj / 1e6 / dt)
+                prev_uj, prev_t = cur_uj, cur_t
+        else:
+            # Let the background sampler collect during the sleep
+            with self._psutil_lock:
+                start_idx = len(self._psutil_samples)
+            time.sleep(duration)
+            with self._psutil_lock:
+                samples = [s[1] for s in self._psutil_samples[start_idx:]]
+        if not samples:
+            return 0.0, 0.0
+        import statistics
+        mean = statistics.mean(samples)
+        stddev = statistics.stdev(samples) if len(samples) > 1 else 0.0
+        self._baseline_mean = mean
+        self._baseline_stddev = stddev
+        print(
+            f"  [PowerMonitor] Baseline: {mean:.2f} ± {stddev:.2f} {unit}",
+            flush=True,
+        )
+        return mean, stddev
 
+    def mark(self) -> dict:
+        """Return a snapshot of the current power state."""
+        snap: dict = {"wall": time.perf_counter(), "t": time.monotonic()}
+        if self.mode == "rapl":
+            snap["uj"] = self._read_rapl_uj()
+        elif self.mode == "psutil":
+            with self._psutil_lock:
+                snap["sample_idx"] = len(self._psutil_samples)
+        return snap
 
-def _seed_fast(con: duckdb.DuckDBPyConnection, n: int, id_offset: int = 0) -> None:
-    """Seed n rows using DuckDB's generate_series — not part of any timed window."""
-    con.execute(f"""
-        INSERT INTO bench
-        SELECT
-            {id_offset} + i          AS id,
-            CAST(i AS DOUBLE) * 1.1  AS val_a,
-            'row_' || CAST(i AS VARCHAR) AS val_b,
-            (i % 1000)               AS val_c
-        FROM generate_series(0, {n - 1}) t(i)
-    """)
+    def delta(self, start: dict, end: dict, n_rows: int) -> dict:
+        """Compute metrics between two marks.
+
+        Returns a dict with wall_s and mode-specific power fields.
+        """
+        wall_s = end["wall"] - start["wall"]
+        result: dict = {"wall_s": wall_s, "mode": self.mode, "n_rows": n_rows}
+        if self.mode == "rapl":
+            delta_uj = end["uj"] - start["uj"]
+            if delta_uj < 0:
+                delta_uj += self._rapl_max_uj()
+            total_j = delta_uj / 1e6
+            baseline_j = self._baseline_mean * wall_s
+            net_j = max(0.0, total_j - baseline_j)
+            result["total_j"] = total_j
+            result["net_j"] = net_j
+            result["avg_w"] = total_j / wall_s if wall_s > 0 else 0.0
+            result["net_w"] = net_j / wall_s if wall_s > 0 else 0.0
+            result["j_per_row"] = net_j / n_rows if n_rows > 0 else 0.0
+        elif self.mode == "psutil":
+            with self._psutil_lock:
+                samples = [
+                    s[1] for s in self._psutil_samples[
+                        start["sample_idx"]: end["sample_idx"]
+                    ]
+                ]
+            mean_pct = sum(samples) / len(samples) if samples else 0.0
+            net_pct = max(0.0, mean_pct - self._baseline_mean)
+            result["avg_cpu_pct"] = mean_pct
+            result["net_cpu_pct"] = net_pct
+            result["cpu_seconds"] = net_pct / 100.0 * wall_s
+        return result
+
+    def shutdown(self) -> None:
+        self._sampler_stop.set()
 
 
 # ---------------------------------------------------------------------------
-# Individual benchmarks — each returns (elapsed_s, n_operations)
-# Data construction happens outside the timed window.
+# Module-level state
 # ---------------------------------------------------------------------------
 
-def bench_bulk_load(n: int):
-    """
-    executemany in a single call with a pre-built Python list.
-    This is the canonical bulk_load path (mirrors db_executemany usage).
-    """
-    rows = [(i, i * 1.1, f"r{i}", i % 1000) for i in range(n)]
-    con = _fresh_con()
-    _create_bench_table(con)
-    t0 = time.perf_counter()
-    con.executemany("INSERT INTO bench VALUES (?, ?, ?, ?)", rows)
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed, n
+_BASELINE_S: float = float(os.environ.get("BENCH_BASELINE_S", "60"))
+_power = PowerMonitor()
+
+_tmp_dir: Optional[tempfile.TemporaryDirectory] = None
+_db_path: Optional[Path] = None
+_sqlite_path: Optional[Path] = None
+_orig_env: dict = {}
+_RESULTS: dict[str, dict] = {}  # test-class name → result dict
 
 
-def bench_read(n: int):
-    """Full-table sequential scan returning n rows (fetchall)."""
-    con = _fresh_con()
-    _create_bench_table(con)
-    _seed_fast(con, n)
-    t0 = time.perf_counter()
-    result = con.execute("SELECT * FROM bench").fetchall()
-    elapsed = time.perf_counter() - t0
-    assert len(result) == n
-    con.close()
-    return elapsed, n
+# ---------------------------------------------------------------------------
+# Synthetic data builders
+# ---------------------------------------------------------------------------
+
+_ISSUED = "2024-01-01T00:00:00Z"
+_REGION_A = 10_000_002  # The Forge
+_REGION_B = 10_000_043  # Domain
 
 
-def bench_insert(n: int):
-    """
-    Batched executemany in _INSERT_BATCH chunks — mirrors the db_write() cadence
-    where tasks enqueue writes that flush in batches.
-    """
-    batches = [
-        [(i, i * 1.1, f"r{i}", i % 1000)
-         for i in range(start, min(start + _INSERT_BATCH, n))]
-        for start in range(0, n, _INSERT_BATCH)
+def _market_order_rows(n: int, region_id: int = _REGION_A) -> list[dict]:
+    """Build *n* synthetic ESI market-order dicts accepted by _market_order_payload."""
+    return [
+        {
+            "order_id": region_id * 10_000_000 + i,
+            "type_id": 34 + (i % 500),
+            "location_id": 60_003_760,
+            "region_id": region_id,
+            "is_buy_order": i % 2 == 0,
+            "issued": _ISSUED,
+            "duration": 90,
+            "price": 100.0 + i * 0.01,
+            "order_range": "station",
+            "volume_remain": 100 + i % 1000,
+            "volume_total": 100 + i % 1000,
+            "min_volume": 1,
+            "last_seen": _ISSUED,
+        }
+        for i in range(n)
     ]
-    con = _fresh_con()
-    _create_bench_table(con)
-    t0 = time.perf_counter()
-    for batch in batches:
-        con.executemany("INSERT INTO bench VALUES (?, ?, ?, ?)", batch)
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed, n
 
 
-def bench_upsert(n: int):
-    """
-    Vectorised upsert via staging table + INSERT … ON CONFLICT DO UPDATE SET.
-
-    executemany("INSERT OR REPLACE ...") is NOT used here because DuckDB
-    disables its vectorised executor for that path when a PRIMARY KEY exists,
-    degrading to ~860 µs/row — a Python-binding artefact, not a DuckDB
-    operation cost.  The staging-table approach keeps the engine vectorised
-    and produces a measurement that reflects genuine upsert overhead.
-    """
-    con = _fresh_con()
-    _create_bench_table(con)
-    _seed_fast(con, n)   # bench already has n rows; every incoming row conflicts
-    # Build staging table outside the timed window
-    con.execute(f"""
-        CREATE TEMP TABLE upsert_staging AS
-        SELECT
-            i                   AS id,
-            CAST(i AS DOUBLE) * 9.9 AS val_a,
-            'updated'           AS val_b,
-            (i % 500)           AS val_c
-        FROM generate_series(0, {n - 1}) t(i)
-    """)
-    t0 = time.perf_counter()
-    con.execute("""
-        INSERT INTO bench
-        SELECT id, val_a, val_b, val_c FROM upsert_staging
-        ON CONFLICT (id) DO UPDATE SET
-            val_a = excluded.val_a,
-            val_b = excluded.val_b,
-            val_c = excluded.val_c
-    """)
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed, n
+def _structure_bare_rows(n: int, id_offset: int = 1_000_000_000) -> list[dict]:
+    """Build *n* bare structure seed rows (no metadata — Phase 1 pattern)."""
+    return [{"structure_id": id_offset + i} for i in range(n)]
 
 
-def bench_delete(n: int):
-    """
-    DELETE using a range predicate across the whole table in one SQL call —
-    the realistic pattern for clearing a collector's stale data.
-    """
-    con = _fresh_con()
-    _create_bench_table(con)
-    _seed_fast(con, n)
-    t0 = time.perf_counter()
-    con.execute("DELETE FROM bench WHERE id >= 0")
-    elapsed = time.perf_counter() - t0
-    remaining = con.execute("SELECT COUNT(*) FROM bench").fetchone()[0]
-    assert remaining == 0, f"Expected 0 rows after delete, got {remaining}"
-    con.close()
-    return elapsed, n
-
-
-def bench_ddl(n: int, real_iters: int):
-    """CREATE TABLE + DROP TABLE pairs, extrapolated from a representative sample."""
-    con = _fresh_con()
-    t0 = time.perf_counter()
-    for i in range(real_iters):
-        tname = f"t{i}"
-        con.execute(f"CREATE TABLE {tname} (id BIGINT, val DOUBLE)")
-        con.execute(f"DROP TABLE {tname}")
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed * (n / real_iters), n
-
-
-def bench_update(n: int):
-    """Full-table UPDATE touching every row — worst-case for random I/O."""
-    con = _fresh_con()
-    _create_bench_table(con)
-    _seed_fast(con, n)
-    t0 = time.perf_counter()
-    con.execute("UPDATE bench SET val_a = val_a * 2.0, val_b = 'updated'")
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed, n
-
-
-def bench_truncate(n: int, real_iters: int):
-    """
-    TRUNCATE TABLE repeated real_iters times (table re-seeded between each via
-    generate_series SQL — not included in the timed window), extrapolated to n.
-    """
-    SEED = 500
-    con = _fresh_con()
-    _create_bench_table(con)
-    _seed_fast(con, SEED)
-    t0 = time.perf_counter()
-    for _ in range(real_iters):
-        con.execute("TRUNCATE TABLE bench")
-        # Re-seed using SQL so re-fill time is minimal relative to TRUNCATE
-        con.execute(f"""
-            INSERT INTO bench
-            SELECT i, CAST(i AS DOUBLE), 'r' || CAST(i AS VARCHAR), i % 100
-            FROM generate_series(0, {SEED - 1}) t(i)
-        """)
-    elapsed = time.perf_counter() - t0
-    con.close()
-    return elapsed * (n / real_iters), n
+def _structure_enriched_rows(n: int, id_offset: int = 1_000_000_000) -> list[dict]:
+    """Build *n* enriched structure rows (Phase 2 pattern)."""
+    return [
+        {
+            "structure_id": id_offset + i,
+            "solar_system_id": 30_000_142,
+            "region_id": _REGION_A,
+            "owner_id": 1_000_001,
+            "name": f"Benchmark Structure {i}",
+            "type_id": 35_832,
+            "last_seen": datetime.now(timezone.utc),
+        }
+        for i in range(n)
+    ]
 
 
 # ---------------------------------------------------------------------------
-# Report helper
+# Module setup / teardown
 # ---------------------------------------------------------------------------
 
-def _report(results: dict) -> str:
-    """
-    results: {op: (elapsed_s, n_ops)}
+def setUpModule() -> None:  # noqa: N802 (unittest convention)
+    global _tmp_dir, _db_path, _sqlite_path, _orig_env
 
-    Derived weight = ms_per_row(op) / ms_per_row(INSERT).
-    INSERT is the normalisation baseline (derived_weight = 1.0 by definition).
-    """
-    # Compute ms/row for each op first
-    ms_per_row = {
-        op: (elapsed_s / n_ops) * 1_000
-        for op, (elapsed_s, n_ops) in results.items()
+    # Capture original env so tearDownModule can restore them
+    _orig_env = {
+        k: os.environ.get(k)
+        for k in ("SDE_DATABASE_FILE", "PUBLIC_DATA_FOLDER", "EVE_PRIVATE_DATABASE_FOLDER")
     }
-    insert_ms = ms_per_row.get("insert", 1.0) or 1.0   # guard /0
 
-    col = f"{'─'*94}"
-    header = (
-        f"\n{col}\n"
-        f"  DuckDB Operation Benchmark — empirical relative weights\n"
-        f"{col}\n"
-        f"  {'Op':<12} {'Rows':>10} {'Time (s)':>10} {'ms/row':>11} "
-        f"{'Derived W':>11} {'Config W':>10} {'Delta':>9} {'Total ms':>11}\n"
-        f"{col}"
+    # Create an isolated temp directory — nothing touches the production DB
+    _tmp_dir = tempfile.TemporaryDirectory(prefix="bench_")
+    tmp = Path(_tmp_dir.name)
+    _db_path = tmp / "bench.duckdb"
+    _sqlite_path = tmp / "bench_private.db"
+    private_dir = tmp / "private"
+    private_dir.mkdir()
+
+    # Patch env BEFORE any core.* imports so every helper reads the temp path
+    os.environ["SDE_DATABASE_FILE"] = str(_db_path)
+    os.environ["PUBLIC_DATA_FOLDER"] = str(tmp)
+    os.environ["EVE_PRIVATE_DATABASE_FOLDER"] = str(private_dir)
+
+    # Deferred core imports (env must be set first)
+    import core.config as _cfg
+    try:
+        _cfg.load_config()
+    except Exception:
+        pass  # config.yaml may not exist in CI; env vars are sufficient
+
+    from core.db.writer import start_writer, db_write
+    start_writer(db_path=_db_path)
+
+    # Create production schemas in the temp DB
+    import duckdb
+    from analysis.market.regions import ensure_tables as _ensure_market
+    from analysis.structures.discover import (
+        ensure_tables as _ensure_structures,
+        ensure_columns as _ensure_struct_cols,
     )
-    lines = [header]
+    con = duckdb.connect(str(_db_path))
+    try:
+        con.execute("PRAGMA threads=4")
+        _ensure_market(con)
+        _ensure_structures(con)
+        _ensure_struct_cols(con)
+        # Drain-sync table: a 1-row table used as a blocking sentinel to
+        # ensure all preceding nowait ops have been committed before we
+        # stop the timer.
+        con.execute("CREATE TABLE IF NOT EXISTS _bench_sync (id INTEGER PRIMARY KEY)")
+        # Coalesce bench table: no PK so DuckDB stays vectorised (no row-by-row
+        # conflict resolution).  TRUNCATED between test_A and test_B.
+        con.execute("CREATE TABLE IF NOT EXISTS _bench_coalesce (id BIGINT, val DOUBLE)")
+    finally:
+        con.close()
 
-    # Stable display order
-    order = ["bulk_load", "read", "insert", "upsert", "delete", "ddl", "update", "truncate"]
-    for op in order:
-        if op not in results:
-            continue
-        elapsed_s, n_ops = results[op]
-        mpr        = ms_per_row[op]
-        derived_w  = mpr / insert_ms
-        config_w   = CONFIGURED_WEIGHTS.get(op, float("nan"))
-        delta_pct  = ((derived_w - config_w) / config_w * 100) if config_w else float("nan")
-        total_ms   = elapsed_s * 1_000
-        lines.append(
-            f"  {op:<12} {n_ops:>10,} {elapsed_s:>10.4f} {mpr:>11.6f} "
-            f"{derived_w:>11.4f} {config_w:>10.1f} {delta_pct:>+8.1f}% {total_ms:>11.1f}"
+    # Baseline power measurement (skippable with BENCH_BASELINE_S=0)
+    _power.measure_baseline(_BASELINE_S)
+
+
+def tearDownModule() -> None:  # noqa: N802
+    from core.db.writer import stop_writer
+    stop_writer(timeout=30.0)
+
+    _power.shutdown()
+    _print_report()
+
+    # Restore original environment
+    for k, v in _orig_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+    if _tmp_dir is not None:
+        try:
+            _tmp_dir.cleanup()
+        except Exception:
+            pass
+
+
+def _drain_writer() -> None:
+    """Block until all preceding fire-and-forget writes have completed.
+
+    Sends a blocking no-op write through the same writer queue so that by
+    the time it returns, every earlier nowait op has been processed.
+    """
+    from core.db.writer import db_write
+    db_write("INSERT OR REPLACE INTO _bench_sync VALUES (?)", [1])
+
+
+def _record(name: str, metrics: dict) -> None:
+    _RESULTS[name] = metrics
+
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+def _fmt_power(m: dict) -> str:
+    """Format the power portion of a metrics dict into a short string."""
+    mode = m.get("mode", "none")
+    if mode == "rapl":
+        return (
+            f"avg {m['avg_w']:.1f}W  net {m['net_w']:.1f}W  "
+            f"{m['j_per_row'] * 1e6:.2f} µJ/row"
+        )
+    if mode == "psutil":
+        return (
+            f"avg {m['avg_cpu_pct']:.1f}%  net {m['net_cpu_pct']:.1f}%  "
+            f"{m['cpu_seconds']:.3f} CPU-s"
+        )
+    return "power: n/a"
+
+
+def _print_report() -> None:
+    if not _RESULTS:
+        return
+
+    sep = "─" * 100
+    print(f"\n{sep}")
+    print("  Production Pattern Benchmark — EVE Data Framework")
+    print(f"  Power monitor mode: {_power.mode.upper()}")
+    if _power._baseline_mean:
+        unit = "W" if _power.mode == "rapl" else "CPU%"
+        print(
+            f"  Baseline: {_power._baseline_mean:.2f} ± "
+            f"{_power._baseline_stddev:.2f} {unit}"
+        )
+    print(sep)
+    print(
+        f"  {'Test':<32} {'Rows':>8} {'Wall (s)':>10} {'ms/row':>10} "
+        f"  Power"
+    )
+    print(sep)
+
+    for name, m in _RESULTS.items():
+        wall_s = m["wall_s"]
+        n = m["n_rows"]
+        ms_per_row = (wall_s / n * 1_000) if n else 0.0
+        power_str = _fmt_power(m)
+        print(
+            f"  {name:<32} {n:>8,} {wall_s:>10.3f} {ms_per_row:>10.4f}  "
+            f"{power_str}"
         )
 
-    lines.append(col)
-    lines.append(
-        "\n"
-        "  Derived W  = ms/row(op) / ms/row(INSERT) — INSERT is the baseline (= 1.0).\n"
-        "  Config W   = configured default weight from Appendix B (display only).\n"
-        "  Delta      = (Derived - Config) / Config × 100%  — positive = op costs more than expected.\n"
-        "  DDL and TRUNCATE rows are sampled and extrapolated.\n"
-        "  Upsert uses staging-table + ON CONFLICT DO UPDATE SET (vectorised DuckDB path).\n"
-    )
-    return "\n".join(lines)
+    print(sep)
+    print()
 
 
 # ---------------------------------------------------------------------------
-# Test case
+# Test 1 — Market region refresh
+# (analysis/market/regions.py → publicDB.replace_market_orders_for_region)
+# Pattern: blocking DELETE then vectorised pandas DataFrame INSERT
 # ---------------------------------------------------------------------------
 
-class TestDBBenchmark(unittest.TestCase):
-    """
-    Runs all 8 operation benchmarks and prints a formatted report.
-    Assertions are sanity checks only — the meaningful output is the report.
-    """
+N_MARKET_REGION_ROWS = 50_000
 
-    results: dict = {}
+
+class TestMarketRegionRefresh(unittest.TestCase):
+    """Time a full market-region replace: DELETE old rows + DataFrame INSERT.
+
+    This is the hottest write path in the application — Jita alone is
+    ~400k orders.  We test with 50k rows to keep the bench under a minute
+    while remaining in the DuckDB vectorised regime.
+    """
 
     @classmethod
-    def setUpClass(cls):
-        cls.results = {}
+    def setUpClass(cls) -> None:
+        # Pre-build data outside the timed window
+        cls.rows = _market_order_rows(N_MARKET_REGION_ROWS, region_id=_REGION_A)
+        # Prime the table with stale data so the DELETE has real work to do
+        from core.db.publicDB import replace_market_orders_for_region
+        replace_market_orders_for_region(_REGION_A, cls.rows)
 
-    def _record(self, op: str, elapsed: float, n: int):
-        self.results[op] = (elapsed, n)
+    def test_region_market_replace(self) -> None:
+        from core.db.publicDB import replace_market_orders_for_region
 
-    # ---- individual operation tests (alphabetical for consistent output) ---
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        written = replace_market_orders_for_region(_REGION_A, self.rows)
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
 
-    def test_1_bulk_load(self):
-        elapsed, n = bench_bulk_load(COUNTS["bulk_load"])
-        self._record("bulk_load", elapsed, n)
-        self.assertGreater(elapsed, 0)
-        self.assertEqual(n, COUNTS["bulk_load"])
+        self.assertEqual(written, N_MARKET_REGION_ROWS)
+        metrics = _power.delta(m0, m1, N_MARKET_REGION_ROWS)
+        metrics["wall_s"] = wall_s
+        _record("MarketRegionRefresh", metrics)
 
-    def test_2_read(self):
-        elapsed, n = bench_read(COUNTS["read"])
-        self._record("read", elapsed, n)
-        self.assertGreater(elapsed, 0)
 
-    def test_3_insert(self):
-        elapsed, n = bench_insert(COUNTS["insert"])
-        self._record("insert", elapsed, n)
-        self.assertGreater(elapsed, 0)
+# ---------------------------------------------------------------------------
+# Test 2 — Structure market orders
+# (analysis/market/structures.py → publicDB.upsert_market_orders)
+# Pattern: fire-and-forget db_executemany_nowait, INSERT ON CONFLICT DO UPDATE
+# ---------------------------------------------------------------------------
 
-    def test_4_upsert(self):
-        elapsed, n = bench_upsert(COUNTS["upsert"])
-        self._record("upsert", elapsed, n)
-        self.assertGreater(elapsed, 0)
+N_STRUCTURE_ORDERS = 1_000
 
-    def test_5_delete(self):
-        elapsed, n = bench_delete(COUNTS["delete"])
-        self._record("delete", elapsed, n)
-        self.assertGreater(elapsed, 0)
 
-    def test_6_ddl(self):
-        elapsed, n = bench_ddl(COUNTS["ddl"], _DDL_REAL_ITERS)
-        self._record("ddl", elapsed, n)
-        self.assertGreater(elapsed, 0)
+class TestStructureMarketOrders(unittest.TestCase):
+    """Time fire-and-forget upsert for structure market orders.
 
-    def test_7_update(self):
-        elapsed, n = bench_update(COUNTS["update"])
-        self._record("update", elapsed, n)
-        self.assertGreater(elapsed, 0)
-
-    def test_8_truncate(self):
-        elapsed, n = bench_truncate(COUNTS["truncate"], _TRUNCATE_REAL_ITERS)
-        self._record("truncate", elapsed, n)
-        self.assertGreater(elapsed, 0)
+    upsert_market_orders() calls db_executemany_nowait — submissions are
+    non-blocking.  We drain the writer queue with a blocking sentinel so
+    the wall time reflects the full commit including writer overhead.
+    """
 
     @classmethod
-    def tearDownClass(cls):
-        if cls.results:
-            print(_report(cls.results))
+    def setUpClass(cls) -> None:
+        cls.rows = _market_order_rows(N_STRUCTURE_ORDERS, region_id=_REGION_B)
 
+    def test_structure_market_upsert(self) -> None:
+        from core.db.publicDB import upsert_market_orders
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        upsert_market_orders(self.rows)
+        _drain_writer()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_STRUCTURE_ORDERS)
+        metrics["wall_s"] = wall_s
+        _record("StructureMarketOrders", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Test 3 — Writer coalescing
+# (core/db/writer.py coalescing logic)
+# Pattern A: single blocking db_executemany — one BEGIN/COMMIT round-trip
+# Pattern B: N × db_executemany_nowait same SQL — writer batches into one txn
+# ---------------------------------------------------------------------------
+
+N_COALESCE_TOTAL = 20_000
+N_COALESCE_CHUNKS = 20  # 1 000 rows per chunk
+
+
+class TestWriterCoalescing(unittest.TestCase):
+    """Compare coalesced nowait submits vs a single blocking executemany.
+
+    The writer thread coalesces up to 50_000 rows from consecutive
+    db_executemany_nowait() calls with identical SQL into one BEGIN/COMMIT
+    cycle.  We use a simple no-PK table so DuckDB stays in its vectorised
+    executor — this isolates writer-thread overhead from per-row SQL cost.
+
+    Two sub-tests:
+      A — single blocking db_executemany() — the minimum possible latency.
+      B — N × db_executemany_nowait() + drain sentinel — coalesced path.
+    In both cases the writer executes the same total number of rows; the
+    difference in wall time reflects coalescing and queue-dispatch overhead.
+    """
+
+    # Simple 2-column INSERT on a no-PK table — stays vectorised in DuckDB.
+    _SQL = "INSERT INTO _bench_coalesce VALUES (?, ?)"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        chunk_size = N_COALESCE_TOTAL // N_COALESCE_CHUNKS
+        cls.chunks: list[list[tuple]] = [
+            [(c * chunk_size + i, float(c * chunk_size + i)) for i in range(chunk_size)]
+            for c in range(N_COALESCE_CHUNKS)
+        ]
+        cls.all_rows: list[tuple] = [row for chunk in cls.chunks for row in chunk]
+
+    def _reset_table(self) -> None:
+        """TRUNCATE _bench_coalesce via the writer so each sub-test starts clean."""
+        from core.db.writer import db_write
+        db_write("TRUNCATE TABLE _bench_coalesce")
+
+    def test_A_blocking_single(self) -> None:
+        """Single blocking db_executemany() — one round-trip through the writer."""
+        from core.db.writer import db_executemany
+        self._reset_table()
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        db_executemany(self._SQL, self.all_rows)
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_COALESCE_TOTAL)
+        metrics["wall_s"] = wall_s
+        _record("Coalesce_Blocking", metrics)
+
+    def test_B_coalesced_nowait(self) -> None:
+        """N × db_executemany_nowait() with same SQL — writer coalesces into one txn."""
+        from core.db.writer import db_executemany_nowait
+        self._reset_table()
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        for chunk in self.chunks:
+            db_executemany_nowait(self._SQL, chunk)
+        _drain_writer()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_COALESCE_TOTAL)
+        metrics["wall_s"] = wall_s
+        _record("Coalesce_Nowait", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — Structure discovery
+# (analysis/structures/discover.py Phase 1 + Phase 2)
+# Pattern: bulk seed via db_executemany then per-structure 1-row upsert loop
+# ---------------------------------------------------------------------------
+
+N_SEED_STRUCTURES = 500
+N_ENRICH_STRUCTURES = 100
+
+
+class TestStructureDiscovery(unittest.TestCase):
+    """Time the two-phase structure discovery pattern.
+
+    Phase 1 (seed): batch db_executemany inserts bare rows for new structure IDs.
+    Phase 2 (enrich): per-structure single-row upsert with metadata, matching
+    the discover.py loop that calls upsert_structures([row]) one at a time.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bare_rows = _structure_bare_rows(N_SEED_STRUCTURES, id_offset=2_000_000_000)
+        cls.enriched_rows = _structure_enriched_rows(N_ENRICH_STRUCTURES, id_offset=2_000_000_000)
+
+    def test_A_phase1_seed(self) -> None:
+        """Bulk seed: db_executemany INSERT OR REPLACE for N bare structure rows."""
+        from core.db.publicDB import upsert_structures
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        upsert_structures(self.bare_rows)
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_SEED_STRUCTURES)
+        metrics["wall_s"] = wall_s
+        _record("StrucDisc_Phase1_Seed", metrics)
+
+    def test_B_phase2_enrich(self) -> None:
+        """Enrich loop: one upsert_structures([row]) call per structure."""
+        from core.db.publicDB import upsert_structures
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        for row in self.enriched_rows:
+            upsert_structures([row])
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_ENRICH_STRUCTURES)
+        metrics["wall_s"] = wall_s
+        _record("StrucDisc_Phase2_Enrich", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — Character data (SQLAlchemy SQLite)
+# (analysis/character/populate.py _fetch_skills / _fetch_assets)
+# Pattern: sa.text() row-by-row execute loop, single commit at end
+# ---------------------------------------------------------------------------
+
+N_SKILLS = 500
+N_ASSETS = 2_000
+
+
+class TestCharacterData(unittest.TestCase):
+    """Time SQLite row-by-row writes via SQLAlchemy sa.text() loop.
+
+    This matches populate.py exactly: no executemany, one sa.text() execute
+    per skill/asset inside a with engine.connect() block, commit at end.
+    """
+
+    CHAR_ID = 999_000_001
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import sqlalchemy as sa
+
+        cls._engine = sa.create_engine(f"sqlite:///{_sqlite_path}")
+        with cls._engine.connect() as con:
+            con.execute(sa.text("""
+                CREATE TABLE IF NOT EXISTS character_skills (
+                    character_id    INTEGER NOT NULL,
+                    skill_id        INTEGER NOT NULL,
+                    trained_level   INTEGER NOT NULL,
+                    active_level    INTEGER NOT NULL,
+                    skillpoints_in_skill INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (character_id, skill_id)
+                )
+            """))
+            con.execute(sa.text("""
+                CREATE TABLE IF NOT EXISTS character_assets (
+                    item_id          INTEGER PRIMARY KEY,
+                    character_id     INTEGER NOT NULL,
+                    type_id          INTEGER NOT NULL,
+                    location_id      INTEGER NOT NULL,
+                    location_type    TEXT NOT NULL,
+                    location_flag    TEXT NOT NULL,
+                    quantity         INTEGER NOT NULL DEFAULT 1,
+                    is_singleton     INTEGER NOT NULL DEFAULT 0,
+                    is_blueprint_copy INTEGER
+                )
+            """))
+            con.commit()
+
+        cls.skills = [
+            {
+                "skill_id": 3300 + i,
+                "trained_level": min(i % 5 + 1, 5),
+                "active_level": min(i % 5 + 1, 5),
+                "skillpoints_in_skill": i * 1000,
+            }
+            for i in range(N_SKILLS)
+        ]
+        cls.assets = [
+            {
+                "item_id": 400_000_000 + i,
+                "type_id": 34 + i % 500,
+                "location_id": 60_003_760,
+                "location_type": "station",
+                "location_flag": "Hangar",
+                "quantity": 1 + i % 100,
+            }
+            for i in range(N_ASSETS)
+        ]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._engine.dispose()
+
+    def test_A_skills_row_by_row(self) -> None:
+        """Row-by-row skill upsert via sa.text() — mirrors _fetch_skills."""
+        import sqlalchemy as sa
+
+        char_id = self.CHAR_ID
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        with self._engine.connect() as con:
+            for skill in self.skills:
+                con.execute(sa.text("""
+                    INSERT INTO character_skills
+                        (character_id, skill_id, trained_level, active_level,
+                         skillpoints_in_skill)
+                    VALUES
+                        (:character_id, :skill_id, :trained_level, :active_level,
+                         :skillpoints_in_skill)
+                    ON CONFLICT (character_id, skill_id) DO UPDATE SET
+                        trained_level        = excluded.trained_level,
+                        active_level         = excluded.active_level,
+                        skillpoints_in_skill = excluded.skillpoints_in_skill
+                """), {
+                    "character_id": char_id,
+                    "skill_id": skill["skill_id"],
+                    "trained_level": skill["trained_level"],
+                    "active_level": skill["active_level"],
+                    "skillpoints_in_skill": skill["skillpoints_in_skill"],
+                })
+            con.commit()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_SKILLS)
+        metrics["wall_s"] = wall_s
+        _record("CharData_Skills_SQLite", metrics)
+
+    def test_B_assets_row_by_row(self) -> None:
+        """Row-by-row asset upsert via sa.text() — mirrors _fetch_assets."""
+        import sqlalchemy as sa
+
+        char_id = self.CHAR_ID
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        with self._engine.connect() as con:
+            for asset in self.assets:
+                con.execute(sa.text("""
+                    INSERT INTO character_assets
+                        (item_id, character_id, type_id, location_id,
+                         location_type, location_flag, quantity, is_singleton)
+                    VALUES
+                        (:item_id, :character_id, :type_id, :location_id,
+                         :location_type, :location_flag, :quantity, 0)
+                    ON CONFLICT (item_id) DO UPDATE SET
+                        location_id   = excluded.location_id,
+                        location_flag = excluded.location_flag,
+                        quantity      = excluded.quantity
+                """), {
+                    "item_id": asset["item_id"],
+                    "character_id": char_id,
+                    "type_id": asset["type_id"],
+                    "location_id": asset["location_id"],
+                    "location_type": asset["location_type"],
+                    "location_flag": asset["location_flag"],
+                    "quantity": asset["quantity"],
+                })
+            con.commit()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_ASSETS)
+        metrics["wall_s"] = wall_s
+        _record("CharData_Assets_SQLite", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — DDL operations
+# (ensure_tables / ensure_columns pattern used by every collector)
+# Pattern: CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN IF NOT EXISTS
+# ---------------------------------------------------------------------------
+
+N_DDL_ITERATIONS = 50
+
+
+class TestDDLOps(unittest.TestCase):
+    """Time CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN IF NOT EXISTS.
+
+    These DDL statements run at startup and before every collector write.
+    Cost is expected to be negligible on a warm DB but worth measuring since
+    they run synchronously before any actual data work begins.
+    """
+
+    def test_A_create_table_if_not_exists(self) -> None:
+        """N iterations of CREATE TABLE IF NOT EXISTS on an existing table."""
+        import duckdb
+
+        con = duckdb.connect(str(_db_path))
+        try:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS _ddl_target (
+                    id BIGINT PRIMARY KEY,
+                    val DOUBLE
+                )
+            """)  # ensure it exists first
+        finally:
+            con.close()
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        for _ in range(N_DDL_ITERATIONS):
+            con = duckdb.connect(str(_db_path))
+            try:
+                con.execute("""
+                    CREATE TABLE IF NOT EXISTS _ddl_target (
+                        id BIGINT PRIMARY KEY,
+                        val DOUBLE
+                    )
+                """)
+            finally:
+                con.close()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_DDL_ITERATIONS)
+        metrics["wall_s"] = wall_s
+        _record("DDL_CreateIfNotExists", metrics)
+
+    def test_B_alter_table_add_column(self) -> None:
+        """N iterations of ALTER TABLE ADD COLUMN IF NOT EXISTS."""
+        import duckdb
+
+        # Ensure the column exists for the first run (idempotent)
+        con = duckdb.connect(str(_db_path))
+        try:
+            con.execute("ALTER TABLE _ddl_target ADD COLUMN IF NOT EXISTS extra VARCHAR")
+        finally:
+            con.close()
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        for _ in range(N_DDL_ITERATIONS):
+            con = duckdb.connect(str(_db_path))
+            try:
+                con.execute(
+                    "ALTER TABLE _ddl_target ADD COLUMN IF NOT EXISTS extra VARCHAR"
+                )
+            finally:
+                con.close()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_DDL_ITERATIONS)
+        metrics["wall_s"] = wall_s
+        _record("DDL_AlterAddColumn", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — Market region cooldowns
+# (publicDB.mark_region_market_refreshed)
+# Pattern: fire-and-forget db_write_nowait single-row INSERT ON CONFLICT
+# ---------------------------------------------------------------------------
+
+N_COOLDOWNS = 200
+
+
+class TestMarketCooldowns(unittest.TestCase):
+    """Time per-region cooldown upserts — one db_write_nowait per region.
+
+    mark_region_market_refreshed() fires a single-row INSERT OR REPLACE for
+    each successfully refreshed region.  The writes are fire-and-forget; total
+    time is measured from first submit to drain sentinel completing.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from datetime import timedelta
+
+        cls.region_ids = list(range(10_000_000, 10_000_000 + N_COOLDOWNS))
+        cls.refreshed_until = datetime.now(timezone.utc) + timedelta(hours=1)
+
+    def test_cooldown_nowait_loop(self) -> None:
+        from core.db.writer import db_write_nowait
+
+        sql = "INSERT OR REPLACE INTO market_region_cooldowns VALUES (?, ?)"
+        until = self.refreshed_until
+
+        m0 = _power.mark()
+        t0 = time.perf_counter()
+        for region_id in self.region_ids:
+            db_write_nowait(sql, [region_id, until])
+        _drain_writer()
+        wall_s = time.perf_counter() - t0
+        m1 = _power.mark()
+
+        metrics = _power.delta(m0, m1, N_COOLDOWNS)
+        metrics["wall_s"] = wall_s
+        _record("MarketCooldowns_Nowait", metrics)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     unittest.main(verbosity=2, buffer=False)

@@ -34,7 +34,8 @@ def _publish_queue_tasks() -> None:
                         sorted(_registry.values(), key=lambda t: t.created_at, reverse=True)]
         _try_publish(QUEUE_TASKS, {"tasks": snapshot})
     except Exception:
-        pass_registry: dict[str, "Task"] = {}
+        pass
+_registry: dict[str, "Task"] = {}
 _registry_lock = threading.Lock()
 
 

@@ -315,41 +315,49 @@ DB-units are a weighted composite metric across all database operation types. We
 
 ### Benchmark results
 
-Measured via `tests/test_db_bench.py` against an in-memory DuckDB instance (200k–25k rows per op). **Weight** = ms/row(op) / ms/row(INSERT) — INSERT is the baseline at 1.0. DDL and TRUNCATE are sampled and extrapolated.
+Measured via `tests/test_db_bench.py` against real production patterns — file-backed DuckDB, live writer thread, actual `publicDB` helpers. Averaged across 3 runs. **Weight** = ms/row(op) / ms/row(Coalesce_Blocking) — batched INSERT through the writer thread is the baseline at 1.0.
+
+`MarketCooldowns` and `MarketRegionRefresh` were absent from some runs due to ordering variance; those averages use the 2 runs in which they appeared.
 
 ```
-  Op             Rows     Time (s)      ms/row    Weight
-  bulk_load   200,000      64.733    0.323665      1.00
-  read        100,000       0.037    0.000365      0.001
-  insert      100,000      32.291    0.322906      1.00   ← baseline
-  upsert       50,000       0.015    0.000297      0.001
-  delete       50,000       0.047    0.000936      0.003
-  ddl          33,000       6.902    0.209139      0.65
-  update       25,000       0.002    0.000066      0.0002
-  truncate     20,000      30.289    1.514458      4.69
+  Test                             Rows    Wall (s)    ms/row   Weight
+  MarketRegionRefresh (DataFrame) 50,000     0.281     0.0056     0.04
+  Coalesce_Blocking   (INSERT)    20,000     2.929     0.1465     1.00  ← baseline
+  Coalesce_Nowait     (INSERT)    20,000     2.887     0.1444     0.99
+  StrucDisc_Phase1_Seed (UPSERT)     500     0.668     1.3372     9.13
+  StructureMarketOrders (UPSERT)   1,000     1.369     1.3688     9.34
+  StrucDisc_Phase2_Enrich (1-row)    100     0.221     2.2102    15.09
+  MarketCooldowns_Nowait  (1-row)    200     0.482     2.4090    16.44
+  DDL_CreateIfNotExists               50     0.015     0.2955     2.02
+  DDL_AlterAddColumn                  50     0.012     0.2405     1.64
+  CharData_Skills  (SQLite)          500     0.026     0.0524     0.36
+  CharData_Assets  (SQLite)        2,000     0.083     0.0417     0.28
 ```
 
-> Upsert uses staging-table + `ON CONFLICT DO UPDATE SET` (vectorised DuckDB path).
-> `executemany("INSERT OR REPLACE …")` was found to disable DuckDB's vectorised executor and is not used.
+> `read`, `update`, `delete`, `truncate` are not included in the new benchmark (no production code path to mirror).
+> Those weights are carried forward from the original in-memory benchmark where they were measured as near-zero per-row costs.
 
 ### Key findings
 
-- **`bulk_load` and `insert` cost the same** (~0.32 ms/row). Both are dominated by Python→DuckDB parameter serialisation, not the DB write itself.
-- **`read`, `upsert`, `delete`, `update`** are effectively free when issued as single SQL statements. DuckDB's columnar engine executes these in microseconds regardless of row count — cost is per *statement*, not per *row*.
-- **`truncate`** (4.69) and **`ddl`** (0.65) are the only operations that cost meaningfully as SQL statements. Truncate scales with iteration count; DDL involves schema locks.
+- **DataFrame bulk INSERT is 25× cheaper than plain batched INSERT** (0.0056 vs 0.1465 ms/row). A 50k-order Jita refresh writes in ~281ms total. This is why `replace_market_orders_for_region()` uses `db_write_dataframe()` and not `executemany`.
+- **Batched upsert with a PRIMARY KEY costs ~9× a plain insert.** DuckDB cannot vectorise its executor when PK conflict resolution is required — both `INSERT OR REPLACE` and `ON CONFLICT DO UPDATE` through the writer land at ~1.35ms/row vs 0.147ms/row for a no-conflict insert. Acceptable at structure scale; would be catastrophic at market-order scale.
+- **Single-row sequential writes cost ~16× a plain insert.** Each `db_write` or `db_executemany([1_row])` call is its own `BEGIN/COMMIT` in the writer thread. Never call these in a per-row loop over large datasets.
+- **DDL costs ~1.8× per call** (including DuckDB connection open/close in the benchmark). `ensure_tables()` running before each collector write is fine at startup cadence.
+- **Coalesced nowait is essentially free vs blocking** (0.1444 vs 0.1465 ms/row). The writer thread successfully batches 20 fire-and-forget chunks into one transaction with negligible overhead.
+- **SQLite row-by-row** (~0.04–0.06 ms/row) is faster than batched DuckDB upserts with PK conflict. Character data writes are not a bottleneck regardless of character count.
 
 ### Weights
 
 | Operation | `config.yaml` key | Weight | Notes |
 |-----------|------------------|--------|-------|
-| Read (`SELECT`) | `read` | 0.001 | Free as SQL |
-| Insert (`INSERT`) | `insert` | 1.0 | Baseline — Python `executemany` cost |
-| Upsert (`ON CONFLICT DO UPDATE`) | `upsert` | 0.001 | Free as SQL |
-| Update (`UPDATE … WHERE`) | `update` | 0.0002 | Free as SQL |
-| Delete (`DELETE … WHERE`) | `delete` | 0.003 | Free as SQL |
-| Truncate | `truncate` | 4.69 | Scales with table-reset count |
-| DDL (`CREATE`/`ALTER TABLE`) | `ddl` | 0.65 | Schema lock; serialised |
-| Bulk load (`executemany`) | `bulk_load` | 1.0 | Same cost as INSERT |
+| Read (`SELECT`) | `read` | 0.001 | Free as SQL — cost is per statement, not per row |
+| Insert (`INSERT`) | `insert` | 1.0 | Baseline — batched `executemany` through writer |
+| Upsert (PK conflict) | `upsert` | 9.0 | `INSERT OR REPLACE` / `ON CONFLICT DO UPDATE` with PK |
+| Update (`UPDATE … WHERE`) | `update` | 0.0002 | Free as SQL — single statement regardless of rows affected |
+| Delete (`DELETE … WHERE`) | `delete` | 0.003 | Free as SQL — single statement regardless of rows affected |
+| Truncate | `truncate` | 4.69 | Scales with reset-iteration count; from original benchmark |
+| DDL (`CREATE`/`ALTER TABLE`) | `ddl` | 1.8 | Avg of CREATE IF NOT EXISTS and ALTER ADD COLUMN |
+| Bulk load (DataFrame) | `bulk_load` | 0.04 | Vectorised columnar import via `db_write_dataframe` |
 
 **db-units total** for a task or owner = Σ(operation_count × weight) across all operation types.
 
@@ -359,12 +367,12 @@ Example `config.yaml` block:
 DB Units:
   read: 0.001
   insert: 1.0
-  upsert: 0.001
+  upsert: 9.0
   update: 0.0002
   delete: 0.003
   truncate: 4.69
-  ddl: 0.65
-  bulk_load: 1.0
+  ddl: 1.8
+  bulk_load: 0.04
 ```
 
 ---
