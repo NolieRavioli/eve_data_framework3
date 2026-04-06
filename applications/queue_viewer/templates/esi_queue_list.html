@@ -23,7 +23,7 @@
 <div id="tab-esi" class="tab-panel">
 <div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem"
      data-is-admin="{{ 'true' if is_admin else 'false' }}"
-     data-url-rate-stream="{{ url_for('queue_viewer.rate_stream') }}"
+     data-url-ws-rate="/queue/ws/rate"
      data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id='PLACEHOLDER') }}"
      data-url-clear="{{ url_for('queue_viewer.clear_tasks') }}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
@@ -65,7 +65,7 @@
     <div class="section-head">
       <div class="ct" style="margin:0">Queue Detail</div>
       {% if task_summary.running or task_summary.pending %}
-      <span class="pill">Live via SSE</span>
+      <span class="pill">Live via WebSocket</span>
       {% else %}
       <span class="pill">Idle</span>
       {% endif %}
@@ -144,7 +144,6 @@
 
 <!-- ── Tab: DB Queue ───────────────────────────────────────────────────── -->
 <div id="tab-db" class="tab-panel" style="display:none"
-     data-url-db-stats="{{ url_for('queue_viewer.db_stats') }}"
      data-url-bus="/bus">
   <div class="card stack">
     <div class="ct" style="margin-bottom:0.75rem">Public DuckDB Writer</div>

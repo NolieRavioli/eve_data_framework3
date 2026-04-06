@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import logging
-import os
-import threading
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, render_template
 
 from applications._api import base_ctx, require_admin
+from core.bus.process_pub import collect_process_snapshot
+from core.bus.websocket import register_websock
 
 logger = logging.getLogger(__name__)
 
@@ -20,29 +20,18 @@ sys_bp = Blueprint(
     static_folder="static",
 )
 
-
-def _collect_process_snapshot() -> dict:
-    """Gather process-level metrics only."""
-    process: dict = {
-        "pid": os.getpid(),
-        "memory_rss_mb": None,
-        "thread_count": threading.active_count(),
-    }
-    try:
-        import psutil
-        proc = psutil.Process(os.getpid())
-        mem = proc.memory_info()
-        process["memory_rss_mb"] = round(mem.rss / (1024 * 1024), 1)
-        process["cpu_percent"] = proc.cpu_percent(interval=0)
-    except ImportError:
-        pass
-    return process
+# Declare a focused push endpoint: publishes system/process metrics every 10 s.
+register_websock(
+    "/admin/sys_status/ws/process",
+    ["system/process"],
+    access_level="admin",
+)
 
 
 @sys_bp.route("/")
 @require_admin
 def index():
-    snapshot = _collect_process_snapshot()
+    snapshot = collect_process_snapshot()
     from core.bus import get_all_topics as _topics
     return render_template(
         "sys_status.html",
@@ -50,11 +39,4 @@ def index():
         bus_topics=_topics(),
         **base_ctx("sys_status"),
     )
-
-
-@sys_bp.route("/api/process")
-@require_admin
-def api_process():
-    """REST endpoint — returns current process stats."""
-    return jsonify(_collect_process_snapshot())
 

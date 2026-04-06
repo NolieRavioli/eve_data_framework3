@@ -1,5 +1,5 @@
 /* applications/sys_status/static/sys_status.js
-   System Status — process health polling + WebSocket bus log viewer.
+   System Status — process health via bus WebSocket + live bus log viewer.
 */
 
 (function () {
@@ -8,7 +8,7 @@
     var root = document.getElementById("sys-root");
     if (!root) return;
 
-    var processUrl = root.dataset.urlProcess;
+    var wsProcessUrl = root.dataset.urlWsProcess;
 
     /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -17,21 +17,37 @@
         if (el) el.textContent = value;
     }
 
-    /* ── Process stats polling ───────────────────────────────────────────── */
+    /* ── Process stats: bus WebSocket push ───────────────────────────────── */
 
-    function refreshProcess() {
-        if (!processUrl) return;
-        fetch(processUrl)
-            .then(function (r) { return r.json(); })
-            .then(function (p) {
-                if (p.memory_rss_mb != null) setText("proc-rss", p.memory_rss_mb + " MB");
-                if (p.thread_count != null)  setText("proc-threads", p.thread_count);
-                if (p.cpu_percent != null)   setText("proc-cpu", p.cpu_percent + "%");
-            })
-            .catch(function () {});
-    }
+    (function connectProcessWS() {
+        if (!wsProcessUrl) return;
+        var proto = location.protocol === "https:" ? "wss:" : "ws:";
+        var ws;
+        try {
+            ws = new WebSocket(proto + "//" + location.host + wsProcessUrl);
+        } catch (e) { return; }
 
-    setInterval(refreshProcess, 10000);
+        ws.onmessage = function (event) {
+            try {
+                var msg = JSON.parse(event.data);
+                // The bus sends {type:"publish", topic:"system/process", data:{...}}
+                var p = (msg.type === "publish" && msg.topic === "system/process") ? msg.data
+                      : (msg.type === "history") ? null   // history entries handled below
+                      : null;
+                if (!p && msg.type === "history") {
+                    var entries = msg.entries || [];
+                    if (entries.length) p = entries[entries.length - 1].data;
+                }
+                if (p) {
+                    if (p.memory_rss_mb != null) setText("proc-rss", p.memory_rss_mb + " MB");
+                    if (p.thread_count  != null) setText("proc-threads", p.thread_count);
+                    if (p.cpu_percent   != null) setText("proc-cpu", p.cpu_percent + "%");
+                }
+            } catch (e) {}
+        };
+        ws.onclose = function () { setTimeout(connectProcessWS, 8000); };
+        ws.onerror = function () { ws.close(); };
+    }());
 
     /* ── WebSocket: live bus logs ─────────────────────────────────────────── */
 

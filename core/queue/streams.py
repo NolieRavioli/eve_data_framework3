@@ -122,6 +122,12 @@ def _esi_rate_hook(stats: dict) -> None:
     if task:
         task.update_esi_rate(stats)
     _rate_event.set()
+    # Publish to bus so /bus WebSocket subscribers receive live ESI rate data.
+    try:
+        from core.bus import publish, ESI_RATE
+        publish(ESI_RATE, stats)
+    except Exception:
+        pass
 
 
 try:

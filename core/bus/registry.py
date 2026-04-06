@@ -45,6 +45,17 @@ _static_configs["db/stats"] = TopicConfig(
     access_level="user",
     required_role="queue",
 )
+_static_configs["system/process"] = TopicConfig(
+    name="system/process",
+    description="Process health metrics (PID, RSS, threads, CPU)",
+    access_level="admin",
+)
+_static_configs["queue/tasks"] = TopicConfig(
+    name="queue/tasks",
+    description="Live task-list snapshot (all tasks, brief)",
+    access_level="user",
+    required_role="queue",
+)
 
 
 def register_topic(

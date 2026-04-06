@@ -46,6 +46,8 @@ from core.bus.topics import (
     LOG_APP,
     ESI_RATE,
     DB_STATS,
+    SYSTEM_PROCESS,
+    QUEUE_TASKS,
     classify,
 )
 from core.bus.handler import (
@@ -63,13 +65,14 @@ from core.bus.registry import (
     get_all_topic_configs,
     TopicConfig,
 )
+from core.bus.websocket import register_websock, attach_all_websocks
 
 __all__ = [
     # Topics
     "ALL_STATIC_TOPICS", "LOG_TOPICS", "DATA_TOPICS",
     "LOG_DB", "LOG_ESI", "LOG_SCHEDULER", "LOG_MARKET", "LOG_STRUCTURES",
     "LOG_CHARACTER", "LOG_AUTH", "LOG_WEB", "LOG_SYSTEM", "LOG_APP",
-    "ESI_RATE", "DB_STATS",
+    "ESI_RATE", "DB_STATS", "SYSTEM_PROCESS", "QUEUE_TASKS",
     "classify",
     # Handler
     "BusHandler", "bus_handler",
@@ -77,4 +80,6 @@ __all__ = [
     "publish",
     # Registry
     "register_topic", "get_topic_config", "get_all_topic_configs", "TopicConfig",
+    # WebSocket helpers
+    "register_websock", "attach_all_websocks",
 ]

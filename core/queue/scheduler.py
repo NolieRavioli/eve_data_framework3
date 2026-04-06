@@ -15,7 +15,26 @@ from typing import Callable, Optional
 from core.queue._context import _thread_task
 
 # ── Registry ─────────────────────────────────────────────────────────────────
-_registry: dict[str, "Task"] = {}
+
+def _try_publish(topic: str, payload: dict) -> None:
+    """Publish to the bus; absorb all errors (bus is optional)."""
+    try:
+        from core.bus.handler import bus_handler as _bh
+        _bh.publish(topic, payload)
+    except Exception:
+        pass
+
+
+def _publish_queue_tasks() -> None:
+    """Snapshot the whole task list and push to queue/tasks topic."""
+    try:
+        from core.bus.topics import QUEUE_TASKS
+        with _registry_lock:
+            snapshot = [t.brief_dict() for t in
+                        sorted(_registry.values(), key=lambda t: t.created_at, reverse=True)]
+        _try_publish(QUEUE_TASKS, {"tasks": snapshot})
+    except Exception:
+        pass_registry: dict[str, "Task"] = {}
 _registry_lock = threading.Lock()
 
 
@@ -41,10 +60,12 @@ class Task:
         with self._lock:
             self._log.append(line)
         self._event.set()
+        _try_publish(f"task/{self.task_id}/log", {"type": "log", "message": line})
 
     def update_esi_rate(self, stats: dict) -> None:
         self.esi_rate = stats
         self._event.set()
+        _try_publish(f"task/{self.task_id}/log", {"type": "esi_rate", **stats})
 
     def snapshot(self) -> list[str]:
         with self._lock:
@@ -54,6 +75,7 @@ class Task:
         with self._lock:
             self._esi_log.append(entry)
         self._event.set()
+        _try_publish(f"task/{self.task_id}/log", {"type": "esi_requests", "entries": [entry]})
 
     def esi_requests_snapshot(self) -> list[dict]:
         with self._lock:
@@ -62,6 +84,9 @@ class Task:
     def _set_status(self, s: str) -> None:
         self.status = s
         self._event.set()
+        if s in ("complete", "failed", "cancelled"):
+            _try_publish(f"task/{self.task_id}/log", {"type": "done", "status": s})
+        _publish_queue_tasks()
 
     def brief_dict(self) -> dict:
         """Lightweight snapshot — no log lines; used for the rate-stream SSE payload."""
@@ -163,6 +188,18 @@ def enqueue(name: str, fn: Callable, *args, owner_id: int = 0, queue: str = "pri
     task = Task(task_id, owner_id, name, queue=queue)
     with _registry_lock:
         _registry[task_id] = task
+    # Register a per-task bus topic so register_websock routes can subscribe.
+    try:
+        from core.bus.registry import register_topic
+        register_topic(
+            f"task/{task_id}/log",
+            description=f"Log stream for task {task_id} ({name})",
+            access_level="user",
+            required_role="queue",
+        )
+    except Exception:
+        pass
+    _publish_queue_tasks()
     executor = _public_executor if queue == "public" else _private_executor
     executor.submit(_run, task, fn, args, kwargs)
     return task_id
@@ -206,4 +243,6 @@ def clear_tasks(owner_id: Optional[int] = None) -> int:
         ]
         for tid in to_del:
             del _registry[tid]
+    if to_del:
+        _publish_queue_tasks()
     return len(to_del)

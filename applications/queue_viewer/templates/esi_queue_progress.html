@@ -13,7 +13,7 @@
 </div>
 
 <div id="task-app" class="pg-body" data-task-id="{{ task.task_id }}"
-     data-url-stream="{{ url_for('queue_viewer.esi_queue_stream', task_id=task.task_id) }}"
+     data-url-ws="/queue/{{ task.task_id }}/ws"
      data-url-cancel="{{ url_for('queue_viewer.cancel_task', task_id=task.task_id) }}">
   <div class="stat-row">
     <div class="stat">
@@ -59,7 +59,7 @@
     <div class="section-head">
       <div>
         <div class="ct" style="margin-bottom:0.35rem">Live Output</div>
-        <div class="muted" style="font-size:0.78rem">Logs stream in via SSE and remain available after the task finishes.</div>
+        <div class="muted" style="font-size:0.78rem">Logs stream in via WebSocket and remain available after the task finishes.</div>
       </div>
       <div class="toolbar">
         {% if task.status == 'pending' %}

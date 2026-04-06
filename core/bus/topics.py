@@ -34,9 +34,11 @@ LOG_TOPICS: tuple[str, ...] = (
 
 ESI_RATE = "esi/rate"
 DB_STATS = "db/stats"
+SYSTEM_PROCESS = "system/process"
+QUEUE_TASKS = "queue/tasks"
 
 DATA_TOPICS: tuple[str, ...] = (
-    ESI_RATE, DB_STATS,
+    ESI_RATE, DB_STATS, SYSTEM_PROCESS, QUEUE_TASKS,
 )
 
 # ── Combined ──────────────────────────────────────────────────────────────────

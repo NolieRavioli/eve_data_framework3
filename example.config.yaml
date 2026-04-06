@@ -39,6 +39,7 @@ Python Console:
   # applications.scheduler.routes: INFO
   # applications.sys_status.routes: INFO
   # core.bus.handler: INFO
+  # core.bus.process_pub: INFO
   # core.bus.websocket: INFO
   # core.config: INFO
   # core.db: INFO

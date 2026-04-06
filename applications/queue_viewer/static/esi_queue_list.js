@@ -1,4 +1,4 @@
-function cancelTask(taskId, button) {
+﻿function cancelTask(taskId, button) {
   var _esiCard = document.getElementById('esi-rate-card');
   fetch(_esiCard.dataset.urlCancel.replace('PLACEHOLDER', taskId), { method: 'POST' })
     .then(function (response) { return response.json(); })
@@ -24,22 +24,19 @@ function clearDone() {
 }
 
 (function () {
-  // Live ESI rate card - SSE push from /queue/rate_stream
+  // Live ESI rate card + task-list â€” bus WebSocket push from /queue/ws/rate
   var esiCard   = document.getElementById('esi-rate-card');
   var esiGroups = document.getElementById('esi-groups');
   var esiReqs   = document.getElementById('esi-reqs');
   var isAdmin   = esiCard ? esiCard.dataset.isAdmin === 'true' : false;
-  var _URL_RATE_STREAM = esiCard ? esiCard.dataset.urlRateStream : '/queue/rate_stream';
+  var _URL_WS_RATE = esiCard ? esiCard.dataset.urlWsRate : '/queue/ws/rate';
 
-  function applyRateStats(d) {
-    var s = d.limiter;
+  function applyRateStats(s) {
     if (!s || s.requests_total === 0) return;
     esiCard.style.display = '';
     esiReqs.textContent = s.requests_total.toLocaleString() + ' req total';
 
-    // Render one tile per floating window
     var groups = s.groups || {};
-    var runningTask = (d.tasks || []).find(function (t) { return t.status === 'running'; });
     Object.keys(groups).forEach(function (gname) {
       var g             = groups[gname];
       var effectiveUsed = (g.tokens_remaining != null && g.tokens_limit > 0)
@@ -48,8 +45,6 @@ function clearDone() {
       var wspec  = g.tokens_limit + '/' + (g.window_str || g.window_seconds + 's');
       var pct    = g.tokens_limit > 0 ? (effectiveUsed / g.tokens_limit * 100) : 0;
       var col    = pct >= 90 ? 'var(--bad)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)';
-      var charName = (isAdmin && runningTask && runningTask.char_name) ? runningTask.char_name : '';
-      // Hide buckets with no activity
       var elId   = 'esi-grp-' + gname;
       var el     = document.getElementById(elId);
       if (effectiveUsed === 0) {
@@ -65,7 +60,6 @@ function clearDone() {
       el.innerHTML =
         '<div style="margin-bottom:0.35rem">' +
           '<span class="mono" style="font-size:0.82rem;color:var(--txt);font-weight:600">' + wspec + '</span>' +
-          (charName ? '<span class="muted" style="font-size:0.68rem;margin-left:0.45rem">&middot; ' + charName + '</span>' : '') +
           '<span class="muted" style="font-size:0.68rem;margin-left:0.45rem">&middot; ' + gname + '</span>' +
         '</div>' +
         '<div style="background:rgba(255,255,255,0.08);border-radius:999px;height:6px;overflow:hidden;margin-bottom:0.35rem">' +
@@ -73,16 +67,16 @@ function clearDone() {
         '</div>' +
         '<div style="display:flex;justify-content:space-between;font-size:0.7rem">' +
           '<span class="muted">' + effectiveUsed.toLocaleString() + ' used</span>' +
-          '<span class="muted">' + (g.tokens_remaining != null ? g.tokens_remaining.toLocaleString() : '—') + ' / ' + g.tokens_limit.toLocaleString() + ' remaining</span>' +
+          '<span class="muted">' + (g.tokens_remaining != null ? g.tokens_remaining.toLocaleString() : 'â€”') + ' / ' + g.tokens_limit.toLocaleString() + ' remaining</span>' +
         '</div>';
     });
+  }
 
-    // Live-update every row from the tasks snapshot
-    (d.tasks || []).forEach(function (t) {
+  function applyTaskList(tasks) {
+    (tasks || []).forEach(function (t) {
       var row = document.getElementById('row-' + t.task_id);
       if (!row) return;
 
-      // Status badge
       var badge = row.querySelector('.bdg');
       if (badge) {
         badge.textContent = t.status;
@@ -93,23 +87,20 @@ function clearDone() {
         );
       }
 
-      // Queue badge
       var qBadge = row.querySelector('[data-col="queue"]');
       if (qBadge) {
         qBadge.textContent = t.queue || 'private';
         qBadge.className   = 'bdg' + (t.queue === 'public' ? ' bdg-blue' : '');
       }
 
-      // Timestamps
       var startedEl  = row.querySelector('[data-col="started"]');
       var finishedEl = row.querySelector('[data-col="finished"]');
       if (startedEl  && t.started_at)  startedEl.textContent  = t.started_at;
       if (finishedEl && t.finished_at) finishedEl.textContent = t.finished_at;
 
-      // ESI rate mini-bar
       var cell = row.querySelector('.esi-rate-cell');
       if (cell && t.esi_rate) {
-        var r            = t.esi_rate;
+        var r             = t.esi_rate;
         var effectiveUsed = r.tokens_limit > 0
                             ? Math.max(0, r.tokens_limit - (r.tokens_remaining || 0))
                             : (r.tokens_used || 0);
@@ -134,7 +125,6 @@ function clearDone() {
           effectiveUsed.toLocaleString() + '/' + r.tokens_limit.toLocaleString();
       }
 
-      // Cancel button visibility
       var actionCell = row.querySelector('[data-col="action"]');
       if (actionCell) {
         var cancelBtn = actionCell.querySelector('.cancel-btn');
@@ -152,15 +142,25 @@ function clearDone() {
     });
   }
 
-  (function openRateStream() {
-    var es = new EventSource(_URL_RATE_STREAM);
-    es.onmessage = function (ev) {
-      try { applyRateStats(JSON.parse(ev.data)); } catch (e) {}
+  (function openRateWS() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws;
+    try { ws = new WebSocket(proto + '//' + location.host + _URL_WS_RATE); }
+    catch (e) { return; }
+
+    ws.onmessage = function (ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        if (msg.type !== 'publish') return;
+        if (msg.topic === 'esi/rate' && msg.data) {
+          applyRateStats(msg.data);
+        } else if (msg.topic === 'queue/tasks' && msg.data && msg.data.tasks) {
+          applyTaskList(msg.data.tasks);
+        }
+      } catch (e) {}
     };
-    es.onerror = function () {
-      es.close();
-      setTimeout(openRateStream, 5000);
-    };
+    ws.onclose = function () { setTimeout(openRateWS, 5000); };
+    ws.onerror = function () { ws.close(); };
   }());
 }());
 
@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.addEventListener('click', function () { cancelTask(this.dataset.taskId, this); });
   });
 
-  // ── Tab switching ──────────────────────────────────────────────────
+  // â”€â”€ Tab switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var tabBtns  = document.querySelectorAll('.tab-btn[data-tab]');
   var tabPanes = document.querySelectorAll('.tab-panel');
 

@@ -1,6 +1,5 @@
-/**
- * DB Queue + Read Stats tabs — WebSocket live updates via core.bus.
- * Falls back to a 5 s REST poll if the WebSocket is unavailable.
+﻿/**
+ * DB Queue + Read Stats tabs â€” WebSocket live updates via core.bus.
  */
 (function () {
   'use strict';
@@ -9,10 +8,9 @@
   var readsPanel = document.getElementById('tab-reads');
   if (!dbPanel) return;
 
-  var urlDbStats = dbPanel.dataset.urlDbStats;
-  var urlBus     = dbPanel.dataset.urlBus;
+  var urlBus = dbPanel.dataset.urlBus;
 
-  // ── DOM references ────────────────────────────────────────────────────
+  // â”€â”€ DOM references â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Writer
   var elWritesTotal = document.getElementById('db-writes-total');
   var elWritesError = document.getElementById('db-writes-error');
@@ -34,9 +32,9 @@
   var elCacheMisses = document.getElementById('cache-misses');
   var elCacheRate   = document.getElementById('cache-rate');
 
-  // ── Rendering ─────────────────────────────────────────────────────────
-  function fmt(v) { return v != null ? Number(v).toLocaleString() : '—'; }
-  function fmtF(v, d) { return v != null ? Number(v).toFixed(d || 1) : '—'; }
+  // â”€â”€ Rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  function fmt(v) { return v != null ? Number(v).toLocaleString() : 'â€”'; }
+  function fmtF(v, d) { return v != null ? Number(v).toFixed(d || 1) : 'â€”'; }
 
   function applyStats(data) {
     // Writer card
@@ -74,7 +72,7 @@
         var prows = '';
         privKeys.forEach(function (oid) {
           var q = priv[oid];
-          prows += '<tr><td class="mono">' + oid + '</td><td>' + fmt(q.ops) + '</td><td>' + fmt(q.rows) + '</td><td>' + fmt(q.queue_depth) + '</td><td>' + (q.thread_active ? '●' : '○') + '</td></tr>';
+          prows += '<tr><td class="mono">' + oid + '</td><td>' + fmt(q.ops) + '</td><td>' + fmt(q.rows) + '</td><td>' + fmt(q.queue_depth) + '</td><td>' + (q.thread_active ? 'â—' : 'â—‹') + '</td></tr>';
         });
         elPrivBody.innerHTML = prows;
       }
@@ -95,30 +93,19 @@
     if (elCacheHits)   elCacheHits.textContent   = fmt(hits);
     if (elCacheMisses) elCacheMisses.textContent = fmt(misses);
     var total  = hits + misses;
-    if (elCacheRate)   elCacheRate.textContent    = total > 0 ? ((hits / total) * 100).toFixed(1) : '—';
+    if (elCacheRate)   elCacheRate.textContent    = total > 0 ? ((hits / total) * 100).toFixed(1) : 'â€”';
   }
 
-  // ── Initial fetch ─────────────────────────────────────────────────────
-  function fetchOnce() {
-    fetch(urlDbStats)
-      .then(function (r) { return r.json(); })
-      .then(applyStats)
-      .catch(function () {});
-  }
-  fetchOnce();
-
-  // ── WebSocket bus subscription ────────────────────────────────────────
+  // â”€â”€ WebSocket bus subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var wsUrl = wsProtocol + '//' + location.host + urlBus;
   var ws = null;
-  var fallbackTimer = null;
 
   function startWS() {
-    try { ws = new WebSocket(wsUrl); } catch (e) { startFallback(); return; }
+    try { ws = new WebSocket(wsUrl); } catch (e) { return; }
 
     ws.onopen = function () {
       ws.send(JSON.stringify({ action: 'subscribe', topics: ['db/stats'] }));
-      if (fallbackTimer) { clearInterval(fallbackTimer); fallbackTimer = null; }
     };
 
     ws.onmessage = function (ev) {
@@ -132,12 +119,6 @@
 
     ws.onclose = function () { setTimeout(startWS, 5000); };
     ws.onerror = function () { ws.close(); };
-  }
-
-  function startFallback() {
-    if (!fallbackTimer) {
-      fallbackTimer = setInterval(fetchOnce, 5000);
-    }
   }
 
   startWS();

@@ -43,6 +43,10 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     from core.queue.db import start_db_stats_publisher
     start_db_stats_publisher()
 
+    # Start the periodic process-metrics publisher (publishes system/process every 10s).
+    from core.bus.process_pub import start_process_publisher
+    start_process_publisher()
+
     # Attach the flask-sock WebSocket extension and register the bus endpoint.
     # flask-sock is an optional dependency — the app starts normally without it,
     # but the /bus endpoint will be unavailable until it is installed.
@@ -56,6 +60,7 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
             "[web] flask-sock not installed — /bus WebSocket disabled. "
             "Run: pip install flask-sock"
         )
+        sock = None
 
     # Public home page and setup wizard are core infrastructure.
     app.register_blueprint(home_bp)
@@ -68,6 +73,12 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     # registers itself via the shared ToolRegistry.
     from applications import tool_registry
     tool_registry.register_blueprints(app)
+
+    # Bind all register_websock() declarations made by applications during
+    # blueprint registration above.  Must run AFTER register_blueprints().
+    if sock is not None:
+        from core.bus.websocket import attach_all_websocks
+        attach_all_websocks(sock)
 
     # Start the background scheduler engine and register all catalog jobs.
     # Import is deferred so collectors are importable at this point.
