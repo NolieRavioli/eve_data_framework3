@@ -1,0 +1,163 @@
+/* Dashboard — character grid, sub-navigation, and detail layout */
+
+/* ── Character card grid (index) ─────────────────────────────────── */
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.char-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.char-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.char-portrait {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.85rem;
+  object-fit: cover;
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+.char-card-name {
+  font-weight: 700;
+  color: var(--text-strong);
+  font-size: 0.95rem;
+}
+
+.char-card-id {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+/* ── Dashboard layout (sidebar nav + content) ────────────────────── */
+.dash-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .dash-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash-content {
+  display: grid;
+  gap: 1rem;
+}
+
+/* ── Character sub-navigation ────────────────────────────────────── */
+.char-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.char-nav-link {
+  display: block;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text);
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+}
+
+.char-nav-link:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+.char-nav-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .char-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    position: static;
+  }
+  .char-nav-link {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.55rem;
+  }
+}
+
+/* ── Character profile header ────────────────────────────────────── */
+.char-profile {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.char-portrait-lg {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 1rem;
+  object-fit: cover;
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+/* ── Key-value list ──────────────────────────────────────────────── */
+.kv-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.kv .k {
+  color: var(--muted);
+}
+
+.kv .val {
+  color: var(--text-strong);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ── Standings bar ───────────────────────────────────────────────── */
+.standing-bar {
+  width: 60px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.standing-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}

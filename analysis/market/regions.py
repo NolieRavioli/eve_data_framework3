@@ -3,11 +3,11 @@
 Handles all public NPC station market orders across every EVE region that has
 not been recently refreshed.  Regions are skipped when their cooldown entry in
 ``market_region_cooldowns`` has not yet expired — see
-:func:`core.db.publicDB.list_market_region_ids` and
-:func:`core.db.publicDB.mark_region_market_refreshed`.
+:func:`core.db.public.list_market_region_ids` and
+:func:`core.db.public.mark_region_market_refreshed`.
 
 Rate limiting, ETag caching, and 429 back-off are handled transparently by
-:func:`core.queue.esi_req.esi_get`; callers in this module do not need their
+:func:`core.esi.request.esi_get`; callers in this module do not need their
 own retry loops.
 
 **Table ownership:**
@@ -33,20 +33,17 @@ public ESI data refreshed every hour the impact is negligible.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
 
-from core.db.publicDB import connect as public_connect
-from core.db import publicDB as sde_store
+from core.db.public import connect as public_connect
+from core.db import public as sde_store
 from core.db.market_buffer import begin_region, add_page, finish_region, discard_region
-from core.queue.esi_req import esi_get
-from core.queue.db import write_public_nowait
+from core.esi import esi_get
 
 logger = logging.getLogger(__name__)
 
 ESI_BASE = "https://esi.evetech.net/latest"
 
 _REGION_COOLDOWN_SECONDS = 3600          # 1 hour between successful region refreshes
-_STATION_FORBIDDEN_DAYS = 1              # mark stations forbidden for 1 day on ESI error
 
 
 # ── Table DDL — this collector OWNS market_orders + market_region_cooldowns ───
@@ -88,48 +85,13 @@ def ensure_tables(con) -> None:
     """)
 
 
-def ensure_columns(con) -> None:
-    """Add market cooldown tracking columns to ``dim_stations`` (enrichment pattern).
-
-    ``dim_stations`` is owned by the SDE loader; we add columns here following
-    the enrichment pattern from AGENTS.md.  Wrapped in a try/except in the
-    caller because the SDE may not be loaded yet.
-    """
-    con.execute(
-        "ALTER TABLE dim_stations ADD COLUMN IF NOT EXISTS market_forbidden_until TIMESTAMP"
-    )
-    con.execute(
-        "ALTER TABLE dim_stations ADD COLUMN IF NOT EXISTS market_refreshed_until TIMESTAMP"
-    )
-
-
-# ── Station cooldown helpers ──────────────────────────────────────────────────
-
-def _mark_stations_refreshed(region_id: int) -> None:
-    """Set market_refreshed_until on all dim_stations rows for this region."""
-    refreshed_until = datetime.now(timezone.utc) + timedelta(seconds=_REGION_COOLDOWN_SECONDS)
-    write_public_nowait(
-        "UPDATE dim_stations SET market_refreshed_until = ? WHERE region_id = ?",
-        [refreshed_until, region_id],
-    )
-
-
-def _mark_stations_forbidden(region_id: int) -> None:
-    """Set market_forbidden_until on all dim_stations rows for this region."""
-    forbidden_until = datetime.now(timezone.utc) + timedelta(days=_STATION_FORBIDDEN_DAYS)
-    write_public_nowait(
-        "UPDATE dim_stations SET market_forbidden_until = ? WHERE region_id = ?",
-        [forbidden_until, region_id],
-    )
-
-
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 def fetch_all_market_data() -> None:
     """Fetch NPC station market orders for all due regions and persist them.
 
     Regions whose cooldown has not expired are excluded automatically by
-    :func:`core.db.publicDB.list_market_region_ids`.
+    :func:`core.db.public.list_market_region_ids`.
 
     For each eligible region the fetch proceeds as follows:
 
@@ -147,15 +109,11 @@ def fetch_all_market_data() -> None:
     4. Region cooldown and station timestamps are updated.
 
     Rate limiting, ETag caching, and 429 back-off are delegated to
-    :func:`core.queue.esi_req.esi_get`.
+    :func:`core.esi.request.esi_get`.
     """
     con = public_connect(read_only=False)
     try:
         ensure_tables(con)
-        try:
-            ensure_columns(con)
-        except Exception as exc:
-            logger.debug("dim_stations columns skipped (%s) — SDE not loaded yet?", exc)
         con.execute("CHECKPOINT")
     finally:
         con.close()
@@ -182,8 +140,6 @@ def fetch_all_market_data() -> None:
                 "%s on region %s page 1 — skipping",
                 resp.status_code, region_id,
             )
-            if resp.status_code in (403, 404):
-                _mark_stations_forbidden(region_id)
             continue
         orders = resp.json()
         if not orders:
@@ -220,7 +176,6 @@ def fetch_all_market_data() -> None:
             raise
 
         sde_store.mark_region_market_refreshed(region_id, cooldown_seconds=_REGION_COOLDOWN_SECONDS)
-        _mark_stations_refreshed(region_id)
         logger.info("Region %s done — %s orders written", region_id, total_rows)
 
     logger.info("Completed")

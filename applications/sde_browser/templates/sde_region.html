@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ item.region_name if item else 'Unknown' }} — SDE Region{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('sde_browser.static', filename='sde_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ item.region_name if item else 'Unknown Region' }}</h1>
+    <div class="pg-sub">
+      <a href="{{ url_for('sde_browser.index') }}" style="color:var(--accent);text-decoration:none">← SDE Browser</a>
+      &middot; Region ID <span class="mono">{{ region_id }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="pg-body">
+  {% if item is none %}
+  <div class="card muted" style="text-align:center;padding:2rem">Region {{ region_id }} not found in SDE.</div>
+  {% else %}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v mono">{{ item.region_id }}</span>
+        <span class="l">Region ID</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ constellations|length }}</span>
+        <span class="l">Constellations</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ station_count }}</span>
+        <span class="l">Stations</span>
+      </div>
+      {% if item.faction_id %}
+      <div class="stat">
+        <span class="v mono">{{ item.faction_id }}</span>
+        <span class="l">Faction ID</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if constellations %}
+  <section class="card">
+    <div class="section-head" style="margin-bottom:0.5rem">
+      <h2>Constellations</h2>
+      <span class="pill">{{ constellations|length }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="sde-table">
+        <thead><tr><th>ID</th><th>Name</th><th>Systems</th></tr></thead>
+        <tbody>
+          {% for cn in constellations %}
+          <tr>
+            <td class="mono">{{ cn.constellation_id }}</td>
+            <td>{{ cn.constellation_name }}</td>
+            <td class="mono">{{ cn.system_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sde_browser.static', filename='sde_browser.js') }}"></script>
+{% endblock %}

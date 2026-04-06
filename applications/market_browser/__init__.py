@@ -16,6 +16,7 @@ class MarketBrowserTool(BaseTool):
         url_prefix="/market",
         required_scopes=[],
         nav_weight=10,
+        nav_section="overview",
         access_level="public",
     )
 

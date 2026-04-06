@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Contracts — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Contracts</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if contracts %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Contracts</div>
+        <span class="pill">{{ contracts|length }} contracts</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Title</th>
+            <th class="text-right">Price</th>
+            <th>Issued</th>
+            <th>Expires</th>
+          </tr></thead>
+          <tbody>
+            {% for c in contracts %}
+            <tr>
+              <td>{{ c.type or '—' }}</td>
+              <td><span class="pill" style="font-size:.68rem">{{ c.status or '—' }}</span></td>
+              <td>{{ c.title or '—' }}</td>
+              <td class="text-right mono">{{ "{:,.2f}".format(c.price or 0) }}</td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ c.date_issued or '—' }}</td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ c.date_expired or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No contract data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

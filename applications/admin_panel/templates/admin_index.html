@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel - EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>! Operations Console</h1>
+    <div class="pg-sub">System overview and administration.</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('admin.users') }}" class="btn btn-a">User Management</a>
+    <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-g">DB Browser</a>
+  </div>
+</div>
+
+<div class="pg-body">
+
+    <div class="stat-row">
+      <div class="stat"><span class="v">{{ stats.total_owners }}</span><span class="l">Owners</span></div>
+      <div class="stat"><span class="v">{{ stats.admin_count }}</span><span class="l">Admins</span></div>
+      <div class="stat"><span class="v">{{ stats.role_count }}</span><span class="l">Roles Granted</span></div>
+      <div class="stat"><span class="v">{{ stats.table_count }}</span><span class="l">Public Tables</span></div>
+      <div class="stat"><span class="v">{{ stats.table_total_rows }}</span><span class="l">Total Rows</span></div>
+      <div class="stat"><span class="v">{{ stats.esi_status.compatibility_date if stats.esi_status.available else 'Missing' }}</span><span class="l">ESI Spec</span></div>
+    </div>
+
+    <section class="card">
+      <div class="section-head" style="margin-bottom:0.75rem">
+        <div>
+          <h2 style="margin-bottom:0.35rem">Warehouse Status</h2>
+          <div class="muted" style="font-size:0.8rem">DuckDB SDE manifest and generated ESI spec metadata.</div>
+        </div>
+      </div>
+
+      <div class="stat-row" style="margin-bottom:0.9rem">
+        <div class="stat">
+          <span class="v">{{ 'Ready' if stats.sde_status.available else 'Missing' }}</span>
+          <span class="l">SDE Warehouse</span>
+        </div>
+        <div class="stat">
+          <span class="v mono">{{ stats.sde_status.manifest.sde_version if stats.sde_status.available and stats.sde_status.manifest else '-' }}</span>
+          <span class="l">SDE Version</span>
+        </div>
+        <div class="stat">
+          <span class="v">{{ stats.sde_status.file_size_bytes if stats.sde_status.file_size_bytes else 0 }}</span>
+          <span class="l">DuckDB Bytes</span>
+        </div>
+        <div class="stat">
+          <span class="v">{{ stats.esi_status.route_count if stats.esi_status.available else 0 }}</span>
+          <span class="l">ESI Routes</span>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="max-height:none">
+        <table>
+          <thead><tr><th>Artifact</th><th>Status</th><th>Details</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>SDE Warehouse</td>
+              <td>{{ 'Ready' if stats.sde_status.available else 'Missing' }}</td>
+              <td class="mono">
+                {{ stats.sde_status.database_file }}<br>
+                {% if stats.sde_status.manifest %}
+                built {{ stats.sde_status.manifest.build_finished_at }}<br>
+                source {{ stats.sde_status.manifest.source_hash }}
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td>ESI Spec Registry</td>
+              <td>{{ 'Ready' if stats.esi_status.available else 'Missing' }}</td>
+              <td class="mono">
+                {{ stats.esi_status.compatibility_date if stats.esi_status.available else '-' }}<br>
+                {{ stats.esi_status.routes_json if stats.esi_status.available else stats.esi_status.latest_pointer }}<br>
+                {% if stats.esi_status.available %}generated {{ stats.esi_status.generated_at }}{% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-head" style="margin-bottom:0.75rem">
+        <div>
+          <h2 style="margin-bottom:0.35rem">Public Database Table Counts</h2>
+          <div class="muted" style="font-size:0.8rem">Fast snapshot of row counts in the shared database.</div>
+        </div>
+        <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-a">Open SQL Browser</a>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Table</th><th>Rows</th></tr></thead>
+          <tbody>
+            {% for table_name, row_count in stats.table_counts.items() %}
+            <tr>
+              <td>{{ table_name }}</td>
+              <td class="mono">{{ row_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+</div>
+{% endblock %}

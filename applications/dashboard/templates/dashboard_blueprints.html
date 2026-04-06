@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Blueprints — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Blueprints</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if blueprints %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Blueprint Library</div>
+        <span class="pill">{{ blueprints|length }} blueprints</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th class="text-right">ME</th>
+            <th class="text-right">TE</th>
+            <th class="text-right">Runs</th>
+            <th>Location</th>
+          </tr></thead>
+          <tbody>
+            {% for b in blueprints %}
+            <tr>
+              <td>{{ b.type_name or b.get('type_id', '—') }}</td>
+              <td>{% if b.quantity == -2 %}BPC{% else %}BPO{% endif %}</td>
+              <td class="text-right mono">{{ b.material_efficiency or 0 }}</td>
+              <td class="text-right mono">{{ b.time_efficiency or 0 }}</td>
+              <td class="text-right mono">{{ b.runs if b.runs and b.runs > 0 else '∞' }}</td>
+              <td class="muted mono" style="font-size:.82rem">{{ b.location_id or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No blueprint data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

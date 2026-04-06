@@ -44,12 +44,12 @@ def get_read_stats() -> dict:
 def _resolve_path(db_path: str | Path | None) -> Path:
     if db_path is not None:
         return Path(db_path)
-    from core.db.publicDB import get_database_path
+    from core.db.public import get_database_path
     return get_database_path()
 
 
 def _open(db_path: Path):
-    from core.db.publicDB import connect
+    from core.db.public import connect
     return connect(db_path)
 
 

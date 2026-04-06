@@ -15,7 +15,7 @@ from flask import Flask, Response, redirect, request, url_for
 
 from core.config import RuntimeSettings, get_runtime_settings
 
-from core.web.auth import auth_bp
+from core.auth.sso import auth_bp
 from core.web.home import home_bp
 from core.web.setup import setup_bp
 
@@ -40,7 +40,7 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     _install_bus_handler()
 
     # Start the periodic db/stats publisher (publishes to the bus every 5s).
-    from core.queue.db import start_db_stats_publisher
+    from core.db.stats import start_db_stats_publisher
     start_db_stats_publisher()
 
     # Start the periodic process-metrics publisher (publishes system/process every 10s).
@@ -82,8 +82,8 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
 
     # Start the background scheduler engine and register all catalog jobs.
     # Import is deferred so collectors are importable at this point.
-    from core.tasks.scheduler import get_engine
-    from core.tasks.scheduler_jobs import register_all_jobs
+    from core.tasks.engine import get_engine
+    from core.tasks.jobs import register_all_jobs
     _scheduler = get_engine()
     register_all_jobs(_scheduler)
     _scheduler.start()

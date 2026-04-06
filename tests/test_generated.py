@@ -186,7 +186,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("core.queue.esi_req.esi_request", return_value=mock_resp) as mock_req:
+        with patch("core.esi.request.esi_request", return_value=mock_resp) as mock_req:
             result = execute_operation("GetAlliances")
             self.assertEqual(result["status_code"], 200)
             self.assertEqual(result["body"], [1, 2, 3])
@@ -206,7 +206,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.url = "https://esi.evetech.net/alliances"
         mock_resp.headers = {"Content-Type": "application/json", "X-Pages": "1"}
 
-        with patch("core.queue.esi_req.esi_request", return_value=mock_resp):
+        with patch("core.esi.request.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertIsInstance(result, list)
 
@@ -218,7 +218,7 @@ class TestGeneratedClient(unittest.TestCase):
         mock_resp.content = b""
         mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("core.queue.esi_req.esi_request", return_value=mock_resp):
+        with patch("core.esi.request.esi_request", return_value=mock_resp):
             result = fetch_all_pages("GetAlliances")
             self.assertEqual(result, [])
 
@@ -227,23 +227,23 @@ class TestAuthScopesFromManifest(unittest.TestCase):
     """Verify auth.py uses generated scopes and no hardcoded list."""
 
     def test_required_scopes_from_manifest(self):
-        from core.esi import auth
+        from core.auth import tokens as auth
         from core.esi.generated.manifest import ALL_SCOPES
         import re
         # auth.py should no longer contain a hardcoded scope string
-        auth_src = Path("core/esi/auth.py").read_text(encoding="utf-8")
+        auth_src = Path("core/auth/tokens.py").read_text(encoding="utf-8")
         self.assertNotIn("esi-wallet.read_character_wallet.v1", auth_src)
         self.assertNotIn("esi-skills.read_skills.v1", auth_src)
         # The generated import should be present
         self.assertIn("from core.esi.generated.manifest import ALL_SCOPES", auth_src)
 
     def test_required_scopes_is_66_scopes(self):
-        from core.esi.auth import REQUIRED_SCOPES
+        from core.auth.tokens import REQUIRED_SCOPES
         scopes = REQUIRED_SCOPES.split()
         self.assertEqual(len(scopes), 66)
 
     def test_required_scopes_matches_manifest(self):
-        from core.esi.auth import REQUIRED_SCOPES
+        from core.auth.tokens import REQUIRED_SCOPES
         from core.esi.generated.manifest import ALL_SCOPES
         self.assertEqual(set(REQUIRED_SCOPES.split()), set(ALL_SCOPES))
 

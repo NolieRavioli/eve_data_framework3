@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}ESI Admin Queue - EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>ESI Admin Queue</h1>
+    <div class="pg-sub">Global view — all owners · {{ task_summary.total }} jobs</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('esi_viewer.index') }}" class="btn btn-g">Personal Queue</a>
+  </div>
+</div>
+
+<!-- ── Global rate cards ───────────────────────────────────────────────── -->
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem"
+     data-url-ws-rate="/esi/admin/ws">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+    <div>
+      <div class="ct" style="margin:0;margin-bottom:0.2rem">ESI Floating Window Rate Limits</div>
+      <div class="muted" style="font-size:0.78rem">All owners — global rate limiter snapshot</div>
+    </div>
+    <span class="muted mono" style="font-size:0.78rem" id="esi-reqs">—</span>
+  </div>
+  <div id="esi-groups" style="display:flex;flex-wrap:wrap;gap:0.75rem"></div>
+</div>
+
+<div class="pg-body">
+  <!-- ── Summary stats ─────────────────────────────────────────────────── -->
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v">{{ task_summary.total }}</span>
+      <span class="l">Total Jobs</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.running }}</span>
+      <span class="l">Running</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.pending }}</span>
+      <span class="l">Pending</span>
+    </div>
+    <div class="stat">
+      <span class="v ok">{{ task_summary.complete }}</span>
+      <span class="l">Complete</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.failed + task_summary.cancelled }}</span>
+      <span class="l">Stopped</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ owners | length }}</span>
+      <span class="l">Owners</span>
+    </div>
+  </div>
+
+  <!-- ── Per-owner task groups ─────────────────────────────────────────── -->
+  {% for owner in owners %}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="section-head">
+      <div>
+        <div class="ct" style="margin:0">{{ owner.name }}</div>
+        <div class="muted" style="font-size:0.78rem">Owner {{ owner.owner_id }}</div>
+      </div>
+      <div style="display:flex;gap:0.5rem">
+        {% if owner.running %}<span class="bdg bdg-blue">{{ owner.running }} running</span>{% endif %}
+        {% if owner.pending %}<span class="bdg bdg-warn">{{ owner.pending }} pending</span>{% endif %}
+        <span class="pill">{{ owner.tasks | length }} total</span>
+      </div>
+    </div>
+    <div class="tw tw-scroll">
+      <table>
+        <thead>
+          <tr><th>Job</th><th>Status</th><th>Queue</th><th>Queued</th><th>Started</th><th>Finished</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for t in owner.tasks | reverse %}
+          <tr>
+            <td>
+              <a href="{{ url_for('esi_viewer.task_detail', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
+              <div class="mono muted" style="margin-top:0.18rem;font-size:0.7rem">{{ t.task_id }}</div>
+            </td>
+            <td>
+              <span class="bdg
+                {% if t.status == 'complete' %}bdg-ok
+                {% elif t.status == 'failed' %}bdg-bad
+                {% elif t.status == 'running' %}bdg-blue
+                {% elif t.status == 'pending' %}bdg-warn
+                {% else %}bdg-warn{% endif %}">{{ t.status }}</span>
+            </td>
+            <td><span class="bdg {% if t.queue == 'public' %}bdg-blue{% endif %}">{{ t.queue or 'private' }}</span></td>
+            <td class="mono muted" style="white-space:nowrap">{{ t.created_at or '—' }}</td>
+            <td class="mono muted" style="white-space:nowrap">{{ t.started_at or '—' }}</td>
+            <td class="mono muted" style="white-space:nowrap">{{ t.finished_at or '—' }}</td>
+            <td>
+              <a href="{{ url_for('esi_viewer.task_detail', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty card">
+    <div class="ei">~</div>
+    <p>No jobs in the global queue.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('esi_viewer.static', filename='esi_admin_queue.js') }}"></script>
+{% endblock %}

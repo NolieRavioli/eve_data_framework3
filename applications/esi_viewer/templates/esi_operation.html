@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ op.operation_id }} — ESI Explorer{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('esi_viewer.static', filename='admin_esi.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1><span class="method-badge method-{{ op.method|lower }}">{{ op.method }}</span> {{ op.operation_id }}</h1>
+    <div class="pg-sub">{{ op.path }}</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('esi_viewer.explore_index') }}" class="btn btn-g">← All Operations</a>
+  </div>
+</div>
+
+<div id="esi-op-app" class="pg-body"
+     data-url-run="{{ url_for('esi_viewer.explore_run', operation_id=op.operation_id) }}"
+     data-op='{{ op_json }}'>
+
+  <div class="card stack">
+    <p style="font-size:0.88rem;color:var(--text);margin-bottom:0.85rem">{{ op.summary or 'No description available.' }}</p>
+
+    {% if op.scopes %}
+    <div style="margin-bottom:0.85rem">
+      <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.35rem">Required Scopes</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+        {% for s in op.scopes %}<span class="scope-chip">{{ s }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if op.parameters %}
+    <div style="margin-bottom:0.85rem">
+      <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.45rem">Parameters</div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Name</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+          <tbody>
+            {% for p in op.parameters %}
+            <tr>
+              <td class="mono" style="font-size:0.8rem">{{ p.name }}</td>
+              <td><span class="bdg">{{ p.in }}</span></td>
+              <td class="muted" style="font-size:0.78rem">{{ p.type or p.schema_type or '—' }}</td>
+              <td>{% if p.required %}<span style="color:var(--bad)">✓</span>{% else %}—{% endif %}</td>
+              <td class="muted" style="font-size:0.78rem">{{ p.description or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Execute panel -->
+  <div class="card stack" style="margin-top:1rem">
+    <div class="ct" style="margin-bottom:0.65rem">Execute</div>
+
+    <div id="op-params" style="display:grid;gap:.45rem;margin-bottom:0.85rem"></div>
+
+    <div style="margin-bottom:.85rem;">
+      <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:.45rem">Query Params <span style="opacity:.5">(key=value, one per line)</span></div>
+      <textarea id="op-query" rows="3" placeholder="order_type=all"
+                style="width:100%;background:rgba(7,18,29,.7);border:1px solid var(--border);
+                       border-radius:.7rem;padding:.52rem .7rem;color:var(--text-strong);
+                       font-family:var(--font-mono);font-size:.78rem;resize:vertical;"></textarea>
+    </div>
+
+    {% if op.pagination and op.pagination.has_page_param %}
+    <div style="margin-bottom:.85rem;">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;">
+        <input type="checkbox" id="op-all-pages" style="cursor:pointer;"> Fetch all pages
+      </label>
+    </div>
+    {% endif %}
+
+    <button id="op-run-btn"
+            style="width:100%;padding:.6rem;border:1px solid var(--accent);border-radius:.85rem;
+                   background:var(--accent-soft);color:var(--accent);font-weight:700;
+                   font-size:.82rem;cursor:pointer;transition:background .14s;">
+      ▶ Run
+    </button>
+
+    <div id="op-response" style="margin-top:.85rem;display:none;">
+      <div id="op-resp-status" style="font-size:.75rem;margin-bottom:.4rem;"></div>
+      <pre id="op-resp-body"
+           style="background:rgba(7,18,29,.8);border:1px solid var(--border);border-radius:.7rem;
+                  padding:.65rem .75rem;font-family:var(--font-mono);font-size:.73rem;
+                  max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--text);"></pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('esi_viewer.static', filename='esi_operation.js') }}"></script>
+{% endblock %}

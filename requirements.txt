@@ -9,3 +9,4 @@ pyyaml
 ruamel.yaml
 duckdb
 pandas
+psutil

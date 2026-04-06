@@ -25,32 +25,37 @@ Python Console:
   # urllib3: INFO
   # requests: INFO
   #
+  # analysis.character.collectors: INFO
   # analysis.character.populate: INFO
+  # analysis.market.history: INFO
   # analysis.market.regions: INFO
   # analysis.market.structures: INFO
   # analysis.structures.discover: INFO
   # applications: INFO
   # applications.admin_panel.routes: INFO
   # applications.dashboard.routes: INFO
-  # applications.db_browser.routes: INFO
-  # applications.esi_browser.routes: INFO
+  # applications.db_viewer.routes: INFO
+  # applications.esi_viewer.routes: INFO
   # applications.market_browser.routes: INFO
-  # applications.queue_viewer.routes: INFO
   # applications.scheduler.routes: INFO
-  # applications.sys_status.routes: INFO
+  # applications.sde_browser.routes: INFO
+  # applications.system.routes: INFO
+  # core.auth.credentials: INFO
+  # core.auth.identity: INFO
+  # core.auth.sso: INFO
+  # core.auth.tokens: INFO
   # core.bus.handler: INFO
   # core.bus.process_pub: INFO
   # core.bus.websocket: INFO
   # core.config: INFO
   # core.db: INFO
   # core.db.market_buffer: INFO
-  # core.db.privateDB: INFO
-  # core.db.publicDB: INFO
+  # core.db.private: INFO
+  # core.db.public: INFO
   # core.db.reader: INFO
   # core.db.sde: INFO
   # core.db.stats: INFO
   # core.db.writer: INFO
-  # core.esi.auth: INFO
   # core.esi.cache: INFO
   # core.esi.corp.assets: INFO
   # core.esi.corp.contacts: INFO
@@ -107,16 +112,13 @@ Python Console:
   # core.esi.public.status: INFO
   # core.esi.public.universe: INFO
   # core.esi.public.wars: INFO
+  # core.esi.rate: INFO
   # core.esi.registry: INFO
-  # core.queue.db: INFO
-  # core.queue.db_access: INFO
-  # core.queue.esi_req: INFO
-  # core.tasks.scheduler: INFO
-  # core.tasks.scheduler_db: INFO
-  # core.tasks.scheduler_jobs: INFO
+  # core.tasks.engine: INFO
+  # core.tasks.jobs: INFO
+  # core.tasks.persist: INFO
   # core.tasks.sde_loader: INFO
   # core.web: INFO
-  # core.web.auth: INFO
   # main: INFO
 
 # SDE section toggles — set false to skip loading a dataset at startup.
@@ -159,3 +161,17 @@ Market:
   authorized_cooldown_seconds: 3600     # seconds to skip structures that succeed on market endpoint
   max_retries: 3                        # per-page fetch retry limit before skipping a structure
   rate_limit_sleep_seconds: 10          # sleep duration when ESI returns 420 (error rate limit)
+
+DB Units:
+  # Weighted cost metric: db-units = Σ(operation_count × weight).
+  # Weights are derived from benchmark ms/row ratios relative to a plain batched
+  # INSERT through the writer thread (baseline = 1.0).  See website layout.md
+  # §Appendix B for full benchmark results and methodology.
+  read: 0.001        # SELECT — cost is per statement, not per row (nearly free)
+  insert: 1.0        # baseline — batched executemany through writer
+  upsert: 9.0        # INSERT OR REPLACE / ON CONFLICT — PK conflict overhead
+  update: 0.0002     # UPDATE … WHERE — single statement (nearly free)
+  delete: 0.003      # DELETE … WHERE — single statement (nearly free)
+  truncate: 4.69     # scales with table-reset iteration count
+  ddl: 1.8           # CREATE TABLE IF NOT EXISTS / ALTER TABLE ADD COLUMN
+  bulk_load: 0.04    # vectorised DataFrame import via db_write_dataframe

@@ -23,9 +23,9 @@ Baseline:
 
 Patterns tested
 ---------------
-TestMarketRegionRefresh   — publicDB.replace_market_orders_for_region()
+TestMarketRegionRefresh   — public.replace_market_orders_for_region()
                             (blocking DELETE + vectorised pandas DataFrame INSERT)
-TestStructureMarketOrders — publicDB.upsert_market_orders()
+TestStructureMarketOrders — public.upsert_market_orders()
                             (fire-and-forget db_executemany_nowait, INSERT ON CONFLICT)
 TestWriterCoalescing      — 20× db_executemany_nowait same SQL vs single blocking
                             db_executemany — demonstrates writer coalesce gain
@@ -36,7 +36,7 @@ TestCharacterData         — SQLAlchemy SQLite sa.text row-by-row loop + commit
 TestDDLOps                — CREATE TABLE IF NOT EXISTS × N + ALTER TABLE ADD
                             COLUMN IF NOT EXISTS × N  (ensure_tables pattern)
 TestMarketCooldowns       — db_write_nowait single-row INSERT ON CONFLICT × N
-                            (matches publicDB.mark_region_market_refreshed)
+                            (matches public.mark_region_market_refreshed)
 
 Setup
 -----
@@ -443,7 +443,7 @@ def _print_report() -> None:
 
 # ---------------------------------------------------------------------------
 # Test 1 — Market region refresh
-# (analysis/market/regions.py → publicDB.replace_market_orders_for_region)
+# (analysis/market/regions.py → public.replace_market_orders_for_region)
 # Pattern: blocking DELETE then vectorised pandas DataFrame INSERT
 # ---------------------------------------------------------------------------
 
@@ -463,11 +463,11 @@ class TestMarketRegionRefresh(unittest.TestCase):
         # Pre-build data outside the timed window
         cls.rows = _market_order_rows(N_MARKET_REGION_ROWS, region_id=_REGION_A)
         # Prime the table with stale data so the DELETE has real work to do
-        from core.db.publicDB import replace_market_orders_for_region
+        from core.db.public import replace_market_orders_for_region
         replace_market_orders_for_region(_REGION_A, cls.rows)
 
     def test_region_market_replace(self) -> None:
-        from core.db.publicDB import replace_market_orders_for_region
+        from core.db.public import replace_market_orders_for_region
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -483,7 +483,7 @@ class TestMarketRegionRefresh(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # Test 2 — Structure market orders
-# (analysis/market/structures.py → publicDB.upsert_market_orders)
+# (analysis/market/structures.py → public.upsert_market_orders)
 # Pattern: fire-and-forget db_executemany_nowait, INSERT ON CONFLICT DO UPDATE
 # ---------------------------------------------------------------------------
 
@@ -503,7 +503,7 @@ class TestStructureMarketOrders(unittest.TestCase):
         cls.rows = _market_order_rows(N_STRUCTURE_ORDERS, region_id=_REGION_B)
 
     def test_structure_market_upsert(self) -> None:
-        from core.db.publicDB import upsert_market_orders
+        from core.db.public import upsert_market_orders
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -618,7 +618,7 @@ class TestStructureDiscovery(unittest.TestCase):
 
     def test_A_phase1_seed(self) -> None:
         """Bulk seed: db_executemany INSERT OR REPLACE for N bare structure rows."""
-        from core.db.publicDB import upsert_structures
+        from core.db.public import upsert_structures
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -632,7 +632,7 @@ class TestStructureDiscovery(unittest.TestCase):
 
     def test_B_phase2_enrich(self) -> None:
         """Enrich loop: one upsert_structures([row]) call per structure."""
-        from core.db.publicDB import upsert_structures
+        from core.db.public import upsert_structures
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -877,7 +877,7 @@ class TestDDLOps(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # Test 7 — Market region cooldowns
-# (publicDB.mark_region_market_refreshed)
+# (public.mark_region_market_refreshed)
 # Pattern: fire-and-forget db_write_nowait single-row INSERT ON CONFLICT
 # ---------------------------------------------------------------------------
 

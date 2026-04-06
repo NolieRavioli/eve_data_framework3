@@ -1,8 +1,8 @@
 """Public database initialization — ensures DuckDB schema and private data dirs exist.
 
 This package owns all persistent data storage:
-  publicDB.py      — DuckDB connections, schema, and write helpers
-  privateDB.py     — per-owner SQLite (ORM via SQLAlchemy)
+  public.py        — DuckDB connections, schema, and write helpers
+  private.py       — per-owner SQLite (ORM via SQLAlchemy)
   sde.py           — in-memory SDE cache backed by DuckDB (moved from core/sde/)
   market_buffer.py — ephemeral in-process buffer for market order writes
   writer.py        — serialized DuckDB write thread
@@ -56,13 +56,13 @@ def ensure_data_dirs() -> None:
 
 def ensure_public_database(database_file=None):
     """Create / migrate the DuckDB operational schema (fast — idempotent)."""
-    from core.db import publicDB
-    return publicDB.ensure_public_database(database_file)
+    from core.db import public
+    return public.ensure_public_database(database_file)
 
 
 def initialize_private_database(owner_id: int):
     """Create per-owner SQLite with WAL mode, PRAGMA settings."""
-    from core.db.privateDB import initialize_private_database as _init
+    from core.db.private import initialize_private_database as _init
     return _init(owner_id)
 
 
@@ -117,11 +117,11 @@ def initialize_all(sde_cfg: dict | None = None) -> dict:
 
     Returns the current warehouse status dict.
     """
-    from core.db import publicDB
+    from core.db import public
     ensure_schema()
     warm_caches(sde_cfg)
 
-    con = publicDB.connect()
+    con = public.connect()
     try:
         # Initialise every analysis collector's tables up front so the DB
         # browser shows the full schema from the first request.
@@ -141,4 +141,4 @@ def initialize_all(sde_cfg: dict | None = None) -> dict:
     finally:
         con.close()
 
-    return publicDB.get_warehouse_status()
+    return public.get_warehouse_status()

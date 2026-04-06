@@ -13,9 +13,9 @@ class SchedulerTool(BaseTool):
     manifest = ToolManifest(
         id="scheduler",
         name="Scheduler",
-        icon="⏱",
+        icon="⏰",
         description="Manage recurring background jobs: enable/disable, set intervals, run on demand.",
-        url_prefix="/admin/scheduler",
+        url_prefix="/scheduler",
         required_scopes=[],
         nav_weight=5,
         nav_section="admin",

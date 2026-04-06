@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ item.type_name if item else 'Unknown' }} — SDE Type{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('sde_browser.static', filename='sde_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ item.type_name if item else 'Unknown Type' }}</h1>
+    <div class="pg-sub">
+      <a href="{{ url_for('sde_browser.index') }}" style="color:var(--accent);text-decoration:none">← SDE Browser</a>
+      &middot; Type ID <span class="mono">{{ type_id }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="pg-body">
+  {% if item is none %}
+  <div class="card muted" style="text-align:center;padding:2rem">Type {{ type_id }} not found in SDE.</div>
+  {% else %}
+  <div class="card">
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v mono">{{ item.type_id }}</span>
+        <span class="l">Type ID</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ item.group_name or '—' }}</span>
+        <span class="l">Group</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ item.category_name or '—' }}</span>
+        <span class="l">Category</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ item.market_group_name or '—' }}</span>
+        <span class="l">Market Group</span>
+      </div>
+    </div>
+    <div class="stat-row" style="margin-top:0.75rem">
+      <div class="stat">
+        <span class="v mono">{{ '{:,.1f}'.format(item.mass) if item.mass else '—' }}</span>
+        <span class="l">Mass (kg)</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ '{:,.2f}'.format(item.volume) if item.volume else '—' }}</span>
+        <span class="l">Volume (m³)</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ '{:,.2f}'.format(item.capacity) if item.capacity else '—' }}</span>
+        <span class="l">Capacity (m³)</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ item.portion_size or '—' }}</span>
+        <span class="l">Portion Size</span>
+      </div>
+      <div class="stat">
+        <span class="v">
+          <span class="badge {{ 'badge-on' if item.published else 'badge-off' }}">
+            {{ 'Published' if item.published else 'Unpublished' }}
+          </span>
+        </span>
+        <span class="l">Published</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sde_browser.static', filename='sde_browser.js') }}"></script>
+{% endblock %}

@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from core.db import publicDB as sde_store
+from core.db import public as sde_store
 
 logger = logging.getLogger(__name__)
 

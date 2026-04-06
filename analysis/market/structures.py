@@ -17,11 +17,11 @@ from datetime import datetime
 
 import requests
 
-from core.db.publicDB import connect as public_connect
-from core.db import publicDB as sde_store
-from core.queue.esi_req import esi_get as _esi_get
+from core.db.public import connect as public_connect
+from core.db import public as sde_store
+from core.esi import esi_get as _esi_get
 import core.db.sde as sde
-from core.esi.auth import resolve_default_owner_id, pick_token, fresh_token
+from core.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.config import CONFIG_PATH, load_config
 
 logger = logging.getLogger(__name__)

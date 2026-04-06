@@ -5,7 +5,7 @@ import os
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from core.esi.auth import CredentialManager
+from core.auth.credentials import CredentialManager
 
 setup_bp = Blueprint("setup", __name__, template_folder="templates")
 

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}User Management - Admin{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">{% endblock %}
+
+{% block content %}
+<div id="admin-app" hidden
+     data-url-promote="{{ url_for('admin.promote') }}"
+     data-url-demote="{{ url_for('admin.demote') }}"></div>
+<div class="pg-hd">
+  <div>
+    <h1>User Management</h1>
+    <div class="pg-sub">All registered owners, roles, and privileges.</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('admin.index') }}" class="btn btn-g">← Dashboard</a>
+    <span class="pill">{{ users | length }} accounts</span>
+  </div>
+</div>
+
+<div class="pg-body">
+    <div id="msg-bar" class="admin-msg"></div>
+
+    <input id="user-filter" class="input" type="search" placeholder="Filter by owner ID, role, or status" style="margin-bottom:1rem">
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-wrap" style="max-height:none">
+        <table id="user-table">
+          <thead>
+            <tr><th>Owner</th><th>Characters</th><th>Roles</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+            <tr data-owner="{{ user.owner_id }}"
+                data-role="{% if user.is_site_owner %}site owner{% elif user.is_admin %}admin{% else %}user{% endif %} {{ user.roles | join(' ') }}">
+              <td class="mono">
+                <a href="{{ url_for('admin.user_detail', owner_id=user.owner_id) }}" class="lnk">{{ user.owner_id }}</a>
+              </td>
+              <td>{{ user.character_count }}</td>
+              <td>
+                {% for r in user.roles %}
+                <span class="badge badge-role">{{ r }}</span>
+                {% endfor %}
+                {% if not user.roles %}<span class="muted" style="font-size:0.72rem">none</span>{% endif %}
+              </td>
+              <td>
+                {% if user.is_site_owner %}
+                <span class="badge badge-owner">Site Owner</span>
+                {% elif user.is_admin %}
+                <span class="badge badge-admin">Admin</span>
+                {% else %}
+                <span class="badge badge-none">User</span>
+                {% endif %}
+              </td>
+              <td style="white-space:nowrap">
+                {% if not user.is_site_owner %}
+                  {% if user.is_admin %}
+                    {% if is_site_owner %}
+                    <button class="btn btn-danger js-demote-btn" type="button" data-owner="{{ user.owner_id }}" style="padding:0.3rem 0.65rem;font-size:0.72rem">Demote</button>
+                    {% endif %}
+                  {% else %}
+                  <button class="btn btn-ok js-promote-btn" type="button" data-owner="{{ user.owner_id }}" style="padding:0.3rem 0.65rem;font-size:0.72rem">Promote</button>
+                  {% endif %}
+                {% else %}
+                <span class="muted">Locked</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('admin.static', filename='admin.js') }}"></script>
+{% endblock %}

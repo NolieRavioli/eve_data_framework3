@@ -2,7 +2,7 @@
 """Shared template context for the base layout (sidebar, character mini-card)."""
 
 from flask import session
-from core.db.privateDB import get_private_session
+from core.db.private import get_private_session
 from core.db.models import Character
 
 

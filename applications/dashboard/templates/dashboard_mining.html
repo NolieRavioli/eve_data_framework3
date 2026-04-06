@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Mining — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Mining Ledger</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if mining %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Ledger</div>
+        <span class="pill">{{ mining|length }} entries</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Date</th>
+            <th>Ore</th>
+            <th class="text-right">Quantity</th>
+            <th>System</th>
+          </tr></thead>
+          <tbody>
+            {% for m in mining %}
+            <tr>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ m.date or '—' }}</td>
+              <td>{{ m.type_name or m.get('type_id', '—') }}</td>
+              <td class="text-right mono">{{ "{:,}".format(m.quantity or 0) }}</td>
+              <td class="mono">{{ m.solar_system_id or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No mining data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Mail — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Mail</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if mail %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Inbox</div>
+        <span class="pill">{{ mail|length }} messages</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Date</th>
+            <th>From</th>
+            <th>Subject</th>
+            <th>Read</th>
+          </tr></thead>
+          <tbody>
+            {% for m in mail %}
+            <tr>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ m.timestamp or '—' }}</td>
+              <td class="mono">{{ m.sender_id or '—' }}</td>
+              <td>{{ m.subject or '(no subject)' }}</td>
+              <td>{{ '✓' if m.is_read else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No mail data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

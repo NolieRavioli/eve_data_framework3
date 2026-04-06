@@ -209,7 +209,7 @@ class TestSDECacheFacade(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from core.db.publicDB import get_database_path
+        from core.db.public import get_database_path
         cls._warehouse_exists = Path(get_database_path()).exists()
 
     def _skip_if_no_warehouse(self):

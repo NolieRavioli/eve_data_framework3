@@ -215,3 +215,37 @@ def load_config(config_path: str = CONFIG_PATH) -> dict:
     logger.info(f"Loaded {len(env_vars)} environment variables from {config_path}")
     return cfg
 
+
+# ── DB-unit weights ────────────────────────────────────────────────────────────────────
+
+_DB_UNIT_DEFAULTS: dict[str, float] = {
+    "read":      0.001,   # SELECT — per statement, nearly free
+    "insert":    1.0,     # baseline — batched executemany through writer
+    "upsert":    9.0,     # INSERT OR REPLACE / ON CONFLICT DO UPDATE with PK
+    "update":    0.0002,  # UPDATE … WHERE — single statement, nearly free
+    "delete":    0.003,   # DELETE … WHERE — single statement, nearly free
+    "truncate":  4.69,    # scales with reset-iteration count
+    "ddl":       1.8,     # CREATE TABLE IF NOT EXISTS / ALTER TABLE ADD COLUMN
+    "bulk_load": 0.04,    # vectorised DataFrame import via db_write_dataframe
+}
+
+
+def get_db_unit_weights() -> dict[str, float]:
+    """Return DB-unit operation weights merged from config.yaml and hardcoded defaults.
+
+    Reads the ``DB Units`` section of ``config.yaml`` and overlays any configured
+    values onto the hardcoded benchmark defaults.  Always returns all 8 keys
+    regardless of which ones appear in the config file, so it works out-of-the-box
+    with no ``DB Units`` section present.
+    """
+    weights = dict(_DB_UNIT_DEFAULTS)
+    try:
+        cfg = load_config(CONFIG_PATH)
+        section = cfg.get("DB Units") or {}
+        for key in _DB_UNIT_DEFAULTS:
+            if key in section:
+                weights[key] = float(section[key])
+    except Exception:
+        pass
+    return weights
+

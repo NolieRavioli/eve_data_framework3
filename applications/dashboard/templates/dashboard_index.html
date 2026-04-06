@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+{% if not base_logged_in %}
+<div class="login-wrap">
+  <div class="login-panel">
+    <div class="logo">ED</div>
+    <h1>Keep the data dense. Keep the clicks low.</h1>
+    <p>Track wallet flow, assets, jobs, skills, and sync activity across linked characters in one compact surface.</p>
+    <div class="pill-row" style="margin-top:1rem">
+      <span class="pill">Wallet flow</span>
+      <span class="pill">Asset coverage</span>
+      <span class="pill">Industry pressure</span>
+      <span class="pill">Background task tracking</span>
+    </div>
+    <div style="margin-top:1.25rem">
+      <a href="{{ url_for('auth.login') }}" class="btn btn-a">Login with EVE Online</a>
+    </div>
+  </div>
+</div>
+{% else %}
+<div id="dash-app" data-url-ws="/dashboard/ws" data-owner-id="{{ owner_id }}"></div>
+<div class="pg-hd">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="pg-sub">Owner {{ owner_id }} · {{ characters|length }} character{{ 's' if characters|length != 1 }}</div>
+  </div>
+</div>
+
+<div class="pg-body">
+
+  {# ── Summary bar ─────────────────────────────────────────────── #}
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v">{{ characters|length }}</span>
+      <span class="l">Characters</span>
+    </div>
+    <div class="stat">
+      <span class="v ok">{{ "{:,.0f}".format(total_isk) }} ISK</span>
+      <span class="l">Total ISK</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ "{:,}".format(total_sp) }}</span>
+      <span class="l">Total SP</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ esi_status.compatibility_date or '—' }}</span>
+      <span class="l">ESI Spec</span>
+    </div>
+  </div>
+
+  {# ── Character cards grid ────────────────────────────────────── #}
+  {% if characters %}
+  <div class="char-grid">
+    {% for c in characters %}
+    <a href="{{ url_for('dashboard.character', character_id=c.character_id) }}" class="char-card">
+      <img class="char-portrait" src="https://images.evetech.net/characters/{{ c.character_id }}/portrait?tenant=tranquility&size=128" alt="">
+      <div class="char-card-body">
+        <div class="char-card-name">{{ c.name or 'Unknown' }}</div>
+        <div class="char-card-id mono">{{ c.character_id }}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="empty">
+      <div class="ei">~</div>
+      <p>No characters linked yet. Use <strong>Add Toon</strong> to link an EVE character.</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('dashboard.static', filename='dashboard.js') }}"></script>
+{% endblock %}

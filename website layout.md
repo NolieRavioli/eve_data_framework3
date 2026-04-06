@@ -156,8 +156,8 @@ Two tiers: personal view (all users) and global admin view.
 |--------|-------|------|-------------|
 | GET | `/db/public/` | `[admin]` | Public DuckDB schema browser: table list with row counts, DDL view per table, column types. |
 | POST | `/db/public/query` | `[admin]` | Execute a read-only SQL query against public DuckDB. Returns paginated results as JSON or HTML table. Parameterised only — no raw interpolation. |
-| GET | `/db/<int:owner_id>/` | `[admin or self]` | Private SQLite schema browser for a specific owner. Non-admins may only view their own `owner_id`. |
-| POST | `/db/<int:owner_id>/query` | `[admin or self]` | Execute a read-only SQL query against an owner's private SQLite database. |
+| GET | `/db/<int:owner_id>/` | `[admin]` | Private SQLite schema browser for a specific owner. Non-admins may only view their own `owner_id`. |
+| POST | `/db/<int:owner_id>/query` | `[admin]` | Execute a read-only SQL query against an owner's private SQLite database. |
 
 ---
 
@@ -195,15 +195,15 @@ Two tiers: personal (role-gated) and global admin view.
 
 ### `/scheduler` — Background Job Management
 
-**Access:** `[role:scheduler]` or `admin`
+**Access:** `[admin]`
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| GET | `/scheduler/` | `[role:scheduler]` | All registered jobs. Columns: job ID, label, interval, enabled toggle, last run timestamp, next scheduled run, last run status. |
-| GET | `/scheduler/<job_id>` | `[role:scheduler]` | `[TBD]` Job detail: description, function path, full run history log with timestamps and exit status. |
-| POST | `/scheduler/<job_id>/toggle` | `[role:scheduler]` | Enable or disable a job (state persisted to DuckDB `scheduler_jobs` table). |
-| POST | `/scheduler/<job_id>/run-now` | `[role:scheduler]` | Enqueue an immediate run of the job outside its normal schedule. Returns `{"task_id": "..."}`. Redirect to `/esi/<task_id>` for progress. |
-| POST | `/scheduler/<job_id>/interval` | `[role:scheduler]` | 
+| GET | `/scheduler/` | `[admin]` | All registered jobs. Columns: job ID, label, interval, enabled toggle, last run timestamp, next scheduled run, last run status. |
+| GET | `/scheduler/<job_id>` | `[admin]` | `[TBD]` Job detail: description, function path, full run history log with timestamps and exit status. |
+| POST | `/scheduler/<job_id>/toggle` | `[admin]` | Enable or disable a job (state persisted to DuckDB `scheduler_jobs` table). |
+| POST | `/scheduler/<job_id>/run-now` | `[admin]` | Enqueue an immediate run of the job outside its normal schedule. Returns `{"task_id": "..."}`. Redirect to `/esi/<task_id>` for progress. |
+| POST | `/scheduler/<job_id>/interval` | `[admin]` | 
 
 ---
 
@@ -244,7 +244,7 @@ Two tiers: personal (role-gated) and global admin view.
 
 ### `/market` — Market Browser
 
-**Access:** `[public]` (browsing) · `[role:queue]` (triggering refresh)
+**Access:** `[public]`
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
@@ -254,7 +254,6 @@ Two tiers: personal (role-gated) and global admin view.
 | GET | `/market/type/<int:type_id>` | `[public]` | `[TBD]` Price history chart + current full order book (buy wall / sell wall) for a specific type. |
 | GET | `/market/tree` | `[public]` | Market category and group hierarchy browser. |
 | GET | `/market/group/<int:group_id>/types` | `[public]` | All types within a market group with their current best price. |
-| POST | `/market/refresh_all` | `[role:queue]` | Enqueue a full market data refresh (all configured regions + accessible structures). Returns `{"task_id": "..."}`. |
 
 ---
 

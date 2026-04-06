@@ -2,9 +2,9 @@ import atexit
 import logging
 
 from core.config import CONFIG_PATH, ensure_dependencies, initialize_runtime_environment, load_config
+from core.bus import install_bus_handler as _install_bus_handler
 from core.db import initialize_all
 from core.db.writer import start_writer, stop_writer
-from core.bus import install_bus_handler as _install_bus_handler
 from core.web.app import start_webUI
 
 logger = logging.getLogger(__name__)

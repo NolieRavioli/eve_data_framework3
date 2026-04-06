@@ -26,7 +26,7 @@ import duckdb
 import requests
 import yaml
 
-from core.db.publicDB import (
+from core.db.public import (
     _as_bool,
     _as_float,
     _as_int,
@@ -1004,7 +1004,7 @@ def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
         source_last_modified=source_meta.get("last_modified"),
     )
     try:
-        from core.db.publicDB import sync_esi_registry_to_warehouse
+        from core.db.public import sync_esi_registry_to_warehouse
         sync_esi_registry_to_warehouse()
     except (FileNotFoundError, ImportError):
         logger.info("No ESI registry present yet; skipping DuckDB registry sync after SDE rebuild.")

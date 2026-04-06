@@ -13,7 +13,7 @@ class AdminPanelTool(BaseTool):
     manifest = ToolManifest(
         id="admin_panel",
         name="Admin Panel",
-        icon="!",
+        icon="🛡️",
         description="Live log console, system stats, and user management.",
         url_prefix="/admin",
         required_scopes=[],

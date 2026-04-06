@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Database — EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('db_viewer.static', filename='db_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Database</h1>
+    <div class="pg-sub">Browse and query your stored data</div>
+  </div>
+</div>
+
+{# Data island for JS #}
+<div id="db-stats-app"
+     data-ws-url="/db/ws"
+     data-owner-id="{{ owner_id or '' }}"
+     data-is-admin="0"
+     style="display:none"></div>
+
+<div class="pg-body">
+
+  {# ── DB Write Activity ──────────────────────────────────── #}
+  <div class="card">
+    <h2>DB Write Activity <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">since last restart · live</span></h2>
+
+    {# Op-type overview mini-cards #}
+    <div class="stat-row" style="flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+      {% set ops = [
+        ('inserts',   'INSERT',    'insert'),
+        ('upserts',   'UPSERT',    'upsert'),
+        ('updates',   'UPDATE',    'update'),
+        ('deletes',   'DELETE',    'delete'),
+        ('truncates', 'TRUNCATE',  'truncate'),
+        ('ddls',      'DDL',       'ddl'),
+        ('bulk_loads','BULK LOAD', 'bulk_load'),
+        ('reads',     'READ',      'read'),
+      ] %}
+      {% for key, label, wkey in ops %}
+      <div class="stat-card card" style="min-width:120px">
+        <div class="stat-label">{{ label }}</div>
+        <div class="stat-value" id="stat-count-{{ key }}">{{ "{:,}".format(my_totals.get(key, 0)) }}</div>
+        <div style="font-size:.7rem;color:var(--text-muted)">
+          <span id="stat-units-{{ key }}">{{ "%.2f"|format(my_totals.get(key, 0) * weights.get(wkey, 0)) }}</span> db-units
+        </div>
+      </div>
+      {% endfor %}
+      <div class="stat-card card" style="min-width:120px;border-left:2px solid var(--accent)">
+        <div class="stat-label">Total db-units</div>
+        <div class="stat-value" id="stat-total-db-units">{{ "%.2f"|format(my_totals.get('db_units', 0)) }}</div>
+        <div style="font-size:.7rem;color:var(--text-muted)">
+          <span id="stat-total-rows">{{ "{:,}".format(my_totals.get('rows', 0)) }}</span> rows
+        </div>
+      </div>
+    </div>
+
+    {# Per-task breakdown table #}
+    {% if owner_attribution %}
+    <div class="table-wrap tw-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th class="num">INSERT</th>
+            <th class="num">UPSERT</th>
+            <th class="num">UPDATE</th>
+            <th class="num">DELETE</th>
+            <th class="num">TRUNCATE</th>
+            <th class="num">DDL</th>
+            <th class="num">BULK LOAD</th>
+            <th class="num">READ</th>
+            <th class="num">Rows</th>
+            <th class="num">db-units</th>
+          </tr>
+        </thead>
+        <tbody id="db-stats-tbody">
+          {% for row in owner_attribution %}
+          <tr>
+            <td title="{{ row.task_id }}">
+              {{ row.task_name }}
+              <span class="status-badge status-{{ row.task_status }}">{{ row.task_status }}</span>
+            </td>
+            <td class="num">{{ row.get('inserts', 0) }}</td>
+            <td class="num">{{ row.get('upserts', 0) }}</td>
+            <td class="num">{{ row.get('updates', 0) }}</td>
+            <td class="num">{{ row.get('deletes', 0) }}</td>
+            <td class="num">{{ row.get('truncates', 0) }}</td>
+            <td class="num">{{ row.get('ddls', 0) }}</td>
+            <td class="num">{{ row.get('bulk_loads', 0) }}</td>
+            <td class="num">{{ row.get('reads', 0) }}</td>
+            <td class="num">{{ "{:,}".format(row.get('rows', 0)) }}</td>
+            <td class="num db-units">{{ "%.2f"|format(row.get('db_units', 0)) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty" style="padding:1.5rem 0">
+      <p>No write activity recorded yet — run a task to see stats here.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Personal tables ────────────────────────────────── #}
+  <div class="card">
+    <h2>Your Private Database</h2>
+    {% if private_tables %}
+    <p style="margin-bottom:.75rem">
+      <strong>{{ private_tables|length }}</strong> table{{ "s" if private_tables|length != 1 else "" }} in owner <code>{{ owner_id }}</code>
+    </p>
+    <div class="table-wrap tw-scroll">
+      <table>
+        <thead><tr><th>Table</th><th>Columns</th></tr></thead>
+        <tbody>
+          {% for tname, cols in private_tables.items() %}
+          <tr>
+            <td>{{ tname }}</td>
+            <td>{{ cols|length }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:.75rem">
+      <a href="{{ url_for('db_viewer.private_browser_self') }}" class="btn btn-a">Browse &amp; Query</a>
+    </div>
+    {% else %}
+    <div class="empty" style="padding:2rem 0">
+      <div class="ei">⛁</div>
+      <p>No private data yet — populate character data first.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Admin section ──────────────────────────────────── #}
+  {% if is_admin %}
+  <div class="card">
+    <h2>Public Warehouse</h2>
+    {% if public_counts %}
+    <p style="margin-bottom:.75rem">
+      <strong>{{ public_counts|length }}</strong> table{{ "s" if public_counts|length != 1 else "" }} —
+      <strong>{{ "{:,}".format(public_counts.values()|sum) }}</strong> total rows
+    </p>
+    <div class="table-wrap tw-scroll" style="max-height:260px">
+      <table>
+        <thead><tr><th>Table</th><th style="text-align:right">Rows</th></tr></thead>
+        <tbody>
+          {% for tname, cnt in public_counts.items()|sort(attribute='1', reverse=true) %}
+          <tr>
+            <td>{{ tname }}</td>
+            <td style="text-align:right">{{ "{:,}".format(cnt) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p>No public tables found.</p>
+    {% endif %}
+    <div style="margin-top:.75rem;display:flex;gap:.5rem">
+      <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-a">Public Browser</a>
+      <a href="{{ url_for('db_viewer.admin_stats') }}" class="btn btn-g">Admin Stats</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('db_viewer.static', filename='db_stats.js') }}"></script>
+{% endblock %}

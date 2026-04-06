@@ -14,7 +14,8 @@
 <div class="pg-hd">
   <div>
     <div class="pg-sub">Market Browser</div>
-    <h1>{{ type_name or "Select an item" }}{% if type_id %} <span class="muted" style="font-size:.65em;font-weight:400">· {{ type_id }}</span>{% endif %}</h1>
+    <h1>{{ type_name or "Select an item" }}{% if type_id %} <span class="muted" style="font-size:.65em;font-weight:400">· {{ type_id }}</span>
+      <a href="{{ url_for('market_browser.type_detail', type_id=type_id) }}" class="btn" style="font-size:.6em;font-weight:400;margin-left:.5rem;vertical-align:middle">Detail →</a>{% endif %}</h1>
   </div>
   <form method="get" action="{{ url_for('market_browser.orders') }}" id="region-form">
     {% if type_id %}<input type="hidden" name="type_id" value="{{ type_id }}">{% endif %}
@@ -49,13 +50,6 @@
 
       {# ── Right panel ─────────────────────────────────────────────── #}
       <div class="mb-content">
-
-        {# refresh buttons #}
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-          <form method="post" action="{{ url_for('market_browser.refresh_all') }}" style="margin:0">
-            <button type="submit" class="btn btn-g" style="white-space:nowrap">↻ Refresh all regions</button>
-          </form>
-        </div>
 
         {% if sells is not none %}
 

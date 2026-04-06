@@ -94,7 +94,7 @@ def _check_single_topic_access(
         return True  # any authenticated user
 
     # Check named role.
-    from core.db.publicDB import get_user_roles
+    from core.auth.identity import get_user_roles
     roles = get_user_roles(owner_id)
     return required_role in roles
 
@@ -310,7 +310,7 @@ def _make_ws_handler(
                 if owner_id is None:
                     _deny("Unauthorized")
                     return
-                from core.db.publicDB import get_user_roles
+                from core.auth.identity import get_user_roles
                 if required_role not in get_user_roles(owner_id):
                     _deny("Forbidden: missing role")
                     return

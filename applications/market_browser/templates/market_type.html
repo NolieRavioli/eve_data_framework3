@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ type_name }} — Market Browser{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('market_browser.static', filename='market_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div id="type-data"
+     data-type-id="{{ type_id }}"
+     data-region-id="10000002"
+     data-history-url="{{ url_for('market_browser.type_history', type_id=type_id) }}">
+
+{# ── Header ─────────────────────────────────────────────────────────── #}
+<div class="pg-hd">
+  <div style="display:flex;align-items:center;gap:1rem">
+    <img src="https://images.evetech.net/types/{{ type_id }}/icon?size=64"
+         alt="" width="64" height="64" style="border-radius:.6rem;background:rgba(0,0,0,.3)">
+    <div>
+      <div class="pg-sub">
+        {% if type_info %}{{ type_info.group_name or '' }} · {{ type_info.category_name or '' }}{% endif %}
+      </div>
+      <h1>{{ type_name }} <span class="muted" style="font-size:.55em;font-weight:400">{{ type_id }}</span></h1>
+    </div>
+  </div>
+  <a href="{{ url_for('market_browser.orders', type_id=type_id) }}" class="btn btn-a" style="font-size:.85rem">← Back to orders</a>
+</div>
+
+<div class="pg-body">
+
+  {# ── Summary stats ──────────────────────────────────────────────── #}
+  <div class="stat-row">
+    {% if best_sell is not none %}
+    <div class="stat">
+      <span class="v" style="color:var(--bad)">{{ "{:,.2f}".format(best_sell) }} ISK</span>
+      <span class="l">Best Sell</span>
+    </div>
+    {% endif %}
+    {% if best_buy is not none %}
+    <div class="stat">
+      <span class="v" style="color:var(--good)">{{ "{:,.2f}".format(best_buy) }} ISK</span>
+      <span class="l">Best Buy</span>
+    </div>
+    {% endif %}
+    {% if best_sell is not none and best_buy is not none %}
+    <div class="stat">
+      <span class="v isk">{{ "{:,.2f}".format(best_sell - best_buy) }} ISK</span>
+      <span class="l">Spread</span>
+    </div>
+    {% endif %}
+    {% if sell_volume %}
+    <div class="stat">
+      <span class="v">{{ "{:,}".format(sell_volume) }}</span>
+      <span class="l">Sell Volume</span>
+    </div>
+    {% endif %}
+    {% if buy_volume %}
+    <div class="stat">
+      <span class="v">{{ "{:,}".format(buy_volume) }}</span>
+      <span class="l">Buy Volume</span>
+    </div>
+    {% endif %}
+    {% if type_info and type_info.volume %}
+    <div class="stat">
+      <span class="v">{{ "{:,.2f}".format(type_info.volume) }} m³</span>
+      <span class="l">Packaged Volume</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Price history chart ────────────────────────────────────────── #}
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <div class="ct">Price History</div>
+      <div style="display:flex;gap:.3rem" id="range-btns">
+        <button class="btn" data-range="30" style="font-size:.75rem;padding:.2rem .55rem">30d</button>
+        <button class="btn btn-a" data-range="90" style="font-size:.75rem;padding:.2rem .55rem">90d</button>
+        <button class="btn" data-range="365" style="font-size:.75rem;padding:.2rem .55rem">1y</button>
+      </div>
+    </div>
+    <div style="position:relative;height:260px">
+      <canvas id="price-chart" style="width:100%;height:100%"></canvas>
+      <div id="chart-loading" class="muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem">Loading history…</div>
+    </div>
+  </div>
+
+  {# ── Region selector for history ────────────────────────────────── #}
+  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+    <span class="muted" style="font-size:.8rem;white-space:nowrap">History region</span>
+    <select id="history-region"
+            style="background:rgba(7,18,29,.85);border:1px solid var(--border);border-radius:.55rem;color:var(--text-strong);padding:.35rem .65rem;font-size:.85rem;cursor:pointer;min-width:10rem">
+      {% for r in regions %}
+      <option value="{{ r.id }}" {% if r.id == 10000002 %}selected{% endif %}>{{ r.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {# ── Order book ─────────────────────────────────────────────────── #}
+  <div class="mt-order-grid">
+    {# ── Sell orders ─────────────────────────────────────────────── #}
+    <div class="card">
+      <div class="ct" style="color:var(--bad);margin-bottom:.5rem">Sell Orders <span class="muted" style="font-weight:400">({{ sells|length }})</span></div>
+      {% if sells %}
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Price</th>
+            <th>Location</th>
+            <th>Expires</th>
+          </tr></thead>
+          <tbody>
+            {% for o in sells[:200] %}
+            <tr>
+              <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
+              <td class="text-right" style="color:var(--bad);font-weight:700">{{ "{:,.2f}".format(o.price) }}</td>
+              <td class="muted" style="font-size:.82rem">{{ o.location_name }}</td>
+              <td class="muted" style="font-size:.82rem">{{ o.expires_in }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">No sell orders.</div>
+      {% endif %}
+    </div>
+
+    {# ── Buy orders ──────────────────────────────────────────────── #}
+    <div class="card">
+      <div class="ct" style="color:var(--good);margin-bottom:.5rem">Buy Orders <span class="muted" style="font-weight:400">({{ buys|length }})</span></div>
+      {% if buys %}
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Price</th>
+            <th>Location</th>
+            <th>Range</th>
+            <th class="text-right">Min Vol</th>
+            <th>Expires</th>
+          </tr></thead>
+          <tbody>
+            {% for o in buys[:200] %}
+            <tr>
+              <td class="text-right">{{ "{:,}".format(o.volume_remain) }}</td>
+              <td class="text-right" style="color:var(--good);font-weight:700">{{ "{:,.2f}".format(o.price) }}</td>
+              <td class="muted" style="font-size:.82rem">{{ o.location_name }}</td>
+              <td>{{ o.range }}</td>
+              <td class="text-right muted">{{ o.min_volume }}</td>
+              <td class="muted" style="font-size:.82rem">{{ o.expires_in }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">No buy orders.</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>{# /pg-body #}
+</div>{# /type-data #}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('market_browser.static', filename='market_type.js') }}"></script>
+{% endblock %}

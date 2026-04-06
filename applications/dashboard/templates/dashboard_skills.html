@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Skills — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Skills</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if skills %}
+    <div class="card">
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Skill ID</th>
+            <th>Trained Level</th>
+            <th class="text-right">Skillpoints</th>
+          </tr></thead>
+          <tbody>
+            {% for s in skills %}
+            <tr>
+              <td>{{ s.skill_id or s.get('type_id', '—') }}</td>
+              <td>{{ s.trained_skill_level if s.trained_skill_level is defined else s.get('level', '—') }}</td>
+              <td class="text-right mono">{{ "{:,}".format(s.skillpoints_in_skill or s.get('sp', 0)) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No skill data collected yet. Run a character refresh to populate.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

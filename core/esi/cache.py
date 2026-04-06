@@ -17,9 +17,9 @@ This module owns two DuckDB tables:
 
 Threading
 ---------
-All writes go through ``core.queue.db`` (the unified DB gateway)
+All writes go through ``core.db.writer`` (the serialised write thread)
 so they are non-blocking and thread-safe.  Reads use a fresh
-``publicDB.connect()`` per call.
+``public.connect()`` per call.
 
 Cache key
 ---------
@@ -282,8 +282,8 @@ def check(cache_key: str) -> dict[str, Any] | None:
     Returns ``None`` on miss, expiry, or any error.
     """
     try:
-        from core.db import publicDB
-        con = publicDB.connect()
+        from core.db import public
+        con = public.connect()
         try:
             row = con.execute(
                 "SELECT * FROM esi_cache WHERE cache_key = ? AND expires_at > now()",
@@ -317,7 +317,7 @@ def store(
     Both writes are fire-and-forget so callers (e.g. the ESI rate limiter) are
     not blocked waiting for disk I/O on every cached response.
     """
-    from core.queue.db import write_public_nowait
+    from core.db.writer import db_write_nowait as write_public_nowait
 
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(seconds=ttl)).isoformat()
@@ -375,7 +375,7 @@ def store(
 
 def refresh_ttl(cache_key: str, ttl: int) -> None:
     """Extend ``expires_at`` for an existing cache row (called on HTTP 304 responses)."""
-    from core.queue.db import write_public
+    from core.db.writer import db_write as write_public
 
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
     write_public(
@@ -397,7 +397,7 @@ def update_route_rl(operation_id: str, headers: dict) -> None:
     if rl_remaining is None and rl_used is None and not rl_limit_str:
         return  # No rate-limit headers on this response — skip update.
 
-    from core.queue.db import write_public
+    from core.db.writer import db_write as write_public
 
     write_public(
         """

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Industry — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Industry Jobs</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if jobs %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Jobs</div>
+        <span class="pill">{{ jobs|length }} jobs</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Activity</th>
+            <th>Blueprint</th>
+            <th>Status</th>
+            <th>Start</th>
+            <th>End</th>
+            <th class="text-right">Runs</th>
+          </tr></thead>
+          <tbody>
+            {% for j in jobs %}
+            <tr>
+              <td>{{ j.activity_id or '—' }}</td>
+              <td>{{ j.blueprint_name or j.get('blueprint_type_id', '—') }}</td>
+              <td><span class="pill" style="font-size:.68rem">{{ j.status or '—' }}</span></td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ j.start_date or '—' }}</td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ j.end_date or '—' }}</td>
+              <td class="text-right mono">{{ j.runs or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No industry data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -27,7 +27,7 @@ from flask import Blueprint, Flask
 
 # ── Auth / nav helpers (re-exported from core.web) ────────────────────────────
 from core.web.context import base_ctx
-from core.web.auth import require_login, require_admin, require_role
+from core.auth import require_login, require_admin, require_role
 
 # ── Config ────────────────────────────────────────────────────────────────────
 from core.config import get_runtime_settings
@@ -154,15 +154,15 @@ class ToolRegistry:
 import core.db.sde as sde  # the module itself is the public API
 
 # ── DB ────────────────────────────────────────────────────────────────────────
-from core.db import publicDB as _pub
-from core.db.privateDB import get_private_session as _get_private_session
-from core.queue.db import (
-    read_public as _read_public,
-    read_public_one as _read_public_one,
-    read_public_scalar as _read_public_scalar,
-    read_private as _read_private,
-    get_db_gateway_stats,
+from core.db import public as _pub
+from core.db.private import get_private_session as _get_private_session
+from core.db.reader import (
+    query_rows as _read_public,
+    query_one as _read_public_one,
+    query_scalar as _read_public_scalar,
 )
+from core.db.private import read_private as _read_private
+from core.db.stats import get_db_gateway_stats
 from core.db.reader import get_db_file_stats
 
 
@@ -254,12 +254,12 @@ class _CharData:
 char_data = _CharData()
 
 # ── Raw ESI ───────────────────────────────────────────────────────────────────
-from core.queue.esi_req import esi_get as _esi_get, esi_post as _esi_post, esi_request as _esi_request
+from core.esi import esi_get as _esi_get, esi_post as _esi_post, esi_request as _esi_request
 
 raw_esi = types.SimpleNamespace(get=_esi_get, post=_esi_post, request=_esi_request)
 
 # ── Token helpers ─────────────────────────────────────────────────────────────
-from core.esi.auth import (
+from core.auth.tokens import (
     get_token as _get_token,
     fresh_token as _fresh_token,
     pick_token as _pick_token,
@@ -279,7 +279,7 @@ from core.esi.generated.client import execute_operation as _execute_operation, f
 esi = types.SimpleNamespace(execute=_execute_operation, fetch_pages=_fetch_all_pages)
 
 # ── Task queue ────────────────────────────────────────────────────────────────
-from core.queue import (
+from core.tasks import (
     enqueue as _enqueue,
     get_task,
     get_all_tasks,
@@ -294,7 +294,7 @@ tasks = types.SimpleNamespace(enqueue=_enqueue)
 
 
 def _get_esi_rate_stats() -> dict:
-    from core.queue.esi_req import get_esi_rate_limiter
+    from core.esi.rate import get_esi_rate_limiter
     limiter = get_esi_rate_limiter()
     return limiter.get_stats() if limiter else {}
 
@@ -311,7 +311,7 @@ queue_info = types.SimpleNamespace(
 )
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-from core.tasks.scheduler import get_engine as _get_scheduler
+from core.tasks.engine import get_engine as _get_scheduler
 
 
 def _scheduler_list_jobs() -> list[dict]:
@@ -326,10 +326,25 @@ def _scheduler_run_now(job_id: str) -> str:
     return _get_scheduler().run_now(job_id)
 
 
+def _scheduler_get_job(job_id: str) -> dict | None:
+    return _get_scheduler().get_job(job_id)
+
+
+def _scheduler_set_interval(job_id: str, interval_s: int) -> None:
+    _get_scheduler().set_interval(job_id, interval_s)
+
+
+def _scheduler_get_run_history(job_id: str, limit: int = 25) -> list[dict]:
+    return _get_scheduler().get_run_history(job_id, limit)
+
+
 scheduler = types.SimpleNamespace(
     list_jobs=_scheduler_list_jobs,
     set_enabled=_scheduler_set_enabled,
     run_now=_scheduler_run_now,
+    get_job=_scheduler_get_job,
+    set_interval=_scheduler_set_interval,
+    get_run_history=_scheduler_get_run_history,
 )
 
 # ── ESI registry ──────────────────────────────────────────────────────────────
@@ -367,6 +382,19 @@ esi_manifest = types.SimpleNamespace(
 )
 
 # ── DB admin ──────────────────────────────────────────────────────────────────
+from core.auth.identity import (
+    get_site_admin as _identity_get_site_admin,
+    list_public_users as _identity_list_users,
+    upsert_site_admin as _identity_upsert_site_admin,
+    delete_site_admin as _identity_delete_site_admin,
+    delete_user as _identity_delete_user,
+    get_user_roles as _identity_get_user_roles,
+    grant_user_roles as _identity_grant_user_roles,
+    revoke_user_role as _identity_revoke_user_role,
+)
+from core.db.stats import get_db_gateway_stats as _get_db_gateway_stats
+from core.config import get_db_unit_weights as _get_db_unit_weights
+
 db_admin = types.SimpleNamespace(
     list_tables=_pub.list_browser_tables,
     list_private_tables=_pub.list_private_browser_tables,
@@ -374,10 +402,16 @@ db_admin = types.SimpleNamespace(
     query_private_sql=_pub.query_private_browser_sql,
     table_counts=_pub.public_table_counts,
     get_warehouse_status=_pub.get_warehouse_status,
-    get_site_admin=_pub.get_site_admin,
-    list_users=_pub.list_public_users,
-    upsert_site_admin=_pub.upsert_site_admin,
-    delete_site_admin=_pub.delete_site_admin,
+    get_site_admin=_identity_get_site_admin,
+    list_users=_identity_list_users,
+    upsert_site_admin=_identity_upsert_site_admin,
+    delete_site_admin=_identity_delete_site_admin,
+    delete_user=_identity_delete_user,
+    get_user_roles=_identity_get_user_roles,
+    grant_user_roles=_identity_grant_user_roles,
+    revoke_user_role=_identity_revoke_user_role,
+    get_db_gateway_stats=_get_db_gateway_stats,
+    get_db_unit_weights=_get_db_unit_weights,
 )
 
 # ── Shared UI helpers ─────────────────────────────────────────────────────────

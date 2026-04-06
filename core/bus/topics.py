@@ -52,12 +52,12 @@ ALL_STATIC_TOPICS: tuple[str, ...] = LOG_TOPICS + DATA_TOPICS
 _PREFIX_MAP: list[tuple[str, str]] = sorted(
     [
         ("core.db",                LOG_DB),
-        ("core.queue.esi_req",     LOG_ESI),
-        ("core.queue",             LOG_SYSTEM),
-        ("core.scheduler",         LOG_SCHEDULER),
-        ("core.esi.auth",          LOG_AUTH),
+        ("core.esi.rate",          LOG_ESI),
+        ("core.esi.request",       LOG_ESI),
+        ("core.tasks",             LOG_SYSTEM),
+        ("core.tasks.engine",      LOG_SCHEDULER),
+        ("core.auth",              LOG_AUTH),
         ("core.esi",               LOG_ESI),
-        ("core.web.auth",          LOG_AUTH),
         ("core.web",               LOG_WEB),
         ("core.config",            LOG_SYSTEM),
         ("core.bus",               LOG_SYSTEM),
