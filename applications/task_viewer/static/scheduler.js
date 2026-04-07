@@ -10,12 +10,13 @@
     var _URL_TOGGLE   = indexApp.dataset.urlToggle;
     var _URL_RUN_NOW  = indexApp.dataset.urlRunNow;
     var _URL_PROGRESS = indexApp.dataset.urlProgress;
+    var _CSRF_TOKEN   = indexApp.dataset.csrf;
 
     function toggleJob(btn) {
       var jobId = btn.dataset.job;
       fetch(_URL_TOGGLE.replace('PLACEHOLDER', encodeURIComponent(jobId)), {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': _CSRF_TOKEN },
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -38,7 +39,7 @@
       btn.textContent = 'Queued…';
       fetch(_URL_RUN_NOW.replace('PLACEHOLDER', encodeURIComponent(jobId)), {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': _CSRF_TOKEN },
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -69,6 +70,7 @@
     var runNowUrl   = detailApp.dataset.urlRunNow;
     var intervalUrl = detailApp.dataset.urlInterval;
     var progressUrl = detailApp.dataset.urlProgress;
+    var csrfToken   = detailApp.dataset.csrf;
 
     var btnToggle  = document.getElementById('btn-toggle');
     var btnRunNow  = document.getElementById('btn-run-now');
@@ -78,7 +80,7 @@
       btnToggle.addEventListener('click', function () {
         fetch(toggleUrl, {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken },
         })
           .then(function (r) { return r.json(); })
           .then(function (data) {
@@ -102,7 +104,7 @@
         btnRunNow.textContent = 'Queued…';
         fetch(runNowUrl, {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken },
         })
           .then(function (r) { return r.json(); })
           .then(function (data) {
@@ -128,7 +130,7 @@
         fd.append('interval_s', val);
         fetch(intervalUrl, {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken },
           body: fd,
         })
           .then(function (r) { return r.json(); })

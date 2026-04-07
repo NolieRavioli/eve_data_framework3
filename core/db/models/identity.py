@@ -9,13 +9,13 @@ PrivateBase = declarative_base()
 
 
 class User(PublicBase):
-    __tablename__   = "users"
+    __tablename__   = "auth_users"
     owner_id        = Column(Integer, index=True)
     character_id    = Column(Integer, primary_key=True)
 
 
 class SiteAdmin(PublicBase):
-    __tablename__     = "site_admins"
+    __tablename__     = "auth_siteAdmins"
     owner_id          = Column(Integer, primary_key=True)
     is_site_owner     = Column(Boolean, default=False)
     granted_by        = Column(Integer, nullable=True)

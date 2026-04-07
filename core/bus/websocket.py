@@ -54,14 +54,24 @@ def _check_topic_access(topic_or_pattern: str) -> bool:
     # For wildcard patterns, check against the pattern family's default access.
     is_wildcard = "*" in topic_or_pattern or "?" in topic_or_pattern
     if is_wildcard:
-        # Find all matching topic configs and require access to all of them.
         import fnmatch
+
+        # Task-log wildcard requires admin — per-task WS endpoints enforce ownership
+        if fnmatch.fnmatch("task/x/log", topic_or_pattern):
+            if not is_admin:
+                return False
+
+        # Find all matching topic configs and require access to all of them.
+        matched_any = False
         for tc in get_all_topic_configs():
             if fnmatch.fnmatch(tc.name, topic_or_pattern):
+                matched_any = True
                 if not _check_single_topic_access(tc.access_level, tc.required_role,
                                                   is_admin, owner_id):
                     return False
-        return True  # no matching topics means pattern is vacuously allowed
+        if not matched_any:
+            return False  # deny patterns that match nothing
+        return True
 
     config = get_topic_config(topic_or_pattern)
     if config is None:

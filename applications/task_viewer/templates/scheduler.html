@@ -7,7 +7,8 @@
 <div id="scheduler-app" hidden
      data-url-toggle="{{ url_for('task_viewer.scheduler_toggle', job_id='PLACEHOLDER') }}"
      data-url-run-now="{{ url_for('task_viewer.scheduler_run_now', job_id='PLACEHOLDER') }}"
-     data-url-progress="{{ url_for('task_viewer.task_detail', task_id='PLACEHOLDER') }}"></div>
+     data-url-progress="{{ url_for('task_viewer.task_detail', task_id='PLACEHOLDER') }}"
+     data-csrf="{{ csrf_token }}"></div>
 <div class="pg-hd">
   <div>
     <h1>Task Manager</h1>

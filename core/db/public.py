@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_SDE_DATABASE = "_publicData/public.duckdb"
 DEFAULT_PUBLIC_DATABASE = "_publicData/public.db"
 _BROWSER_PUBLIC_TABLES = (
-    "users",
-    "site_admins",
+    "auth_users",
+    "auth_siteAdmins",
     "market_orders",
     "public_contracts",
     "structures",
@@ -253,85 +253,10 @@ def _ensure_registry_schema(con: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def _systems_view_sql(*, temporary: bool = False) -> str:
-    create_clause = "CREATE OR REPLACE TEMP VIEW" if temporary else "CREATE OR REPLACE VIEW"
-    return f"""
-        {create_clause} systems AS
-        WITH
-        planet_ids AS (
-            SELECT system_id, list_sort(list(planet_id)) AS planets
-            FROM dim_planets
-            GROUP BY system_id
-        ),
-        moon_ids AS (
-            SELECT system_id, list_sort(list(moon_id)) AS moons
-            FROM dim_moons
-            GROUP BY system_id
-        ),
-        stargate_ids AS (
-            SELECT system_id, list_sort(list(stargate_id)) AS stargates
-            FROM dim_stargates
-            GROUP BY system_id
-        ),
-        neighbor_ids AS (
-            SELECT system_id, list_sort(list(DISTINCT destination_system_id)) AS neighbors
-            FROM dim_stargates
-            GROUP BY system_id
-        )
-        SELECT
-            s.system_id,
-            s.region_id,
-            CAST(NULL AS BIGINT) AS owner_id,
-            r.faction_id,
-            s.constellation_id,
-            s.security,
-            s.system_name,
-            r.region_name,
-            COALESCE(to_json(planet_ids.planets), '[]') AS planets,
-            COALESCE(to_json(moon_ids.moons), '[]') AS moons,
-            COALESCE(to_json(stargate_ids.stargates), '[]') AS stargates,
-            COALESCE(to_json(neighbor_ids.neighbors), '[]') AS neighbors,
-            s.planet_count,
-            s.stargate_count,
-            s.payload_json
-        FROM dim_systems AS s
-        LEFT JOIN dim_regions AS r
-          ON r.region_id = s.region_id
-        LEFT JOIN planet_ids
-          ON planet_ids.system_id = s.system_id
-        LEFT JOIN moon_ids
-          ON moon_ids.system_id = s.system_id
-        LEFT JOIN stargate_ids
-          ON stargate_ids.system_id = s.system_id
-        LEFT JOIN neighbor_ids
-          ON neighbor_ids.system_id = s.system_id
-    """
-
-
-def _stargates_view_sql(*, temporary: bool = False) -> str:
-    create_clause = "CREATE OR REPLACE TEMP VIEW" if temporary else "CREATE OR REPLACE VIEW"
-    return f"""
-        {create_clause} stargates AS
-        SELECT
-            stargate_id,
-            CAST(NULL AS BIGINT) AS owner_id,
-            type_id,
-            system_id,
-            destination_stargate_id AS destination_gate_id,
-            destination_system_id,
-            payload_json AS position,
-            x,
-            y,
-            z,
-            payload_json
-        FROM dim_stargates
-    """
-
-
 def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS auth_users (
             owner_id BIGINT,
             character_id BIGINT PRIMARY KEY
         )
@@ -339,7 +264,7 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE IF NOT EXISTS site_admins (
+        CREATE TABLE IF NOT EXISTS auth_siteAdmins (
             owner_id BIGINT PRIMARY KEY,
             is_site_owner BOOLEAN DEFAULT FALSE,
             granted_by BIGINT,
@@ -349,7 +274,7 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE IF NOT EXISTS user_roles (
+        CREATE TABLE IF NOT EXISTS auth_userRoles (
             owner_id BIGINT NOT NULL,
             role_name VARCHAR NOT NULL,
             granted_by BIGINT,
@@ -358,12 +283,6 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
         )
         """
     )
-
-    main_tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-    if "dim_systems" in main_tables and "dim_regions" in main_tables:
-        con.execute(_systems_view_sql())
-    if "dim_stargates" in main_tables:
-        con.execute(_stargates_view_sql())
 
 
 def _executemany_if_rows(con: duckdb.DuckDBPyConnection, sql: str, rows: list[tuple]) -> int:
@@ -389,7 +308,7 @@ def link_public_user(owner_id: int, character_id: int, database_file: str | Path
     try:
         _ensure_public_schema(con)
         con.execute(
-            "INSERT OR REPLACE INTO users (owner_id, character_id) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO auth_users (owner_id, character_id) VALUES (?, ?)",
             [owner_id, character_id],
         )
     finally:
@@ -400,7 +319,7 @@ def count_public_owners(database_file: str | Path | None = None) -> int:
     con = connect(database_file or get_database_path(), read_only=False)
     try:
         _ensure_public_schema(con)
-        row = con.execute("SELECT COUNT(DISTINCT owner_id) FROM users").fetchone()
+        row = con.execute("SELECT COUNT(DISTINCT owner_id) FROM auth_users").fetchone()
         return int(row[0] or 0)
     finally:
         con.close()
@@ -414,7 +333,7 @@ def get_site_admin(owner_id: int, database_file: str | Path | None = None) -> di
             con,
             """
             SELECT owner_id, is_site_owner, granted_by, granted_at
-            FROM site_admins
+            FROM auth_siteAdmins
             WHERE owner_id = ?
             """,
             [owner_id],
@@ -436,7 +355,7 @@ def upsert_site_admin(
         _ensure_public_schema(con)
         con.execute(
             """
-            INSERT OR REPLACE INTO site_admins (owner_id, is_site_owner, granted_by, granted_at)
+            INSERT OR REPLACE INTO auth_siteAdmins (owner_id, is_site_owner, granted_by, granted_at)
             VALUES (?, ?, ?, ?)
             """,
             [owner_id, is_site_owner, granted_by, granted_at or _utc_now()],
@@ -451,7 +370,7 @@ def delete_site_admin(owner_id: int, database_file: str | Path | None = None) ->
     con = connect(database_file or get_database_path(), read_only=False)
     try:
         _ensure_public_schema(con)
-        con.execute("DELETE FROM site_admins WHERE owner_id = ?", [owner_id])
+        con.execute("DELETE FROM auth_siteAdmins WHERE owner_id = ?", [owner_id])
     finally:
         con.close()
     return True
@@ -470,8 +389,8 @@ def list_public_users(database_file: str | Path | None = None) -> list[dict]:
                 a.owner_id IS NOT NULL AS is_admin,
                 COALESCE(a.is_site_owner, FALSE) AS is_site_owner,
                 a.granted_at
-            FROM users AS u
-            LEFT JOIN site_admins AS a
+            FROM auth_users AS u
+            LEFT JOIN auth_siteAdmins AS a
               ON a.owner_id = u.owner_id
             GROUP BY u.owner_id, a.owner_id, a.is_site_owner, a.granted_at
             ORDER BY is_site_owner DESC, is_admin DESC, u.owner_id
@@ -490,7 +409,7 @@ def get_user_roles(owner_id: int, database_file: str | Path | None = None) -> li
     try:
         _ensure_public_schema(con)
         rows = con.execute(
-            "SELECT role_name FROM user_roles WHERE owner_id = ? ORDER BY role_name",
+            "SELECT role_name FROM auth_userRoles WHERE owner_id = ? ORDER BY role_name",
             [owner_id],
         ).fetchall()
         return [row[0] for row in rows]
@@ -514,7 +433,7 @@ def grant_user_roles(
         for role in roles:
             con.execute(
                 """
-                INSERT INTO user_roles (owner_id, role_name, granted_by, granted_at)
+                INSERT INTO auth_userRoles (owner_id, role_name, granted_by, granted_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT (owner_id, role_name) DO NOTHING
                 """,
@@ -534,7 +453,7 @@ def revoke_user_role(
     try:
         _ensure_public_schema(con)
         con.execute(
-            "DELETE FROM user_roles WHERE owner_id = ? AND role_name = ?",
+            "DELETE FROM auth_userRoles WHERE owner_id = ? AND role_name = ?",
             [owner_id, role_name],
         )
     finally:
@@ -548,7 +467,7 @@ def list_all_user_roles(database_file: str | Path | None = None) -> list[dict]:
         _ensure_public_schema(con)
         return _query_to_dicts(
             con,
-            "SELECT owner_id, role_name, granted_by, granted_at FROM user_roles ORDER BY owner_id, role_name",
+            "SELECT owner_id, role_name, granted_by, granted_at FROM auth_userRoles ORDER BY owner_id, role_name",
         )
     finally:
         con.close()
@@ -559,14 +478,12 @@ def public_table_counts(
     database_file: str | Path | None = None,
 ) -> dict[str, int]:
     names = table_names or [
-        "users",
-        "site_admins",
+        "auth_users",
+        "auth_siteAdmins",
         "market_orders",
         "public_contracts",
         "structures",
         "market_structures",
-        "systems",
-        "stargates",
         "esi_routes",
         "esi_schemas",
     ]
@@ -875,20 +792,20 @@ def list_market_region_ids(
     try:
         _ensure_public_schema(con)
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-        if "dim_regions" not in tables:
+        if "sde_regions" not in tables:
             return []
         if skip_recently_refreshed:
             rows = con.execute(
                 """
                 SELECT r.region_id
-                FROM dim_regions AS r
+                FROM sde_regions AS r
                 LEFT JOIN market_region_cooldowns AS c ON c.region_id = r.region_id
                 WHERE c.region_id IS NULL OR c.refreshed_until < now()
                 ORDER BY r.region_id
                 """
             ).fetchall()
         else:
-            rows = con.execute("SELECT region_id FROM dim_regions ORDER BY region_id").fetchall()
+            rows = con.execute("SELECT region_id FROM sde_regions ORDER BY region_id").fetchall()
         return [row[0] for row in rows]
     finally:
         con.close()
@@ -1171,14 +1088,6 @@ def ensure_esi_registry_current(database_file: str | Path | None = None) -> dict
     )
 
 
-def _create_browser_views(con: duckdb.DuckDBPyConnection) -> None:
-    available_main_tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-    if "systems" not in available_main_tables and "dim_systems" in available_main_tables and "dim_regions" in available_main_tables:
-        con.execute(_systems_view_sql(temporary=True))
-    if "stargates" not in available_main_tables and "dim_stargates" in available_main_tables:
-        con.execute(_stargates_view_sql(temporary=True))
-
-
 def connect_browser_workspace(
     database_file: str | Path | None = None,
     *,
@@ -1190,7 +1099,6 @@ def connect_browser_workspace(
     else:
         con = duckdb.connect(":memory:")
         con.execute("PRAGMA threads=4")
-    _create_browser_views(con)
     return con
 
 

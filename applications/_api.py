@@ -307,7 +307,7 @@ queue_info = types.SimpleNamespace(
 )
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-from core.tasks.task_manager.engine import get_engine as _get_scheduler
+from core.tasks.engine import get_engine as _get_scheduler
 
 
 def _scheduler_list_jobs() -> list[dict]:
@@ -418,7 +418,7 @@ DEFAULT_REGION: int = 10000002  # The Forge (Jita)
 def get_regions() -> list[dict]:
     """Return all market regions sorted by name."""
     try:
-        rows = db.query("SELECT region_id, region_name FROM dim_regions ORDER BY region_name")
+        rows = db.query("SELECT region_id, region_name FROM sde_regions ORDER BY region_name")
         return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
     except Exception:
         return []
@@ -427,6 +427,32 @@ def get_regions() -> list[dict]:
 # ── Bus / monitoring ──────────────────────────────────────────────────────────
 from core.bus.handler import bus_handler
 from core.bus import get_bus_log, get_all_topics, get_recent, publish as bus_publish
+
+# ── System bootstrap ──────────────────────────────────────────────────────────
+from core.system.bootstrap import get_subsystem_status as _get_subsystem_status
+
+
+def _bootstrap_update_sde() -> str:
+    from core.system.bootstrap import update_sde_full
+    return _enqueue("SDE Update", update_sde_full, queue="public")
+
+
+def _bootstrap_update_esi() -> str:
+    from core.system.bootstrap import update_esi_full
+    return _enqueue("ESI Spec + Codegen Update", update_esi_full, queue="public")
+
+
+def _bootstrap_update_config() -> str:
+    from core.system.bootstrap import update_config
+    return _enqueue("Regenerate example.config.yaml", update_config, queue="public")
+
+
+system_bootstrap = types.SimpleNamespace(
+    get_status=_get_subsystem_status,
+    update_sde=_bootstrap_update_sde,
+    update_esi=_bootstrap_update_esi,
+    update_config=_bootstrap_update_config,
+)
 
 __all__ = [
     # Plugin framework
@@ -463,4 +489,5 @@ __all__ = [
     "get_all_topics",
     "get_recent",
     "bus_publish",
+    "system_bootstrap",
 ]

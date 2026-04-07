@@ -22,16 +22,17 @@ This document is the authoritative reference for **human contributors** and **AI
 8. [Background Task Queue](#background-task-queue)
 9. [Scheduler](#scheduler)
 10. [Applications Layer](#applications-layer)
-11. [Analysis / Collectors Layer](#analysis--collectors-layer)
+11. [Collectors Layer](#collectors-layer)
 12. [Plugin Framework](#plugin-framework)
 13. [ESI Client & Code Generation](#esi-client--code-generation)
 14. [Configuration](#configuration)
 15. [Security Rules](#security-rules)
 16. [Common Tasks for AI Agents](#common-tasks-for-ai-agents)
     - [Integrating a New Core Interface / Adapter](#integrating-a-new-core-interface--adapter)
-    - [Creating a New Analysis Collector](#creating-a-new-analysis-collector)
+    - [Creating a New Collector](#creating-a-new-collector)
     - [Creating a New Application](#creating-a-new-application)
     - [Registering a New Scheduled Job](#registering-a-new-scheduled-job)
+    - [Creating a GitHub Issue](#creating-a-github-issue)
     - [Updating the README](#updating-the-readme)
     - [Keeping AGENTS.md Accurate](#keeping-agentsmd-accurate)
 
@@ -44,7 +45,7 @@ This document is the authoritative reference for **human contributors** and **AI
 | Layer | Package | Purpose |
 |---|---|---|
 | **Core** | `core/` | Infrastructure: DB connections, ESI wrappers, SDE cache, task queue, scheduler |
-| **Analysis** | `analysis/` | Data-collection workers: market, structures, SDE pipeline, character data |
+| **Collectors** | `collectors/` | Data-collection workers: market, structures, SDE pipeline, character data |
 | **Applications** | `applications/` | User-facing web tools — auto-discovered via `pkgutil` |
 | **Web** | `core/web/` | Flask app factory, SSO auth, Jinja2 templates |
 | **Config** | `core/config.py` / `config.yaml` | Runtime settings, environment variables |
@@ -59,12 +60,6 @@ This document is the authoritative reference for **human contributors** and **AI
 - **DuckDB** — single shared public store (SDE, market orders, structures, ESI spec metadata, scheduler state)
 - **requests** — all HTTP; wrapped by `core/esi/request.py` (rate limiter + caching)
 - **`config.yaml`** — runtime configuration; loaded once at startup (gitignored, never committed)
-
-### TODO List
-
-| item | description | ... |
-|------|-------------|-----|
-| Fix `core/auth` for 'creeping scopes' |  auth requests EVERY scope from the user immediately-- instead, we could only ask for the scopes needed for the given 'application'. We can add a 'additional scopes required' message whenever a use tries to load an application they are not scoped for with a 'update esi scopes' button. | ... |
 
 ---
 
@@ -102,6 +97,7 @@ core/                    # ── INFRASTRUCTURE ──────────�
     stats.py             # get_table_stats(), get_write_rate_stats(), start_db_stats_publisher()
     market_buffer.py     # ephemeral in-process market buffer: begin_region(), add_page(), finish_region(), try_market_price()
     sde.py               # in-memory SDE caches: name_from_type_id, region_from_system_id, get_type(), get_market_tree(), …
+    sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
     models/
       __init__.py        # re-exports: PublicBase, PrivateBase, User, SiteAdmin, Character
       identity.py        # User, SiteAdmin (DuckDB ORM), Character (SQLite ORM)
@@ -121,14 +117,13 @@ core/                    # ── INFRASTRUCTURE ──────────�
     corp/                # AUTO-GENERATED corporation-scoped domain wrappers
     public/              # AUTO-GENERATED public domain wrappers
   tasks/
-    __init__.py          # re-exports: Task, enqueue, get_task, get_all_tasks, cancel_task, clear_tasks, rate_stream, log_stream, get_engine, SchedulerEngine, register_all_jobs, start_writer, stop_writer
+    __init__.py          # re-exports: Task, enqueue, get_task, get_all_tasks, cancel_task, clear_tasks, get_engine, SchedulerEngine, register_all_jobs, start_writer, stop_writer
     queue.py             # Task class, enqueue(), get_task(), get_all_tasks(), get_tasks_for_owner(), cancel_task(), clear_tasks()
-    engine.py            # SchedulerEngine class, get_engine() singleton  [was scheduler.py]
-    persist.py           # scheduler_jobs DDL + CRUD helpers  [was scheduler_db.py]
-    jobs.py              # job catalog, _build_catalog(), register_all_jobs()  [was scheduler_jobs.py]
+    engine.py            # SchedulerEngine class, get_engine() singleton
+    persist.py           # scheduler_jobs DDL + CRUD helpers
+    jobs.py              # job catalog, _build_catalog(), register_all_jobs()
     context.py           # thread-local task context
     output.py            # IO routing + SSE streams: rate_stream(), log_stream()
-    sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
   web/
     __init__.py          # create_app() — Flask app factory + WebSocket attachment
     app.py               # start_webUI(settings) — entry point called by main.py
@@ -138,7 +133,7 @@ core/                    # ── INFRASTRUCTURE ──────────�
     templates/           # base.html, home.html, setup.html (shared)
     static/              # framework CSS, JS, images
 
-analysis/                # ── DATA COLLECTION ─────────────────────────────────
+collectors/              # ── DATA COLLECTION ─────────────────────────────────
   __init__.py            # (docstring — describes write discipline; no re-exports)
   character/
     __init__.py          # re-exports: populate_all
@@ -156,11 +151,10 @@ applications/            # ── USER-FACING TOOLS ─────────�
   __init__.py            # pkgutil auto-discovery, tool_registry singleton
   _api.py                # single interface: BaseTool, ToolManifest, base_ctx, require_* and all adapters
   dashboard/             # nav_section="overview"  — character overview; access_level="user", required_role="dashboard"
-  esi_viewer/            # nav_section="tools"     — ESI queue + rate monitor + API explorer; access_level="user", required_role="queue"
-  db_viewer/             # nav_section="tools"     — DB stats + query browser; access_level="user", required_role="db"
-  admin_panel/           # nav_section="admin"     — user management; access_level="admin"
-  scheduler/             # nav_section="admin"     — background job management; access_level="admin", required_role="scheduler"
-  sde_browser/           # nav_section="admin"     — SDE table browser + update trigger; access_level="admin"
+  task_viewer/           # nav_section="tools"     — task queue, scheduler, ESI rate monitor + API explorer; access_level="user", required_role="tasks"
+  db_viewer/             # nav_section="tools"     — DB stats + query browser; access_level="user", required_role="database"
+  sde_browser/           # nav_section="tools"     — SDE table browser and lookup; access_level="user", required_role="sde"
+  admin_panel/           # nav_section="admin"     — live logs, user management; access_level="admin"
   system/                # nav_section="admin"     — process metrics + system update; access_level="admin"
   market_browser/        # nav_section="overview"  — live market orders; access_level="public"
 
@@ -190,10 +184,10 @@ The three main layers have strict import rules. **Never violate these.**
 
 ### `core/`
 
-- Contains only infrastructure. No imports from `applications/` or `analysis/`.
+- Contains only infrastructure. No imports from `applications/` or `collectors/`.
 - Sub-modules within `core/` may import from each other (e.g. `core.db` imports `core.config`).
 
-### `analysis/`
+### `collectors/`
 
 - Data collection workers. Import from `core.*` only.
 - Use `core.esi` functions (`esi_get`, `esi_post`), `core.auth` token helpers, and `core.db.sde` directly.
@@ -204,7 +198,7 @@ The three main layers have strict import rules. **Never violate these.**
 
 - User-facing tools. **Import ONLY from `applications._api`.**
 - Never import from `core.*` directly in an application's routes or `__init__`.
-- Worker files within an application may import from `analysis.*` to trigger data collection.
+- Worker files within an application may import from `collectors.*` to trigger data collection.
 
 ### Import paths quick reference
 
@@ -212,7 +206,7 @@ The three main layers have strict import rules. **Never violate these.**
 # ✅ Correct — application routes.py
 from applications._api import base_ctx, require_role, db, sde, tasks, esi
 
-# ✅ Correct — analysis worker
+# ✅ Correct — collector worker
 from core.esi import esi_get
 import core.db.public as db
 import core.db.sde as sde
@@ -230,7 +224,7 @@ from core.db.public import connect          # forbidden in applications/
 - **Thread safety**: fresh `connect()` per thread for DuckDB; `threading.Lock()` for shared mutable state.
 - **No raw SQL with user input** — always parameterised: `con.execute("WHERE id = ?", [val])`.
 - **Token handling**: 401 → token expired (stop, raise, do not retry); 403 → no permission (not retryable, return None).
-- **Table DDL belongs to analysis workers** — never add domain table DDL to `core/db/public.py`.
+- **Table DDL belongs to collectors** — never add domain table DDL to `core/db/public.py`.
 - **`access_level` and `required_role` go in `ToolManifest`** — set them directly in the `ToolManifest` constructor in each application's `__init__.py`. There is no `auth.json` file.
 - **`@require_role` on new routes** — prefer over bare `@require_login`. Use `@require_admin` only for genuinely admin-only routes.
 - **Do not edit auto-generated packages** — `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, `core/esi/public/` are overwritten each `build.py` run.
@@ -249,7 +243,7 @@ import core.db.public as db
 
 con = db.connect()
 try:
-    rows = con.execute("SELECT type_id, name_en FROM dim_types WHERE type_id = ?", [34]).fetchall()
+    rows = con.execute("SELECT type_id, name_en FROM sde_types WHERE type_id = ?", [34]).fetchall()
 finally:
     con.close()
 ```
@@ -292,12 +286,12 @@ Each collector or application **owns** the DDL for its tables via an `ensure_tab
 |---|---|
 | `users`, `site_admins`, `user_roles` | `core/db/public.py` |
 | `scheduler_jobs` | `core/tasks/persist.py` |
-| `structures` | `analysis/structures/discover.py` |
-| `market_orders`, `market_region_cooldowns` | `analysis/market/regions.py` |
-| `market_structures` | `analysis/market/structures.py` |
-| `structures` cooldown columns | `analysis/market/structures.py` (`ensure_columns`) |
-| `character_skills`, `character_wallet`, `character_assets` | `analysis/character/populate.py` |
-| SDE dimension tables (`dim_types`, etc.) | `core/tasks/sde_loader.py` |
+| `structures` | `collectors/structures/discover.py` |
+| `market_orders`, `market_region_cooldowns` | `collectors/market/regions.py` |
+| `market_structures` | `collectors/market/structures.py` |
+| `structures` cooldown columns | `collectors/market/structures.py` (`ensure_columns`) |
+| `character_skills`, `character_wallet`, `character_assets` | `collectors/character/populate.py` |
+| SDE tables (`sde_types`, etc.) | `core/db/sde_loader.py` |
 | `esi_cache` | `core/esi/cache.py` |
 | `esi_routes`, `esi_schemas`, `esi_scopes` | `core/esi/registry.py` |
 
@@ -307,7 +301,7 @@ When a collector adds columns to a table it does not own, use `ALTER TABLE ADD C
 
 ```python
 def ensure_columns(con) -> None:
-    from analysis.structures.discover import ensure_tables as _ensure_structures
+    from collectors.structures.discover import ensure_tables as _ensure_structures
     _ensure_structures(con)
     con.execute("""
         ALTER TABLE structures ADD COLUMN IF NOT EXISTS my_col TIMESTAMP
@@ -471,7 +465,7 @@ All jobs are declared in `core/tasks/jobs.py`. To add a new job, append an entry
 
 ```python
 try:
-    from analysis.my_domain.worker import my_worker_fn
+    from collectors.my_domain.worker import my_worker_fn
     jobs.append({
         "job_id": "my_domain_refresh",
         "label": "My Domain Refresh",
@@ -576,12 +570,12 @@ const ownerId = el.dataset.owner;
 
 ---
 
-## Analysis / Collectors Layer
+## Collectors Layer
 
 ### Structure
 
 ```
-analysis/<domain>/
+collectors/<domain>/
   __init__.py    # re-export entry-point functions
   worker.py      # ensure_tables(), data collection functions
 ```
@@ -636,16 +630,16 @@ def _fetch_all_pages(url: str, base_params: dict) -> list:
     return results
 ```
 
-### Adding a New Collector to `analysis/__init__.py`
+### Adding a New Collector to `collectors/__init__.py`
 
 If the collector has a clean public interface, re-export it:
 
 ```python
-# analysis/__init__.py
-from analysis.my_domain.worker import collect_data as my_collect_data
+# collectors/__init__.py
+from collectors.my_domain.worker import collect_data as my_collect_data
 ```
 
-Otherwise leave `analysis/__init__.py` alone — schedulers and routes import directly from the module.
+Otherwise leave `collectors/__init__.py` alone — schedulers and routes import directly from the module.
 
 ---
 
@@ -675,14 +669,23 @@ All singletons live directly in `applications/_api.py` and are imported from `co
 | `raw_esi` | `get()`, `post()`, `request()` |
 | `token_resolution` | `resolve_default_owner_id()`, `pick_token()`, `fresh_token()` |
 | `esi` | `execute(op_id, ...)`, `fetch_pages(op_id, ...)` |
-| `tokens` | `get(owner_id, character_ids=None)` |
+| `tokens` | `get(owner_id)` |
 | `tasks` | `enqueue(name, fn, *args, owner_id, queue)` |
-| `char_data` | `get_character()`, `get_scopes()` |
+| `char_data` | `get_character()`, `get_characters()`, `get_scopes()` |
 | `esi_registry` | `get_status()` |
-| `db_admin` | `list_tables()`, `list_private_tables()`, `query_sql()`, `query_private_sql()`, `table_counts()`, `list_users()`, `upsert_site_admin()`, `delete_site_admin()`, `delete_user()`, `get_user_roles()`, `grant_user_roles()`, `revoke_user_role()`, `get_db_unit_weights()`, … |
+| `db_admin` | `list_tables()`, `list_private_tables()`, `query_sql()`, `query_private_sql()`, `table_counts()`, `get_warehouse_status()`, `list_users()`, `upsert_site_admin()`, `delete_site_admin()`, `delete_user()`, `get_user_roles()`, `grant_user_roles()`, `revoke_user_role()`, `get_db_unit_weights()`, `get_db_gateway_stats()` |
 | `esi_manifest` | `get_operations()`, `get_operation(op_id)`, `get_meta()` |
-| `queue_info` | `get_all_tasks()`, `get_tasks_for_owner()`, `get_task()`, `cancel_task()`, `clear_tasks()`, `rate_stream()`, `log_stream()`, `get_esi_rate_stats()` |
+| `queue_info` | `get_all_tasks()`, `get_tasks_for_owner()`, `get_task()`, `cancel_task()`, `clear_tasks()`, `get_esi_rate_stats()` |
 | `scheduler` | `list_jobs()`, `set_enabled()`, `run_now()`, `get_job()`, `set_interval()`, `get_run_history()` |
+| `get_regions()` | Standalone helper — returns `list[dict]` of `{id, name}` for all market regions |
+| `DEFAULT_REGION` | Constant — `10000002` (The Forge / Jita) |
+| `get_db_file_stats()` | Returns DuckDB/SQLite file size information |
+| `get_db_gateway_stats()` | Returns DB performance/throughput metrics |
+| `bus_handler` | `BusHandler` instance — `publish()`, `subscribe()` |
+| `get_bus_log(topic)` | Returns ring-buffer of recent log entries for a bus topic |
+| `get_all_topics()` | Returns all registered topic configs |
+| `get_recent(topic, n)` | Returns the most recent `n` events from a topic |
+| `bus_publish(topic, payload)` | Publish a message to a bus topic |
 
 ### Exposing New Core Functionality
 
@@ -819,14 +822,14 @@ If the function needs to be grouped under an existing namespace object (e.g. on 
 
 ---
 
-### Creating a New Analysis Collector
+### Creating a New Collector
 
 Use this when adding a new data-collection domain (new ESI endpoint family, new data type, etc.).
 
 **Step 1 — Create the package.**
 
 ```
-analysis/my_domain/
+collectors/my_domain/
   __init__.py
   worker.py
 ```
@@ -834,7 +837,7 @@ analysis/my_domain/
 **Step 2 — Implement `ensure_tables` and the entry point in `worker.py`.**
 
 ```python
-# analysis/my_domain/worker.py
+# collectors/my_domain/worker.py
 import logging
 import core.db.public as db
 from core.esi import esi_get
@@ -868,10 +871,10 @@ def fetch_my_domain_data() -> None:
         con.close()
 ```
 
-**Step 3 — Re-export from `analysis/my_domain/__init__.py`.**
+**Step 3 — Re-export from `collectors/my_domain/__init__.py`.**
 
 ```python
-from analysis.my_domain.worker import fetch_my_domain_data
+from collectors.my_domain.worker import fetch_my_domain_data
 ```
 
 **Step 4 — Register a scheduled job** (if the collection should run on a schedule).
@@ -882,7 +885,7 @@ See [Registering a New Scheduled Job](#registering-a-new-scheduled-job) below.
 
 ```python
 from applications._api import tasks
-from analysis.my_domain.worker import fetch_my_domain_data
+from collectors.my_domain.worker import fetch_my_domain_data
 
 task_id = tasks.enqueue("My Domain Refresh", fetch_my_domain_data, queue="public")
 ```
@@ -986,7 +989,7 @@ Find `_build_catalog()`. Add a new try/except block:
 
 ```python
 try:
-    from analysis.my_domain.worker import fetch_my_domain_data
+    from collectors.my_domain.worker import fetch_my_domain_data
     jobs.append({
         "job_id": "my_domain_refresh",           # stable — changing this creates a new DB row
         "label": "My Domain Data Refresh",
@@ -1002,7 +1005,53 @@ The `try/except` guard is mandatory — it prevents import failures in any colle
 
 **Step 2 — Restart the server.**
 
-`register_all_jobs(engine)` is called from `core/web/__init__.py` (inside `create_app`) during startup. The new job row will be upserted into `scheduler_jobs` and visible in the Scheduler admin panel (`/scheduler`).
+`register_all_jobs(engine)` is called from `core/web/__init__.py` (inside `create_app`) during startup. The new job row will be upserted into `scheduler_jobs` and visible in the Task Manager UI (`/tasks`).
+
+---
+
+### Creating a GitHub Issue
+
+Use this when you need to file a bug report, feature request, or development task against the repository.
+
+**Issue templates** live in `.github/ISSUE_TEMPLATE/`. Before writing a new issue, open the matching template to see the expected structure and frontmatter:
+
+| Template | When to use |
+|----------|-------------|
+| `bug_report.md` | Something is broken — includes steps to reproduce, expected vs actual behaviour, environment |
+| `feature_request.md` | New feature or enhancement — includes problem statement, proposed solution, acceptance criteria |
+
+**Every issue must have both of the following:**
+
+1. **A category label** (choose one): `Bug`, `Feature`, or `Task`
+2. **A topic tag** (choose one): `bug`, `enhancement`, or `development`
+
+Labels are pre-attached automatically when using the GitHub web UI (the template frontmatter sets them). When using the `gh` CLI, pass both labels explicitly:
+
+```powershell
+# Write the body to a temp file to avoid shell quoting issues
+$bodyContent | Set-Content .\.github\issue_body_tmp.md
+
+gh issue create `
+  --repo NolieRavioli/eve_data_framework3 `
+  --title "[Feature] My new feature" `
+  --body-file .\.github\issue_body_tmp.md `
+  --label "Feature" `
+  --label "enhancement"
+
+Remove-Item .\.github\issue_body_tmp.md
+```
+
+**Formatting rules:**
+- Title format: `[Bug] short description`, `[Feature] short description`, or `[Task] short description`
+- Use the template sections exactly — do not remove headings, even if a section is N/A
+- Cross-reference related issues with `#<number>` and affected files with inline code paths
+- Never include secrets, tokens, or user-identifiable data in issue bodies
+
+**Labels must exist in the repo before they can be attached.** If a label is missing, create it first:
+
+```powershell
+gh label create "Task" --color "e4e669" --description "Development task or chore" --repo NolieRavioli/eve_data_framework3
+```
 
 ---
 
@@ -1017,7 +1066,7 @@ The README (`README.md`) is the primary public-facing document. It should always
 - After adding a new configuration option (update the Configuration Reference)
 - After changing any URL prefix, role name, or access level
 - After adding a new scheduled job
-- After any structural change to `core/` or `analysis/`
+- After any structural change to `core/` or `collectors/`
 
 **How to gather changes since the last README update:**
 

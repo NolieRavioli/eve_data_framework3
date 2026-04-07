@@ -20,7 +20,7 @@ from core.db import public as sde_store
 from core.esi import esi_get as _esi_get
 import core.db.sde as sde
 from core.auth import resolve_default_owner_id, pick_token, fresh_token
-from core.config import CONFIG_PATH, load_config
+from core.config import get_structures_config
 
 logger = logging.getLogger(__name__)
 
@@ -100,11 +100,7 @@ def discover_structures(owner_id: int | None = None) -> None:
         logger.error("[DiscoverStructures] No owner available for authentication; aborting.")
         return
 
-    try:
-        _raw_cfg = load_config(CONFIG_PATH)
-    except Exception:
-        _raw_cfg = {}
-    _sc = _raw_cfg.get("Structures", {})
+    _sc = get_structures_config()
     enrich_unauthorized_cooldown = int(_sc.get("unauthorized_cooldown_days", 7)) * 86400
     enrich_forbidden_cooldown    = int(_sc.get("forbidden_cooldown_days", 21)) * 86400
     enrich_authorized_cooldown   = int(_sc.get("authorized_cooldown_seconds", 3600))

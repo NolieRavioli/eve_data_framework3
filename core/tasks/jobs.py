@@ -80,6 +80,18 @@ def _build_catalog() -> list[dict]:
     except Exception:
         logger.warning("[SchedulerJobs] Could not import character collector — skipping job")
 
+    try:
+        from core.system.bootstrap import ensure_esi_ready as _ensure_esi_ready
+        jobs.append({
+            "job_id": "esi_spec_refresh",
+            "label": "ESI Spec + Codegen Refresh",
+            "fn": _ensure_esi_ready,
+            "fn_path": _path(_ensure_esi_ready),
+            "interval_s": 86400,  # 24 h default; starts disabled (enabled: FALSE on first insert)
+        })
+    except Exception:
+        logger.warning("[SchedulerJobs] Could not import bootstrap — skipping ESI spec refresh job")
+
     return jobs
 
 
@@ -89,7 +101,7 @@ def _refresh_all_characters() -> None:
 
     con = db.connect()
     try:
-        rows = con.execute("SELECT DISTINCT owner_id FROM users").fetchall()
+        rows = con.execute("SELECT DISTINCT owner_id FROM auth_users").fetchall()
         owner_ids = [r[0] for r in rows]
     finally:
         con.close()
@@ -108,7 +120,7 @@ CATALOG: list[dict] = _build_catalog()
 
 def register_all_jobs(engine) -> None:
     """Upsert all catalog entries into the scheduler_jobs table via *engine*."""
-    from core.tasks.task_manager.persist import upsert_job_registration
+    from core.tasks.persist import upsert_job_registration
     for job in CATALOG:
         engine.register(
             job_id=job["job_id"],

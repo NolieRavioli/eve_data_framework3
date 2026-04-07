@@ -62,7 +62,7 @@ def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
                    mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
                    COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
             FROM market_orders mo
-            LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
+            LEFT JOIN sde_staStations ds ON ds.station_id = mo.location_id
             WHERE mo.type_id = ? {exclude_clause}
         """
         try:
@@ -124,7 +124,7 @@ def orders():
 
     if type_id:
         try:
-            type_name = db.scalar("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
+            type_name = db.scalar("SELECT name_en FROM sde_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
         except Exception:
             type_name = f"Type {type_id}"
         sells, buys = _query_orders(type_id, region_id)
@@ -153,7 +153,7 @@ def tree():
         rows = db.query(
             """
             SELECT market_group_id, parent_group_id, name_en, has_types
-            FROM dim_market_groups
+            FROM sde_marketGroups
             ORDER BY name_en
             """
         )
@@ -169,7 +169,7 @@ def group_types(group_id: int):
         rows = db.query(
             """
             SELECT type_id, name_en
-            FROM dim_types
+            FROM sde_types
             WHERE market_group_id = ? AND published = true
             ORDER BY name_en
             """,
@@ -190,7 +190,7 @@ def search():
         rows = db.query(
             """
             SELECT type_id, name_en, market_group_id
-            FROM dim_types
+            FROM sde_types
             WHERE name_en ILIKE ? AND published = true AND market_group_id IS NOT NULL
             ORDER BY name_en
             LIMIT 40
@@ -220,10 +220,10 @@ def type_detail(type_id: int):
                    g.name_en AS group_name, g.category_id,
                    c.name_en AS category_name,
                    mg.name_en AS market_group_name
-            FROM dim_types t
-            LEFT JOIN dim_groups g     ON g.group_id = t.group_id
-            LEFT JOIN dim_categories c ON c.category_id = g.category_id
-            LEFT JOIN dim_market_groups mg ON mg.market_group_id = t.market_group_id
+            FROM sde_types t
+            LEFT JOIN sde_groups g     ON g.group_id = t.group_id
+            LEFT JOIN sde_categories c ON c.category_id = g.category_id
+            LEFT JOIN sde_marketGroups mg ON mg.market_group_id = t.market_group_id
             WHERE t.type_id = ?
             """,
             [type_id],

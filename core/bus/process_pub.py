@@ -68,3 +68,10 @@ def start_process_publisher() -> None:
     )
     thread.start()
     logger.debug("[process_pub] started (interval=%ss)", _INTERVAL_S)
+
+    # Register with the central lifecycle coordinator.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().register("bus-process-pub", thread)
+    except Exception:
+        pass

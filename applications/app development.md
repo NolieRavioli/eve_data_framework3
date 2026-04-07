@@ -69,7 +69,7 @@ All `db` methods read from the shared DuckDB warehouse. They are thread-safe.
 from applications._api import db
 
 # Returns list[dict]
-rows = db.query("SELECT type_id, name_en FROM dim_types WHERE group_id = ?", [group_id])
+rows = db.query("SELECT type_id, name_en FROM sde_types WHERE group_id = ?", [group_id])
 
 # Returns dict | None
 row = db.query_one("SELECT * FROM market_orders WHERE order_id = ?", [order_id])
@@ -87,11 +87,11 @@ Key public tables:
 | Table | Contents |
 |---|---|
 | `market_orders` | Live orders: `type_id`, `price`, `is_buy_order`, `region_id`, `location_id`, `volume_remain` |
-| `dim_types` | `type_id`, `name_en`, `group_id`, `market_group_id`, `volume`, `mass` |
-| `dim_stations` | `station_id`, `station_name`, `region_id`, `system_id` |
-| `dim_regions` | `region_id`, `region_name` |
-| `dim_groups` | `group_id`, `group_name`, `category_id` |
-| `dim_categories` | `category_id`, `category_name` |
+| `sde_types` | `type_id`, `name_en`, `group_id`, `market_group_id`, `volume`, `mass` |
+| `sde_staStations` | `station_id`, `station_name`, `region_id`, `system_id` |
+| `sde_regions` | `region_id`, `region_name` |
+| `sde_groups` | `group_id`, `group_name`, `category_id` |
+| `sde_categories` | `category_id`, `category_name` |
 | `structures` | Player structures: `structure_id`, `name`, `region_id`, `type_id` |
 
 ### Per-character private SQLite

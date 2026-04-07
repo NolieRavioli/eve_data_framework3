@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from core.tasks.task_manager.context import _thread_task
+from core.tasks.context import _thread_task
 
 # ── Registry ─────────────────────────────────────────────────────────────────
 

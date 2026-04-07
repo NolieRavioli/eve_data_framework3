@@ -20,9 +20,9 @@ _KEY_TABLES: list[str] = [
     "market_structures",
     "market_region_cooldowns",
     "structures",
-    "users",
-    "site_admins",
-    "user_roles",
+    "auth_users",
+    "auth_siteAdmins",
+    "auth_userRoles",
     "scheduler_jobs",
     "character_skills",
     "character_wallet",
@@ -30,12 +30,12 @@ _KEY_TABLES: list[str] = [
     "esi_routes",
     "esi_schemas",
     "esi_scopes",
-    "dim_types",
-    "dim_regions",
-    "dim_systems",
-    "dim_stations",
-    "dim_groups",
-    "dim_categories",
+    "sde_types",
+    "sde_regions",
+    "sde_systems",
+    "sde_staStations",
+    "sde_groups",
+    "sde_categories",
 ]
 
 
@@ -188,7 +188,7 @@ def optimization_hints(db_path: str | Path | None = None) -> list[dict]:
             "severity": "critical",
             "category": "reliability",
             "message": f"{errors} write error(s) recorded since startup.",
-            "recommendation": "Check application logs for [writer] Write failed. Errors cause the writer connection to reset.",
+            "recommendation": "Check application logs for Write failed. Errors cause the writer connection to reset.",
         })
 
     if queue_depth > 100:
@@ -247,12 +247,12 @@ def table_optimization_hints(
                 "recommendation": "Growing toward the threshold where a dedicated market.duckdb becomes beneficial (>1M rows).",
             })
 
-    dim_types = tbl_map.get("dim_types")
-    if dim_types and dim_types.get("rows") is not None and dim_types["rows"] > 0 and db_bytes > 512 * 1024 ** 2:
+    sde_types = tbl_map.get("sde_types")
+    if sde_types and sde_types.get("rows") is not None and sde_types["rows"] > 0 and db_bytes > 512 * 1024 ** 2:
         hints.append({
             "severity": "info",
             "category": "db_layout",
-            "message": f"SDE dim_types ({dim_types['rows']:,} rows) is co-located with live write tables.",
+            "message": f"SDE sde_types ({sde_types['rows']:,} rows) is co-located with live write tables.",
             "recommendation": "SDE data is read-only after the pipeline runs. A separate sde.duckdb would reduce the main file's WAL size.",
         })
 
@@ -382,3 +382,10 @@ def start_db_stats_publisher() -> None:
     )
     _publisher_thread.start()
     logger.info("[db-stats-pub] Started — publishing db/stats every 5s")
+
+    # Register with the central lifecycle coordinator.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().register("db-stats-pub", _publisher_thread)
+    except Exception:
+        pass

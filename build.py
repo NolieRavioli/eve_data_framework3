@@ -14,7 +14,7 @@ Usage:
 
     python build.py --collectors # only regenerate domain collector packages
 
-    python build.py --fullclean  # delete all data + generated files, then do a full build
+    python build.py --fullclean  # delete all data + generated files, then exit
 
 """
 
@@ -64,18 +64,19 @@ def _fullclean() -> None:
             shutil.rmtree(target)
             print(f"[fullclean] Removed {target}/")
 
-    # Remove the DuckDB warehouse and ESI spec snapshots from _publicData/,
-    # but preserve credentials (key, client_cred) if they exist.
+    # Remove everything in _publicData/ except credentials.
+    _PRESERVE = {"key", "client_cred"}
     public_data = Path("_publicData")
     if public_data.exists():
-        db_file = public_data / "public.duckdb"
-        if db_file.exists():
-            db_file.unlink()
-            print(f"[fullclean] Removed {db_file}")
-        esi_specs = public_data / "esi_specs"
-        if esi_specs.exists():
-            shutil.rmtree(esi_specs)
-            print(f"[fullclean] Removed {esi_specs}/")
+        for item in sorted(public_data.iterdir()):
+            if item.name in _PRESERVE:
+                continue
+            if item.is_dir():
+                shutil.rmtree(item)
+                print(f"[fullclean] Removed {item}/")
+            else:
+                item.unlink()
+                print(f"[fullclean] Removed {item}")
 
     # Remove all __pycache__ directories.
     for cache_dir in sorted(Path(".").rglob("__pycache__"), reverse=True):
@@ -108,6 +109,8 @@ def main() -> None:
 
     parser.add_argument("--example-config", dest="example_config", action="store_true", help="Only generate example.config.yaml (discover all loggers, SDE keys); skip ESI steps.")
 
+    parser.add_argument("--sde-schema", dest="sde_schema", action="store_true", help="Only generate core/db/generated/sde_schema.json from _sde/ YAML files.")
+
     args = parser.parse_args()
 
 
@@ -137,6 +140,34 @@ def main() -> None:
         generate_example_config()
 
         print("[build] example.config.yaml written.")
+
+        sys.exit(0)
+
+
+
+    # --sde-schema: scan _sde/ YAML files and generate SDE schema JSON then exit.
+
+    if args.sde_schema:
+
+        print("[build] Generating SDE schema from _sde/ YAML files\u2026")
+
+        from utils.build.sde_codegen import generate_sde_schema
+
+        result = generate_sde_schema()
+
+        print(
+
+            f"[build] SDE schema done \u2014 tables={result['table_count']}"
+
+            f"  fsd={result['fsd_tables']}"
+
+            f"  bsd={result['bsd_tables']}"
+
+            f"  universe={result['universe_tables']}"
+
+            f"  output={result['output_path']}"
+
+        )
 
         sys.exit(0)
 
@@ -277,6 +308,36 @@ def main() -> None:
         generate_example_config()
 
         print("[build] example.config.yaml written.")
+
+
+
+    # Step 6: SDE schema — skip for narrow spec/gen/cache-only runs.
+
+    if not args.spec_only and not args.gen_only and not args.cache_only:
+
+        print("[build] Ensuring SDE source files are available\u2026")
+
+        from core.system.bootstrap import prepare_sde_sources
+
+        prepare_sde_sources()
+
+        print("[build] Generating SDE schema (sde_schema.json)\u2026")
+
+        from utils.build.sde_codegen import generate_sde_schema
+
+        sde_result = generate_sde_schema()
+
+        print(
+
+            f"[build] SDE schema done \u2014 tables={sde_result['table_count']}"
+
+            f"  fsd={sde_result['fsd_tables']}"
+
+            f"  bsd={sde_result['bsd_tables']}"
+
+            f"  universe={sde_result['universe_tables']}"
+
+        )
 
 
 

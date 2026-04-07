@@ -123,7 +123,7 @@ def fetch_all_market_data() -> None:
         all_ids = sde_store.list_market_region_ids(skip_recently_refreshed=False)
         if not all_ids:
             logger.warning(
-                "No regions found — SDE may not be loaded (dim_regions missing)."
+                "No regions found — SDE may not be loaded (sde_regions missing)."
             )
         else:
             logger.info("All regions refreshed recently — nothing to do.")

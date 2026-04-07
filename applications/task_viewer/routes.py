@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections import Counter
 import logging
+import secrets
 
 from flask import (
     Blueprint,
@@ -316,10 +317,13 @@ def explore_run(operation_id: str):
 @require_admin
 def scheduler_index():
     jobs = scheduler.list_jobs()
+    csrf = secrets.token_urlsafe(32)
+    session["scheduler_csrf"] = csrf
     return render_template(
         "scheduler.html",
         **base_ctx("task_viewer"),
         jobs=jobs,
+        csrf_token=csrf,
     )
 
 
@@ -330,17 +334,32 @@ def scheduler_detail(job_id: str):
     if not job:
         abort(404)
     history = scheduler.get_run_history(job_id)
+    csrf = secrets.token_urlsafe(32)
+    session["scheduler_csrf"] = csrf
     return render_template(
         "scheduler_detail.html",
         **base_ctx("task_viewer"),
         job=job,
         history=history,
+        csrf_token=csrf,
     )
+
+
+def _check_scheduler_csrf():
+    """Validate the CSRF token from the X-CSRF-Token header."""
+    csrf = request.headers.get("X-CSRF-Token", "")
+    expected = session.get("scheduler_csrf")
+    if not csrf or not expected or csrf != expected:
+        return jsonify({"error": "Invalid or missing CSRF token"}), 403
+    return None
 
 
 @tasks_bp.route("/scheduler/<job_id>/toggle", methods=["POST"])
 @require_admin
 def scheduler_toggle(job_id: str):
+    err = _check_scheduler_csrf()
+    if err:
+        return err
     data = request.get_json(force=True, silent=True) or {}
     enabled = bool(data.get("enabled", True))
     scheduler.set_enabled(job_id, enabled)
@@ -350,6 +369,9 @@ def scheduler_toggle(job_id: str):
 @tasks_bp.route("/scheduler/<job_id>/run", methods=["POST"])
 @require_admin
 def scheduler_run_now(job_id: str):
+    err = _check_scheduler_csrf()
+    if err:
+        return err
     task_id = scheduler.run_now(job_id)
     return jsonify({"ok": True, "job_id": job_id, "task_id": task_id})
 
@@ -357,6 +379,9 @@ def scheduler_run_now(job_id: str):
 @tasks_bp.route("/scheduler/<job_id>/interval", methods=["POST"])
 @require_admin
 def scheduler_change_interval(job_id: str):
+    err = _check_scheduler_csrf()
+    if err:
+        return err
     data = request.get_json(force=True, silent=True) or {}
     interval_s = int(data.get("interval_s", 3600))
     scheduler.set_interval(job_id, interval_s)

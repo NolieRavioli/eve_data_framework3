@@ -158,7 +158,7 @@ def get_attribution_snapshot() -> dict[str, dict]:
         rows       — int: total rows written across all op types
     """
     try:
-        from core.tasks.task_manager.queue import get_task as _get_task
+        from core.tasks.queue import get_task as _get_task
     except Exception:
         def _get_task(_): return None  # noqa: E731
     with _stats_lock:
@@ -193,9 +193,9 @@ def _writer_loop(db_path: Path) -> None:
             # blocking mid-burst.  The default 16 MB threshold causes a multi-
             # second stall after a large market-order executemany() fires it.
             con.execute("SET checkpoint_threshold='10GB'")
-            logger.debug("[writer] Connected to %s", db_path)
+            logger.debug("Connected to %s", db_path)
         except Exception as exc:
-            logger.error("[writer] Failed to open connection: %s", exc)
+            logger.error("Failed to open connection: %s", exc)
             con = None
 
     def _checkpoint() -> None:
@@ -211,9 +211,9 @@ def _writer_loop(db_path: Path) -> None:
                     _stats["last_checkpoint_at"] = time.monotonic()
                     _stats["last_checkpoint_ms"] = elapsed_ms
                     _stats["checkpoints_total"] += 1
-                logger.info("[writer] checkpoint %.0fms — %d ops flushed to disk", elapsed_ms, to_flush)
+                logger.info("checkpoint %.0fms — %d ops flushed to disk", elapsed_ms, to_flush)
             except Exception as exc:
-                logger.debug("[writer] Checkpoint failed: %s", exc)
+                logger.debug("Checkpoint failed: %s", exc)
 
     _connect()
 
@@ -267,7 +267,7 @@ def _writer_loop(db_path: Path) -> None:
         t0 = time.monotonic()
         depth = _write_queue.qsize()
         if depth > 100:
-            logger.warning("[writer] queue depth %d — writes are backing up", depth)
+            logger.warning("queue depth %d — writes are backing up", depth)
         try:
             if con is None:
                 _connect()
@@ -290,7 +290,7 @@ def _writer_loop(db_path: Path) -> None:
                         con.executemany(op.sql, combined)
                         if len(batch) > 1:
                             logger.debug(
-                                "[writer] coalesced %d ops → %d rows",
+                                "coalesced %d ops → %d rows",
                                 len(batch), len(combined),
                             )
                 else:
@@ -306,7 +306,7 @@ def _writer_loop(db_path: Path) -> None:
             execute_ms = (time.monotonic() - t0) * 1000
             if execute_ms > 500:
                 logger.warning(
-                    "[writer] slow write %.0fms (queued %.0fms) | %d ops | %s",
+                    "slow write %.0fms (queued %.0fms) | %d ops | %s",
                     execute_ms, enqueue_wait_ms, len(batch), op.sql.strip()[:80],
                 )
             with _stats_lock:
@@ -337,7 +337,7 @@ def _writer_loop(db_path: Path) -> None:
                         else:
                             entry["rows"] += 1
         except Exception as exc:
-            logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
+            logger.warning("Write failed (%s): %s", type(exc).__name__, exc)
             for b in batch:
                 b.error = exc
             with _stats_lock:
@@ -358,7 +358,7 @@ def _writer_loop(db_path: Path) -> None:
             con.close()
         except Exception:
             pass
-    logger.debug("[writer] Thread stopped.")
+    logger.debug("Thread stopped.")
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -386,7 +386,14 @@ def start_writer(db_path: str | Path | None = None) -> None:
         daemon=True,
     )
     _writer_thread.start()
-    logger.info("[writer] Started — serializing writes to %s", _db_path)
+    logger.info("Started — serializing writes to %s", _db_path)
+
+    # Register with the central lifecycle coordinator for graceful shutdown.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().register("db-writer", _writer_thread, stop_fn=stop_writer)
+    except Exception:
+        pass  # lifecycle not yet initialised — caller manages shutdown
 
 
 def stop_writer(timeout: float = 10.0) -> None:
@@ -403,7 +410,7 @@ def stop_writer(timeout: float = 10.0) -> None:
     _write_queue.put(_STOP)
     _writer_thread.join(timeout=timeout)
     _writer_thread = None
-    logger.info("[writer] Stopped.")
+    logger.info("Stopped.")
 
 
 def is_running() -> bool:
@@ -421,7 +428,7 @@ def _submit(op: _Op) -> None:
 
 def _current_task_id() -> str | None:
     """Read the calling thread's active task_id (if any)."""
-    from core.tasks.task_manager.context import _thread_task
+    from core.tasks.context import _thread_task
     return getattr(_thread_task, "task_id", None)
 
 

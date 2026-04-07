@@ -11,6 +11,8 @@ Runtime:
   # trace_esi: false               # print every ESI HTTP request to the console
   # auto_install: false            # pip-install missing requirements automatically
   # secret_key: "change-me"        # Flask session secret (use a long random string in prod)
+  # transport: "http"              # "http" or "https" — set to "https" when behind a TLS-terminating proxy
+  # github_repo: ""                # GitHub repository URL for system updates (default: NolieRavioli/eve_data_framework3)
 
 Python Console:
   global_log_level: INFO          # log level for the terminal / console output
@@ -25,12 +27,6 @@ Python Console:
   # urllib3: INFO
   # requests: INFO
   #
-  # analysis.character.collectors: INFO
-  # analysis.character.populate: INFO
-  # analysis.market.history: INFO
-  # analysis.market.regions: INFO
-  # analysis.market.structures: INFO
-  # analysis.structures.discover: INFO
   # applications: INFO
   # applications.admin_panel.routes: INFO
   # applications.dashboard.routes: INFO
@@ -39,6 +35,12 @@ Python Console:
   # applications.sde_browser.routes: INFO
   # applications.system.routes: INFO
   # applications.task_viewer.routes: INFO
+  # collectors.character.collectors: INFO
+  # collectors.character.populate: INFO
+  # collectors.market.history: INFO
+  # collectors.market.regions: INFO
+  # collectors.market.structures: INFO
+  # collectors.structures.discover: INFO
   # core.auth.credentials: INFO
   # core.auth.identity: INFO
   # core.auth.sso: INFO
@@ -53,6 +55,7 @@ Python Console:
   # core.db.public: INFO
   # core.db.reader: INFO
   # core.db.sde: INFO
+  # core.db.sde_loader: INFO
   # core.db.stats: INFO
   # core.db.writer: INFO
   # core.esi.cache: INFO
@@ -113,10 +116,12 @@ Python Console:
   # core.esi.public.wars: INFO
   # core.esi.rate: INFO
   # core.esi.registry: INFO
+  # core.system.lifecycle: INFO
+  # core.system.updater: INFO
+  # core.tasks.engine: INFO
+  # core.tasks.jobs: INFO
+  # core.tasks.persist: INFO
   # core.tasks.sde_loader: INFO
-  # core.tasks.task_manager.engine: INFO
-  # core.tasks.task_manager.jobs: INFO
-  # core.tasks.task_manager.persist: INFO
   # core.web: INFO
   # main: INFO
 

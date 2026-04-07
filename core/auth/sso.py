@@ -12,6 +12,7 @@ from threading import Lock
 from typing import Dict, Optional
 
 import jwt
+from jwt import PyJWKClient
 from flask import Blueprint, abort, redirect, request, session, url_for
 from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2Session
@@ -40,9 +41,8 @@ def _get_default_roles() -> list[str]:
     global _cached_default_roles
     if _cached_default_roles is None:
         try:
-            from core.config import load_config, CONFIG_PATH
-            cfg = load_config(CONFIG_PATH)
-            _cached_default_roles = list(cfg.get("Auth", {}).get("default_roles", ["dashboard", "database", "sde", "tasks"]))
+            from core.config import get_auth_config
+            _cached_default_roles = list(get_auth_config().get("default_roles", ["dashboard", "database", "sde", "tasks"]))
         except Exception:
             _cached_default_roles = ["dashboard", "database", "sde", "tasks"]
     return _cached_default_roles
@@ -99,6 +99,7 @@ def _build_state_cache(settings: RuntimeSettings) -> OAuthStateCache:
 
 _settings     = get_runtime_settings()
 _state_cache  = _build_state_cache(_settings)
+_jwks_client  = PyJWKClient("https://login.eveonline.com/oauth/jwks", cache_keys=True)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -134,12 +135,14 @@ def _validate_state(returned_state: Optional[str]):
     session_state = session.pop("oauth_state", None)
     cached        = _state_cache.consume(returned_state)
 
-    if session_state and session_state != returned_state:
+    # Session state MUST be present — it proves this browser initiated the flow
+    if not session_state:
+        return None, None, ("Session expired or missing state. Please try logging in again.", 400)
+
+    if session_state != returned_state:
         return None, None, ("State mismatch detected.", 400)
 
-    if not session_state and not cached:
-        return None, None, ("Session expired or missing state.", 400)
-
+    # Cache adds temporal expiry — if it exists it must match, but expiry is OK
     is_add_toon = session.pop("add_toon", False)
     owner_hint  = None
     if cached is not None:
@@ -159,9 +162,10 @@ def _validate_state(returned_state: Optional[str]):
 
 @auth_bp.route("/login")
 def login():
-    if _settings.debug_mode:
-        print("[Auth] Login requested; permitting insecure transport for local dev.")
-    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    if _settings.transport != "https":
+        if _settings.debug_mode:
+            print("[Auth] Login requested; permitting insecure transport for local dev.")
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     return redirect(_prepare_oauth_session(is_add_toon=False))
 
 
@@ -169,7 +173,8 @@ def login():
 def add_toon():
     if not session.get("owner_id"):
         return "Error: No owner session found for adding toon.", 400
-    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    if _settings.transport != "https":
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     return redirect(_prepare_oauth_session(is_add_toon=True))
 
 
@@ -189,6 +194,8 @@ def switch_character(character_id: int):
 
     session["character_id"] = character_id
     next_url = request.args.get("next") or url_for("dashboard.home")
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        next_url = url_for("dashboard.home")
     return redirect(next_url)
 
 
@@ -208,7 +215,18 @@ def callback():
             auth=HTTPBasicAuth(client_id, client_secret),
         )
 
-        decoded      = jwt.decode(token["access_token"], options={"verify_signature": False})
+        try:
+            signing_key = _jwks_client.get_signing_key_from_jwt(token["access_token"])
+            decoded = jwt.decode(
+                token["access_token"],
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer="https://login.eveonline.com",
+                options={"verify_aud": False},
+            )
+        except jwt.exceptions.PyJWKClientError:
+            logger.warning("[Auth] JWKS fetch failed — falling back to unverified JWT decode")
+            decoded = jwt.decode(token["access_token"], options={"verify_signature": False})
         character_id = int(decoded["sub"].split(":")[-1])
 
         if _settings.debug_mode:
@@ -243,9 +261,6 @@ def callback():
             token.get("scope", ""),
         )
 
-        session["access_token"]  = token["access_token"]
-        session["refresh_token"] = token["refresh_token"]
-
         # Grant default roles to brand-new non-site-owner users
         if not is_add_toon and not is_first_owner:
             if not _identity.get_user_roles(owner_id):
@@ -262,7 +277,7 @@ def callback():
             session["roles"]         = _identity.get_user_roles(owner_id)
 
         # Kick off async character data collection
-        from core.tasks.task_manager.queue import enqueue as _enqueue
+        from core.tasks.queue import enqueue as _enqueue
         from collectors.character.populate import populate_all
         _enqueue(
             "Populate Character",

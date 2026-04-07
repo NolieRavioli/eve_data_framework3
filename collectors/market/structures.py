@@ -22,7 +22,7 @@ from core.db import public as sde_store
 from core.esi import esi_get as _esi_get
 import core.db.sde as sde
 from core.auth import resolve_default_owner_id, pick_token, fresh_token
-from core.config import CONFIG_PATH, load_config
+from core.config import get_market_config, get_structures_config
 
 logger = logging.getLogger(__name__)
 
@@ -193,12 +193,8 @@ def populate_structure_metadata(structure: dict, token: str) -> tuple[dict, str]
 
 def update_structure_market_orders() -> None:
     # Load config once for this run
-    try:
-        _raw_cfg = load_config(CONFIG_PATH)
-    except Exception:
-        _raw_cfg = {}
-    _mc = _raw_cfg.get("Market", {})
-    _sc = _raw_cfg.get("Structures", {})
+    _mc = get_market_config()
+    _sc = get_structures_config()
     market_unauthorized_cooldown = int(_mc.get("unauthorized_cooldown_days", 7)) * 86400
     market_forbidden_cooldown    = int(_mc.get("forbidden_cooldown_days", 21)) * 86400
     market_authorized_cooldown   = int(_mc.get("authorized_cooldown_seconds", 3600))

@@ -57,6 +57,127 @@
     {% endif %}
   </div>
 
+  {# -- Subsystems --------------------------------------------------------- #}
+  <div class="card stack" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.75rem">Subsystems</div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
+      <thead>
+        <tr style="opacity:.6;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">
+          <th style="text-align:left;padding:0.25rem 0.5rem">Subsystem</th>
+          <th style="text-align:left;padding:0.25rem 0.5rem">Status</th>
+          <th style="text-align:left;padding:0.25rem 0.5rem">Details</th>
+          <th style="text-align:right;padding:0.25rem 0.5rem">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# SDE row #}
+        {% set sde = subsystems.sde %}
+        <tr style="border-top:1px solid rgba(255,255,255,.08)">
+          <td style="padding:0.4rem 0.5rem;font-weight:500">SDE Warehouse</td>
+          <td style="padding:0.4rem 0.5rem">
+            {% if sde.ok %}
+              <span style="color:#27ae60">&#10003; Current</span>
+            {% elif sde.available %}
+              <span style="color:#f39c12">&#9888; Partial</span>
+            {% else %}
+              <span style="color:#e74c3c">&#10007; Missing</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.4rem 0.5rem;opacity:.75;font-size:0.8rem">
+            {% if sde.build_finished_at %}
+              Built {{ sde.build_finished_at | string | truncate(19, True, '') }}
+              {% if sde.table_count %}&nbsp;&middot;&nbsp;{{ sde.table_count }} tables{% endif %}
+            {% elif sde.detail %}
+              {{ sde.detail | truncate(60) }}
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td style="padding:0.4rem 0.5rem;text-align:right">
+            <form method="post" action="{{ url_for('system.update_sde') }}" style="display:inline"
+                  onsubmit="return confirm('Download and rebuild the SDE warehouse? This may take several minutes.')">
+              <input type="hidden" name="confirm_token" value="{{ sde_token }}">
+              <button class="btn btn-sm btn-a" type="submit">Update SDE</button>
+            </form>
+          </td>
+        </tr>
+
+        {# ESI Spec row #}
+        {% set spec = subsystems.esi_spec %}
+        <tr style="border-top:1px solid rgba(255,255,255,.08)">
+          <td style="padding:0.4rem 0.5rem;font-weight:500">ESI Spec</td>
+          <td style="padding:0.4rem 0.5rem">
+            {% if spec.ok %}
+              <span style="color:#27ae60">&#10003; Current</span>
+            {% else %}
+              <span style="color:#e74c3c">&#10007; Missing</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.4rem 0.5rem;opacity:.75;font-size:0.8rem">
+            {% if spec.compatibility_date %}
+              {{ spec.compatibility_date }}
+              {% if spec.route_count %}&nbsp;&middot;&nbsp;{{ spec.route_count }} routes{% endif %}
+            {% elif spec.detail %}
+              {{ spec.detail | truncate(60) }}
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td style="padding:0.4rem 0.5rem;text-align:right" rowspan="2">
+            <form method="post" action="{{ url_for('system.update_esi') }}" style="display:inline"
+                  onsubmit="return confirm('Fetch latest ESI spec and regenerate all codegen packages?')">
+              <input type="hidden" name="confirm_token" value="{{ esi_token }}">
+              <button class="btn btn-sm btn-a" type="submit">Update ESI</button>
+            </form>
+          </td>
+        </tr>
+
+        {# ESI Codegen row #}
+        {% set codegen = subsystems.esi_codegen %}
+        <tr style="border-top:1px solid rgba(255,255,255,.08)">
+          <td style="padding:0.4rem 0.5rem;font-weight:500">ESI Codegen</td>
+          <td style="padding:0.4rem 0.5rem">
+            {% if codegen.ok %}
+              {% if spec.compatibility_date and codegen.compatibility_date == spec.compatibility_date %}
+                <span style="color:#27ae60">&#10003; Current</span>
+              {% elif spec.compatibility_date %}
+                <span style="color:#f39c12">&#9888; Stale</span>
+              {% else %}
+                <span style="color:#27ae60">&#10003; Present</span>
+              {% endif %}
+            {% else %}
+              <span style="color:#e74c3c">&#10007; Missing</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.4rem 0.5rem;opacity:.75;font-size:0.8rem">
+            {% if codegen.compatibility_date %}
+              {{ codegen.compatibility_date }}
+              {% if codegen.operation_count %}&nbsp;&middot;&nbsp;{{ codegen.operation_count }} ops{% endif %}
+            {% elif codegen.detail %}
+              {{ codegen.detail | truncate(60) }}
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+        </tr>
+
+        {# Config row #}
+        <tr style="border-top:1px solid rgba(255,255,255,.08)">
+          <td style="padding:0.4rem 0.5rem;font-weight:500">example.config.yaml</td>
+          <td style="padding:0.4rem 0.5rem"><span style="opacity:.5">&#8212;</span></td>
+          <td style="padding:0.4rem 0.5rem;opacity:.75;font-size:0.8rem">Regenerated from live codebase scan</td>
+          <td style="padding:0.4rem 0.5rem;text-align:right">
+            <form method="post" action="{{ url_for('system.update_config') }}" style="display:inline"
+                  onsubmit="return confirm('Regenerate example.config.yaml from the current codebase?')">
+              <input type="hidden" name="confirm_token" value="{{ config_token }}">
+              <button class="btn btn-sm" type="submit">Regenerate</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   {# -- Live Bus Logs ------------------------------------------------------ #}
   <div class="card stack">
     <div class="ct" style="margin:0 0 0.75rem">

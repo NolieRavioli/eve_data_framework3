@@ -57,7 +57,7 @@ class SchedulerEngine:
             self._fn_registry[job_id] = fn
 
         import core.db.public as db
-        from core.tasks.task_manager.persist import ensure_tables, upsert_job_registration
+        from core.tasks.persist import ensure_tables, upsert_job_registration
 
         con = db.connect()
         try:
@@ -85,13 +85,20 @@ class SchedulerEngine:
         self._thread.start()
         logger.info("[Scheduler] Engine started (tick every %ds)", _TICK_INTERVAL)
 
+        # Register with the central lifecycle coordinator.
+        try:
+            from core.system import get_lifecycle
+            get_lifecycle().register("scheduler-engine", self._thread)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # Public interface (used by scheduler adapter in _api.py)
     # ------------------------------------------------------------------
 
     def list_jobs(self) -> list[dict]:
         import core.db.public as db
-        from core.tasks.task_manager.persist import ensure_tables, get_all_jobs
+        from core.tasks.persist import ensure_tables, get_all_jobs
 
         con = db.connect()
         try:
@@ -102,7 +109,7 @@ class SchedulerEngine:
 
     def set_enabled(self, job_id: str, enabled: bool) -> None:
         import core.db.public as db
-        from core.tasks.task_manager.persist import ensure_tables, set_enabled
+        from core.tasks.persist import ensure_tables, set_enabled
 
         con = db.connect()
         try:
@@ -115,7 +122,7 @@ class SchedulerEngine:
     def run_now(self, job_id: str) -> str:
         """Schedule *job_id* to fire on the next tick and return the task_id."""
         import core.db.public as db
-        from core.tasks.task_manager.persist import ensure_tables, run_job_now
+        from core.tasks.persist import ensure_tables, run_job_now
 
         con = db.connect()
         try:
@@ -141,7 +148,7 @@ class SchedulerEngine:
 
     def _tick(self) -> None:
         import core.db.public as db
-        from core.tasks.task_manager.persist import ensure_tables, get_due_jobs, mark_job_ran
+        from core.tasks.persist import ensure_tables, get_due_jobs, mark_job_ran
 
         con = db.connect()
         try:
@@ -161,7 +168,7 @@ class SchedulerEngine:
             logger.warning("[Scheduler] No callable registered for job '%s'", job_id)
             return ""
 
-        from core.tasks.task_manager.queue import enqueue
+        from core.tasks.queue import enqueue
         label = job_id.replace("_", " ").title()
         task_id = enqueue(label, fn, owner_id=0, queue="public")
         logger.info("[Scheduler] Fired job '%s' → task %s", job_id, task_id)

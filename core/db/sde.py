@@ -53,7 +53,7 @@ _type_dogma: dict[int, dict] | None = None
 
 
 def _yaml_loader():
-    return getattr(yaml, "CLoader", yaml.SafeLoader)
+    return getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 
 def _sde_root() -> Path:
@@ -100,7 +100,7 @@ def _warm_types() -> None:
     _type_to_market_group = {}
     if _warehouse_ready():
         rows = _query_rows(
-            "SELECT type_id, name_en, group_id, market_group_id FROM dim_types WHERE type_id IS NOT NULL"
+            "SELECT type_id, name_en, group_id, market_group_id FROM sde_types WHERE type_id IS NOT NULL"
         )
         for row in rows:
             type_id = int(row["type_id"])
@@ -129,7 +129,7 @@ def _warm_groups() -> None:
         return
     _groups = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT group_id, category_id, published, name_en FROM dim_groups")
+        rows = _query_rows("SELECT group_id, category_id, published, name_en FROM sde_groups")
         for row in rows:
             _groups[int(row["group_id"])] = {
                 "name": row.get("name_en") or f"Group {row['group_id']}",
@@ -153,7 +153,7 @@ def _warm_categories() -> None:
         return
     _categories = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT category_id, name_en FROM dim_categories")
+        rows = _query_rows("SELECT category_id, name_en FROM sde_categories")
         for row in rows:
             _categories[int(row["category_id"])] = row.get("name_en") or f"Category {row['category_id']}"
         return
@@ -172,7 +172,7 @@ def _warm_market_tree() -> None:
         rows = _query_rows(
             """
             SELECT market_group_id, parent_group_id, name_en, description_en
-            FROM dim_market_groups
+            FROM sde_marketGroups
             ORDER BY market_group_id
             """
         )
@@ -186,7 +186,7 @@ def _warm_market_tree() -> None:
                 "children": [],
                 "types": [],
             }
-        type_rows = _query_rows("SELECT type_id, market_group_id FROM dim_types WHERE market_group_id IS NOT NULL")
+        type_rows = _query_rows("SELECT type_id, market_group_id FROM sde_types WHERE market_group_id IS NOT NULL")
         for row in type_rows:
             node = _market_flat.get(int(row["market_group_id"]))
             if node is not None:
@@ -224,13 +224,13 @@ def _warm_universe() -> None:
     _system_id_to_security = {}
     _region_id_to_name = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT system_id, region_id, system_name, security FROM dim_systems")
+        rows = _query_rows("SELECT system_id, region_id, system_name, security FROM sde_systems")
         for row in rows:
             system_id = int(row["system_id"])
             _system_id_to_region[system_id] = row.get("region_id")
             _system_id_to_name[system_id] = row.get("system_name") or f"SystemID {system_id}"
             _system_id_to_security[system_id] = row.get("security")
-        region_rows = _query_rows("SELECT region_id, region_name FROM dim_regions")
+        region_rows = _query_rows("SELECT region_id, region_name FROM sde_regions")
         for row in region_rows:
             _region_id_to_name[int(row["region_id"])] = row.get("region_name") or f"RegionID {row['region_id']}"
         return
@@ -257,27 +257,21 @@ def _warm_blueprints() -> None:
         return
     _blueprints = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT blueprint_type_id, max_production_limit, manufacturing_time, other_activities_json FROM fact_blueprints")
+        rows = _query_rows(
+            "SELECT blueprint_type_id, max_production_limit, activities_json FROM sde_blueprints"
+        )
         for row in rows:
-            _blueprints[int(row["blueprint_type_id"])] = {
-                "blueprintTypeID": int(row["blueprint_type_id"]),
+            bid = int(row["blueprint_type_id"])
+            activities = json.loads(row.get("activities_json") or "{}")
+            manufacturing = activities.get("manufacturing") or {}
+            _blueprints[bid] = {
+                "blueprintTypeID": bid,
                 "maxProductionLimit": row.get("max_production_limit"),
-                "materials": [],
-                "products": [],
-                "time": row.get("manufacturing_time"),
-                "activities": json.loads(row.get("other_activities_json") or "{}"),
+                "materials": manufacturing.get("materials") or [],
+                "products": manufacturing.get("products") or [],
+                "time": manufacturing.get("time"),
+                "activities": {k: v for k, v in activities.items() if k != "manufacturing"},
             }
-        for row in _query_rows("SELECT blueprint_type_id, activity, material_type_id, quantity FROM fact_blueprint_materials"):
-            bp = _blueprints.setdefault(int(row["blueprint_type_id"]), {"materials": [], "products": [], "activities": {}})
-            if row.get("activity") == "manufacturing":
-                bp.setdefault("materials", []).append({"typeID": row.get("material_type_id"), "quantity": row.get("quantity")})
-        for row in _query_rows("SELECT blueprint_type_id, activity, product_type_id, quantity, probability FROM fact_blueprint_products"):
-            bp = _blueprints.setdefault(int(row["blueprint_type_id"]), {"materials": [], "products": [], "activities": {}})
-            if row.get("activity") == "manufacturing":
-                entry = {"typeID": row.get("product_type_id"), "quantity": row.get("quantity")}
-                if row.get("probability") is not None:
-                    entry["probability"] = row.get("probability")
-                bp.setdefault("products", []).append(entry)
         return
 
     data = _load_yaml("fsd/blueprints.yaml") or {}
@@ -300,11 +294,10 @@ def _warm_type_materials() -> None:
         return
     _type_materials = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT type_id, material_type_id, quantity FROM fact_type_materials")
+        rows = _query_rows("SELECT type_id, materials_json FROM sde_typeMaterials")
         for row in rows:
-            _type_materials.setdefault(int(row["type_id"]), []).append(
-                {"materialTypeID": row.get("material_type_id"), "quantity": row.get("quantity")}
-            )
+            raw = row.get("materials_json")
+            _type_materials[int(row["type_id"])] = json.loads(raw) if raw else []
         return
     data = _load_yaml("fsd/typeMaterials.yaml") or {}
     for type_id, props in data.items():
@@ -317,14 +310,22 @@ def _warm_type_dogma() -> None:
         return
     _type_dogma = {}
     if _warehouse_ready():
-        attr_rows = _query_rows("SELECT type_id, attribute_id, value FROM fact_type_dogma_attributes")
-        for row in attr_rows:
-            entry = _type_dogma.setdefault(int(row["type_id"]), {"dogmaAttributes": {}, "dogmaEffects": []})
-            entry["dogmaAttributes"][str(int(row["attribute_id"]))] = row.get("value")
-        effect_rows = _query_rows("SELECT type_id, effect_id FROM fact_type_dogma_effects")
-        for row in effect_rows:
-            entry = _type_dogma.setdefault(int(row["type_id"]), {"dogmaAttributes": {}, "dogmaEffects": []})
-            entry["dogmaEffects"].append(int(row["effect_id"]))
+        rows = _query_rows(
+            "SELECT type_id, dogma_attributes_json, dogma_effects_json FROM sde_typeDogma"
+        )
+        for row in rows:
+            attrs_raw = row.get("dogma_attributes_json")
+            effects_raw = row.get("dogma_effects_json")
+            attrs_list = json.loads(attrs_raw) if attrs_raw else []
+            effects_list = json.loads(effects_raw) if effects_raw else []
+            _type_dogma[int(row["type_id"])] = {
+                "dogmaAttributes": {
+                    str(a["attributeID"]): a.get("value")
+                    for a in attrs_list
+                    if "attributeID" in a
+                },
+                "dogmaEffects": [e["effectID"] for e in effects_list if "effectID" in e],
+            }
         return
     data = _load_yaml("fsd/typeDogma.yaml") or {}
     for type_id, props in data.items():
@@ -335,6 +336,13 @@ def _warm_type_dogma() -> None:
 
 
 def startup_load_sde(cfg: dict | None = None) -> None:
+    """Warm SDE in-memory caches from the DuckDB warehouse.
+
+    **Does not download or build the SDE** — that responsibility now lives
+    in ``main.py`` (explicit SDE readiness step before this is called).
+    If the warehouse is missing when this runs, caches simply stay empty
+    and will lazy-load on first access.
+    """
     global _startup_cfg, _database_path
     cfg = cfg or {}
     _database_path = sde_store.get_database_path(cfg)
@@ -343,23 +351,19 @@ def startup_load_sde(cfg: dict | None = None) -> None:
         for key, default in _SECTION_DEFAULTS.items()
     }
 
-    print()
     if not _warehouse_ready():
-        print(f"\r[SDE] no warehouse found at {_warehouse_path()} - building before server start", flush=True)
-        from core.tasks.sde_loader import update_sde
-        update_sde()
+        logger.warning("[SDE] No warehouse found at %s — caches will lazy-load on first access.", _warehouse_path())
         return
 
-    backend = "DuckDB warehouse"
-    print(f"[SDE] using existing {backend} at {_warehouse_path()} (bootstrap skipped)")
-    if _warehouse_ready():
-        try:
-            sde_store.ensure_esi_registry_current(_warehouse_path())
-        except Exception as exc:
-            logger.warning("Failed to ensure the ESI registry is synced into DuckDB: %s", exc)
+    logger.info("[SDE] Using warehouse at %s", _warehouse_path())
+    try:
+        sde_store.ensure_esi_registry_current(_warehouse_path())
+    except Exception as exc:
+        logger.warning("Failed to ensure the ESI registry is synced into DuckDB: %s", exc)
+
     warm = [key for key, enabled in _startup_cfg.items() if enabled]
     if warm:
-        print(f"[SDE] warming: {', '.join(warm)}")
+        logger.info("[SDE] Warming caches: %s", ", ".join(warm))
     for key in warm:
         {
             "types": _warm_types,
@@ -404,7 +408,7 @@ def name_from_type_id(type_id: int) -> str:
     if _type_id_to_name is not None:
         return _type_id_to_name.get(type_id, f"Unknown TypeID {type_id}")
     if _warehouse_ready():
-        row = _query_one("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id])
+        row = _query_one("SELECT name_en FROM sde_types WHERE type_id = ?", [type_id])
         return (row or {}).get("name_en") or f"Unknown TypeID {type_id}"
     _warm_types()
     return (_type_id_to_name or {}).get(type_id, f"Unknown TypeID {type_id}")
@@ -415,7 +419,7 @@ def type_id_from_name(name: str) -> int | None:
     if _name_to_type_id is not None:
         return _name_to_type_id.get(normalized)
     if _warehouse_ready():
-        row = _query_one("SELECT type_id FROM dim_types WHERE lower(name_en) = ?", [normalized])
+        row = _query_one("SELECT type_id FROM sde_types WHERE lower(name_en) = ?", [normalized])
         return int(row["type_id"]) if row and row.get("type_id") is not None else None
     _warm_types()
     return (_name_to_type_id or {}).get(normalized)
@@ -430,7 +434,7 @@ def suggest_type_names(prefix: str, limit: int = 10) -> list[str]:
         return [(_type_id_to_name or {}).get(_name_to_type_id[name], name) for name in matches[:limit]]
     if _warehouse_ready():
         rows = _query_rows(
-            "SELECT name_en FROM dim_types WHERE lower(name_en) LIKE ? ORDER BY name_en LIMIT ?",
+            "SELECT name_en FROM sde_types WHERE lower(name_en) LIKE ? ORDER BY name_en LIMIT ?",
             [normalized + "%", limit],
         )
         return [row["name_en"] for row in rows if row.get("name_en")]
@@ -442,7 +446,7 @@ def group_id_from_type_id(type_id: int) -> int | None:
     if _type_to_group is not None:
         return _type_to_group.get(type_id)
     if _warehouse_ready():
-        row = _query_one("SELECT group_id FROM dim_types WHERE type_id = ?", [type_id])
+        row = _query_one("SELECT group_id FROM sde_types WHERE type_id = ?", [type_id])
         return row.get("group_id") if row else None
     _warm_types()
     return (_type_to_group or {}).get(type_id)
@@ -452,7 +456,7 @@ def market_group_from_type_id(type_id: int) -> int | None:
     if _type_to_market_group is not None:
         return _type_to_market_group.get(type_id)
     if _warehouse_ready():
-        row = _query_one("SELECT market_group_id FROM dim_types WHERE type_id = ?", [type_id])
+        row = _query_one("SELECT market_group_id FROM sde_types WHERE type_id = ?", [type_id])
         return row.get("market_group_id") if row else None
     _warm_types()
     return (_type_to_market_group or {}).get(type_id)
@@ -557,7 +561,7 @@ def reprocess_materials(type_id: int) -> list[dict]:
         return _type_materials.get(type_id, [])
     if _warehouse_ready():
         rows = _query_rows(
-            "SELECT material_type_id, quantity FROM fact_type_materials WHERE type_id = ? ORDER BY material_type_id",
+            "SELECT material_type_id, quantity FROM sde_typeMaterials WHERE type_id = ? ORDER BY material_type_id",
             [type_id],
         )
         return [{"materialTypeID": row["material_type_id"], "quantity": row["quantity"]} for row in rows]
@@ -570,7 +574,7 @@ def dogma_attributes(type_id: int) -> dict[str, float]:
         return (_type_dogma.get(type_id) or {}).get("dogmaAttributes", {})
     if _warehouse_ready():
         rows = _query_rows(
-            "SELECT attribute_id, value FROM fact_type_dogma_attributes WHERE type_id = ? ORDER BY attribute_id",
+            "SELECT attribute_id, value FROM sde_typeDogmaAttributes WHERE type_id = ? ORDER BY attribute_id",
             [type_id],
         )
         return {str(int(row["attribute_id"])): row["value"] for row in rows if row.get("attribute_id") is not None}
@@ -583,7 +587,7 @@ def dogma_effects(type_id: int) -> list[int]:
         return (_type_dogma.get(type_id) or {}).get("dogmaEffects", [])
     if _warehouse_ready():
         rows = _query_rows(
-            "SELECT effect_id FROM fact_type_dogma_effects WHERE type_id = ? ORDER BY effect_id",
+            "SELECT effect_id FROM sde_typeDogmaEffects WHERE type_id = ? ORDER BY effect_id",
             [type_id],
         )
         return [int(row["effect_id"]) for row in rows if row.get("effect_id") is not None]

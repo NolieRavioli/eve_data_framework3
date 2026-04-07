@@ -3,6 +3,7 @@
 import importlib
 import logging
 import os
+import secrets
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -28,7 +29,24 @@ REQUIRED_MODULES = (
     "duckdb",
 )
 
-DEFAULT_SECRET = "nolieravioli"
+
+def _load_or_create_session_secret() -> str:
+    """Load a persistent session secret from disk, or generate one on first boot."""
+    public_data = os.getenv("PUBLIC_DATA_FOLDER", "_publicData")
+    secret_path = os.path.join(public_data, "secret")
+    try:
+        with open(secret_path, "r") as f:
+            secret = f.read().strip()
+            if secret:
+                return secret
+    except FileNotFoundError:
+        pass
+    secret = secrets.token_hex(32)
+    os.makedirs(public_data, exist_ok=True)
+    with open(secret_path, "w") as f:
+        f.write(secret)
+    logger.info("[Config] Generated new session secret at %s", secret_path)
+    return secret
 
 
 # ──────── Runtime Settings ─────────────────────────────────────────────────────
@@ -42,15 +60,23 @@ class RuntimeSettings:
     auto_install: bool = False
     web_host: str = "127.0.0.1"
     web_port: int = 5000
-    session_secret: str = DEFAULT_SECRET
+    session_secret: str = ""
     trace_esi: bool = False
+    transport: str = "http"
+    github_repo: str = ""
     # Python Console logging (console StreamHandler + per-logger overrides)
     global_log_level: str = "INFO"
     werkzeug_log_level: str = "INFO"
+    # Bootstrap auto-update toggles
+    bootstrap_sde: bool = True
+    bootstrap_esi: bool = True
 
 
 _runtime_settings: Optional[RuntimeSettings] = None
 _runtime_lock = Lock()
+
+# ── Cached config dict — loaded once from disk, never again ────────────────────
+_cached_config: Optional[dict] = None
 
 
 def _as_bool(value) -> bool:
@@ -69,16 +95,21 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         if _runtime_settings is not None:
             return _runtime_settings
 
+        global _cached_config
         cfg = load_config(config_path)
         if not isinstance(cfg, dict):
             cfg = {}
+        _cached_config = cfg
 
         runtime_cfg   = cfg.get("Runtime", {}) or {}
         py_console    = cfg.get("Python Console", {}) or {}
+        bootstrap_cfg = cfg.get("Bootstrap", {}) or {}
 
         debug_mode   = _as_bool(runtime_cfg.get("debug") or os.getenv("EVE_DEBUG"))
         auto_install = _as_bool(runtime_cfg.get("auto_install") or os.getenv("EVE_AUTO_INSTALL"))
         trace_esi    = _as_bool(runtime_cfg.get("trace_esi") or os.getenv("EVE_TRACE_ESI"))
+        bootstrap_sde = _as_bool(bootstrap_cfg.get("auto_update_sde", True))
+        bootstrap_esi = _as_bool(bootstrap_cfg.get("auto_update_esi", True))
 
         web_host = runtime_cfg.get("host") or os.getenv("EVE_WEB_HOST", "127.0.0.1")
         web_port = int(runtime_cfg.get("port") or os.getenv("EVE_WEB_PORT", "5000"))
@@ -86,7 +117,7 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         session_secret = (
             os.getenv("FLASK_SECRET_KEY")
             or runtime_cfg.get("secret_key")
-            or DEFAULT_SECRET
+            or _load_or_create_session_secret()
         )
 
         # ── Logging levels ────────────────────────────────────────────────────
@@ -140,6 +171,9 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
         if trace_esi:
             print("[Runtime] ESI tracing is active. HTTP requests will be printed.")
 
+        transport = runtime_cfg.get("transport", "http")
+        github_repo = runtime_cfg.get("github_repo", "")
+
         _runtime_settings = RuntimeSettings(
             debug_mode=debug_mode,
             auto_install=auto_install,
@@ -147,8 +181,12 @@ def initialize_runtime_environment(config_path: str = CONFIG_PATH) -> RuntimeSet
             web_port=web_port,
             session_secret=session_secret,
             trace_esi=trace_esi,
+            transport=transport,
+            github_repo=github_repo,
             global_log_level=global_log_level,
             werkzeug_log_level=werkzeug_log_level,
+            bootstrap_sde=bootstrap_sde,
+            bootstrap_esi=bootstrap_esi,
         )
 
         return _runtime_settings
@@ -190,10 +228,14 @@ def ensure_dependencies(settings: Optional[RuntimeSettings] = None,
 
 
 def load_config(config_path: str = CONFIG_PATH) -> dict:
+    """Load config.yaml from disk and inject its Environment Variables into os.environ.
+
+    Called once at startup via ``initialize_runtime_environment()``.  Subsequent
+    access should use ``get_config()`` which returns the cached dict.
     """
-    Loads Environment Variables from a config.yaml into os.environ.
-    Returns the full config dict.
-    """
+    global _cached_config
+    if _cached_config is not None:
+        return _cached_config
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -212,8 +254,36 @@ def load_config(config_path: str = CONFIG_PATH) -> dict:
             else:
                 os.environ[key] = str(value)
 
+    _cached_config = cfg
     logger.info(f"Loaded {len(env_vars)} environment variables from {config_path}")
     return cfg
+
+
+def get_config() -> dict:
+    """Return the cached config dict.  Initialises from disk if not yet loaded."""
+    if _cached_config is not None:
+        return _cached_config
+    return load_config(CONFIG_PATH)
+
+
+def get_sde_config() -> dict:
+    """Return the ``SDE`` section of the config."""
+    return get_config().get("SDE", {})
+
+
+def get_auth_config() -> dict:
+    """Return the ``Auth`` section of the config."""
+    return get_config().get("Auth", {})
+
+
+def get_market_config() -> dict:
+    """Return the ``Market`` section of the config."""
+    return get_config().get("Market", {})
+
+
+def get_structures_config() -> dict:
+    """Return the ``Structures`` section of the config."""
+    return get_config().get("Structures", {})
 
 
 # ── DB-unit weights ────────────────────────────────────────────────────────────────────
@@ -240,8 +310,7 @@ def get_db_unit_weights() -> dict[str, float]:
     """
     weights = dict(_DB_UNIT_DEFAULTS)
     try:
-        cfg = load_config(CONFIG_PATH)
-        section = cfg.get("DB Units") or {}
+        section = get_config().get("DB Units") or {}
         for key in _DB_UNIT_DEFAULTS:
             if key in section:
                 weights[key] = float(section[key])

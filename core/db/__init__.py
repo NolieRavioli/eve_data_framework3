@@ -33,7 +33,8 @@ __all__ = [
     "initialize_private_database",
     "ensure_schema",
     "warm_caches",
-    "initialize_all",
+    "initialize_collector_tables",
+    "seed_esi_cache",
     "query_rows",
     "query_one",
     "query_scalar",
@@ -55,14 +56,38 @@ _ROLE_RENAMES = {
 }
 
 
+# Auth table renames: old_name → new_name.  Applied once at startup.
+_AUTH_TABLE_RENAMES = {
+    "users":       "auth_users",
+    "site_admins": "auth_siteAdmins",
+    "user_roles":  "auth_userRoles",
+}
+
+
+def _migrate_renamed_auth_tables() -> None:
+    """Rename legacy auth tables to auth_* prefix. Idempotent."""
+    from core.db.public import connect
+    con = connect()
+    try:
+        existing = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        for old, new in _AUTH_TABLE_RENAMES.items():
+            if old in existing and new not in existing:
+                con.execute(f'ALTER TABLE "{old}" RENAME TO "{new}"')
+                logger.info("Renamed auth table %r -> %r", old, new)
+    except Exception as exc:
+        logger.debug("Auth table migration skipped: %s", exc)
+    finally:
+        con.close()
+
+
 def _migrate_renamed_roles() -> None:
-    """Rename legacy role values in user_roles. Idempotent."""
+    """Rename legacy role values in auth_userRoles. Idempotent."""
     from core.db.public import connect
     con = connect()
     try:
         for old, new in _ROLE_RENAMES.items():
             changed = con.execute(
-                "UPDATE user_roles SET role_name = ? WHERE role_name = ?",
+                "UPDATE auth_userRoles SET role_name = ? WHERE role_name = ?",
                 [new, old],
             ).rowcount
             if changed:
@@ -95,6 +120,7 @@ def initialize_private_database(owner_id: int):
 def ensure_schema() -> None:
     """Create / migrate the DuckDB operational schema (fast — idempotent)."""
     logger.info("Ensuring public DuckDB schema...")
+    _migrate_renamed_auth_tables()
     ensure_public_database()
     _migrate_renamed_roles()
     logger.info("Public DuckDB schema ready.")
@@ -109,7 +135,7 @@ def warm_caches(sde_cfg: dict | None = None) -> None:
 
 
 def initialize_analysis_tables(con) -> None:
-    """Call every analysis collector's ensure_tables (and ensure_columns where applicable).
+    """Call every collector's ensure_tables (and ensure_columns where applicable).
 
     Each import is guarded individually so an import error in one collector
     never prevents the others from running.  All DDL is idempotent.
@@ -119,9 +145,9 @@ def initialize_analysis_tables(con) -> None:
     """
     collectors = [
         # (module_path, has_ensure_columns)
-        ("analysis.market.regions",      True),
-        ("analysis.market.structures",   True),
-        ("analysis.structures.discover", True),
+        ("collectors.market.regions",      True),
+        ("collectors.market.structures",   True),
+        ("collectors.structures.discover", True),
     ]
 
     for module_path, has_columns in collectors:
@@ -139,22 +165,25 @@ def initialize_analysis_tables(con) -> None:
             logger.warning("[DB init] Could not initialize tables for %s: %s", module_path, exc)
 
 
-def initialize_all(sde_cfg: dict | None = None) -> dict:
-    """Run the full public initialization sequence (schema → caches → analysis tables → ESI cache).
+def initialize_collector_tables() -> None:
+    """Ensure every collector's DDL tables exist in DuckDB.
 
-    Returns the current warehouse status dict.
+    Opens a connection, calls initialize_analysis_tables, and checkpoints.
     """
     from core.db import public
-    ensure_schema()
-    warm_caches(sde_cfg)
-
     con = public.connect()
     try:
-        # Initialise every analysis collector's tables up front so the DB
-        # browser shows the full schema from the first request.
         initialize_analysis_tables(con)
+        con.execute("CHECKPOINT")
+    finally:
+        con.close()
 
-        # Initialise ESI cache tables and seed route specs from the generated DDL.
+
+def seed_esi_cache() -> None:
+    """Initialise ESI cache tables and seed route specs from generated DDL."""
+    from core.db import public
+    con = public.connect()
+    try:
         try:
             import core.esi.cache as esi_cache
             esi_cache.ensure_tables(con)
@@ -163,9 +192,24 @@ def initialize_all(sde_cfg: dict | None = None) -> dict:
                 logger.info("ESI cache: seeded %d route spec rows.", count)
         except Exception as exc:
             logger.warning("ESI cache init skipped (%s). Run 'python build.py' to generate cache_ddl.py.", exc)
-
         con.execute("CHECKPOINT")
     finally:
         con.close()
 
+
+def initialize_all(sde_cfg: dict | None = None) -> dict:
+    """Run the full public initialization sequence (schema → caches → collector tables → ESI cache).
+
+    Returns the current warehouse status dict.
+
+    .. deprecated::
+        Prefer calling ``ensure_schema()``, ``warm_caches()``,
+        ``initialize_collector_tables()``, and ``seed_esi_cache()``
+        individually for a deterministic startup sequence.
+    """
+    from core.db import public
+    ensure_schema()
+    warm_caches(sde_cfg)
+    initialize_collector_tables()
+    seed_esi_cache()
     return public.get_warehouse_status()

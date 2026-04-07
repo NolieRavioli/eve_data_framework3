@@ -16,8 +16,8 @@ sde_bp = Blueprint("sde_browser", __name__,
                    static_folder="static")
 
 _SDE_TABLES = [
-    "dim_types", "dim_groups", "dim_categories", "dim_market_groups",
-    "dim_regions", "dim_constellations", "dim_systems", "dim_stations",
+    "sde_types", "sde_groups", "sde_categories", "sde_marketGroups",
+    "sde_regions", "sde_constellations", "sde_systems", "sde_staStations",
 ]
 
 
@@ -41,7 +41,7 @@ def index():
 @sde_bp.route("/update", methods=["POST"])
 @require_admin
 def update():
-    from core.tasks.sde_loader import update_sde
+    from core.db.sde_loader import update_sde
     task_id = tasks.enqueue("SDE Update", update_sde, queue="public")
     return redirect(url_for("task_viewer.task_detail", task_id=task_id))
 
@@ -60,19 +60,19 @@ def lookup():
         if q.isdigit():
             tid = int(q)
             row = con.execute(
-                "SELECT type_id, name_en FROM dim_types WHERE type_id = ?", [tid]
+                "SELECT type_id, name_en FROM sde_types WHERE type_id = ?", [tid]
             ).fetchone()
             if row:
                 results["types"].append({"type_id": row[0], "name": row[1]})
 
             srow = con.execute(
-                "SELECT system_id, system_name FROM dim_systems WHERE system_id = ?", [tid]
+                "SELECT system_id, system_name FROM sde_systems WHERE system_id = ?", [tid]
             ).fetchone()
             if srow:
                 results["systems"].append({"system_id": srow[0], "name": srow[1]})
 
             rrow = con.execute(
-                "SELECT region_id, region_name FROM dim_regions WHERE region_id = ?", [tid]
+                "SELECT region_id, region_name FROM sde_regions WHERE region_id = ?", [tid]
             ).fetchone()
             if rrow:
                 results["regions"].append({"region_id": rrow[0], "name": rrow[1]})
@@ -80,7 +80,7 @@ def lookup():
         # Name search (case-insensitive LIKE)
         name_param = f"%{q}%"
         types = con.execute(
-            "SELECT type_id, name_en FROM dim_types WHERE name_en ILIKE ? LIMIT 50",
+            "SELECT type_id, name_en FROM sde_types WHERE name_en ILIKE ? LIMIT 50",
             [name_param],
         ).fetchall()
         for r in types:
@@ -88,7 +88,7 @@ def lookup():
                 results["types"].append({"type_id": r[0], "name": r[1]})
 
         systems = con.execute(
-            "SELECT system_id, system_name FROM dim_systems WHERE system_name ILIKE ? LIMIT 50",
+            "SELECT system_id, system_name FROM sde_systems WHERE system_name ILIKE ? LIMIT 50",
             [name_param],
         ).fetchall()
         for r in systems:
@@ -96,7 +96,7 @@ def lookup():
                 results["systems"].append({"system_id": r[0], "name": r[1]})
 
         regions = con.execute(
-            "SELECT region_id, region_name FROM dim_regions WHERE region_name ILIKE ? LIMIT 50",
+            "SELECT region_id, region_name FROM sde_regions WHERE region_name ILIKE ? LIMIT 50",
             [name_param],
         ).fetchall()
         for r in regions:
@@ -120,10 +120,10 @@ def type_detail(type_id: int):
                g.name_en AS group_name, g.category_id,
                c.name_en AS category_name,
                mg.name_en AS market_group_name
-        FROM dim_types t
-        LEFT JOIN dim_groups g ON t.group_id = g.group_id
-        LEFT JOIN dim_categories c ON g.category_id = c.category_id
-        LEFT JOIN dim_market_groups mg ON t.market_group_id = mg.market_group_id
+        FROM sde_types t
+        LEFT JOIN sde_groups g ON t.group_id = g.group_id
+        LEFT JOIN sde_categories c ON g.category_id = c.category_id
+        LEFT JOIN sde_marketGroups mg ON t.market_group_id = mg.market_group_id
         WHERE t.type_id = ?
         """,
         [type_id],
@@ -142,9 +142,9 @@ def system_detail(system_id: int):
                s.security, s.sun_type_id, s.planet_count, s.stargate_count,
                cn.constellation_name,
                r.region_name
-        FROM dim_systems s
-        LEFT JOIN dim_constellations cn ON s.constellation_id = cn.constellation_id
-        LEFT JOIN dim_regions r ON s.region_id = r.region_id
+        FROM sde_systems s
+        LEFT JOIN sde_constellations cn ON s.constellation_id = cn.constellation_id
+        LEFT JOIN sde_regions r ON s.region_id = r.region_id
         WHERE s.system_id = ?
         """,
         [system_id],
@@ -152,7 +152,7 @@ def system_detail(system_id: int):
     stations = []
     if row:
         stations = db.query(
-            "SELECT station_id, station_name FROM dim_stations WHERE solar_system_id = ? ORDER BY station_name",
+            "SELECT station_id, station_name FROM sde_staStations WHERE solar_system_id = ? ORDER BY station_name",
             [system_id],
         )
     return render_template(
@@ -168,7 +168,7 @@ def system_detail(system_id: int):
 @require_admin
 def region_detail(region_id: int):
     row = db.query_one(
-        "SELECT region_id, region_name, faction_id FROM dim_regions WHERE region_id = ?",
+        "SELECT region_id, region_name, faction_id FROM sde_regions WHERE region_id = ?",
         [region_id],
     )
     constellations = []
@@ -178,8 +178,8 @@ def region_detail(region_id: int):
             """
             SELECT cn.constellation_id, cn.constellation_name,
                    COUNT(s.system_id) AS system_count
-            FROM dim_constellations cn
-            LEFT JOIN dim_systems s ON s.constellation_id = cn.constellation_id
+            FROM sde_constellations cn
+            LEFT JOIN sde_systems s ON s.constellation_id = cn.constellation_id
             WHERE cn.region_id = ?
             GROUP BY cn.constellation_id, cn.constellation_name
             ORDER BY cn.constellation_name
@@ -187,7 +187,7 @@ def region_detail(region_id: int):
             [region_id],
         )
         sc = db.scalar(
-            "SELECT COUNT(*) FROM dim_stations WHERE region_id = ?",
+            "SELECT COUNT(*) FROM sde_staStations WHERE region_id = ?",
             [region_id],
         )
         station_count = sc or 0

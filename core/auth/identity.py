@@ -1,6 +1,6 @@
 """User, admin, and role CRUD — extracted from publicDB.py.
 
-These functions operate on the ``users``, ``site_admins``, and ``user_roles``
+These functions operate on the ``auth_users``, ``auth_siteAdmins``, and ``auth_userRoles``
 DuckDB tables.  They still call ``core.db.public.connect()`` internally — they
 *use* the database but don't *own* the connection infrastructure.
 """
@@ -46,7 +46,7 @@ def link_public_user(owner_id: int, character_id: int, database_file: str | Path
     try:
         _ensure_schema(con)
         con.execute(
-            "INSERT OR REPLACE INTO users (owner_id, character_id) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO auth_users (owner_id, character_id) VALUES (?, ?)",
             [owner_id, character_id],
         )
     finally:
@@ -57,7 +57,7 @@ def count_public_owners(database_file: str | Path | None = None) -> int:
     con = _connect(database_file)
     try:
         _ensure_schema(con)
-        row = con.execute("SELECT COUNT(DISTINCT owner_id) FROM users").fetchone()
+        row = con.execute("SELECT COUNT(DISTINCT owner_id) FROM auth_users").fetchone()
         return int(row[0] or 0)
     finally:
         con.close()
@@ -76,8 +76,8 @@ def list_public_users(database_file: str | Path | None = None) -> list[dict]:
                 a.owner_id IS NOT NULL AS is_admin,
                 COALESCE(a.is_site_owner, FALSE) AS is_site_owner,
                 a.granted_at
-            FROM users AS u
-            LEFT JOIN site_admins AS a
+            FROM auth_users AS u
+            LEFT JOIN auth_siteAdmins AS a
               ON a.owner_id = u.owner_id
             GROUP BY u.owner_id, a.owner_id, a.is_site_owner, a.granted_at
             ORDER BY is_site_owner DESC, is_admin DESC, u.owner_id
@@ -98,7 +98,7 @@ def get_site_admin(owner_id: int, database_file: str | Path | None = None) -> di
             con,
             """
             SELECT owner_id, is_site_owner, granted_by, granted_at
-            FROM site_admins
+            FROM auth_siteAdmins
             WHERE owner_id = ?
             """,
             [owner_id],
@@ -120,7 +120,7 @@ def upsert_site_admin(
         _ensure_schema(con)
         con.execute(
             """
-            INSERT OR REPLACE INTO site_admins (owner_id, is_site_owner, granted_by, granted_at)
+            INSERT OR REPLACE INTO auth_siteAdmins (owner_id, is_site_owner, granted_by, granted_at)
             VALUES (?, ?, ?, ?)
             """,
             [owner_id, is_site_owner, granted_by, granted_at or _utc_now()],
@@ -135,20 +135,20 @@ def delete_site_admin(owner_id: int, database_file: str | Path | None = None) ->
     con = _connect(database_file)
     try:
         _ensure_schema(con)
-        con.execute("DELETE FROM site_admins WHERE owner_id = ?", [owner_id])
+        con.execute("DELETE FROM auth_siteAdmins WHERE owner_id = ?", [owner_id])
     finally:
         con.close()
     return True
 
 
 def delete_user(owner_id: int, database_file: str | Path | None = None) -> None:
-    """Remove a user from users, user_roles, and site_admins."""
+    """Remove a user from auth_users, auth_userRoles, and auth_siteAdmins."""
     con = _connect(database_file)
     try:
         _ensure_schema(con)
-        con.execute("DELETE FROM user_roles WHERE owner_id = ?", [owner_id])
-        con.execute("DELETE FROM site_admins WHERE owner_id = ?", [owner_id])
-        con.execute("DELETE FROM users WHERE owner_id = ?", [owner_id])
+        con.execute("DELETE FROM auth_userRoles WHERE owner_id = ?", [owner_id])
+        con.execute("DELETE FROM auth_siteAdmins WHERE owner_id = ?", [owner_id])
+        con.execute("DELETE FROM auth_users WHERE owner_id = ?", [owner_id])
     finally:
         con.close()
 
@@ -162,7 +162,7 @@ def get_user_roles(owner_id: int, database_file: str | Path | None = None) -> li
     try:
         _ensure_schema(con)
         rows = con.execute(
-            "SELECT role_name FROM user_roles WHERE owner_id = ? ORDER BY role_name",
+            "SELECT role_name FROM auth_userRoles WHERE owner_id = ? ORDER BY role_name",
             [owner_id],
         ).fetchall()
         return [row[0] for row in rows]
@@ -186,7 +186,7 @@ def grant_user_roles(
         for role in roles:
             con.execute(
                 """
-                INSERT INTO user_roles (owner_id, role_name, granted_by, granted_at)
+                INSERT INTO auth_userRoles (owner_id, role_name, granted_by, granted_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT (owner_id, role_name) DO NOTHING
                 """,
@@ -206,7 +206,7 @@ def revoke_user_role(
     try:
         _ensure_schema(con)
         con.execute(
-            "DELETE FROM user_roles WHERE owner_id = ? AND role_name = ?",
+            "DELETE FROM auth_userRoles WHERE owner_id = ? AND role_name = ?",
             [owner_id, role_name],
         )
     finally:
@@ -220,7 +220,7 @@ def list_all_user_roles(database_file: str | Path | None = None) -> list[dict]:
         _ensure_schema(con)
         return _query_to_dicts(
             con,
-            "SELECT owner_id, role_name, granted_by, granted_at FROM user_roles ORDER BY owner_id, role_name",
+            "SELECT owner_id, role_name, granted_by, granted_at FROM auth_userRoles ORDER BY owner_id, role_name",
         )
     finally:
         con.close()

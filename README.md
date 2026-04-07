@@ -407,7 +407,7 @@ my_bp = Blueprint("my_tool", __name__,
 @my_bp.route("/")
 @require_role("my_tool")
 def index():
-    rows = db.query("SELECT type_id, name FROM dim_types LIMIT 10")
+    rows = db.query("SELECT type_id, name FROM sde_types LIMIT 10")
     return render_template("my_tool.html", rows=rows, **base_ctx("my_tool"))
 ```
 
@@ -616,7 +616,7 @@ import core.db.public as db
 
 con = db.connect()
 try:
-    rows = con.execute("SELECT * FROM dim_types WHERE type_id = ?", [34]).fetchall()
+    rows = con.execute("SELECT * FROM sde_types WHERE type_id = ?", [34]).fetchall()
 finally:
     con.close()
 ```
