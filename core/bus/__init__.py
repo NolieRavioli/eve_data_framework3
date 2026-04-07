@@ -47,7 +47,7 @@ from core.bus.topics import (
     ESI_RATE,
     DB_STATS,
     SYSTEM_PROCESS,
-    QUEUE_TASKS,
+    TASK_EVENTS,
     classify,
 )
 from core.bus.handler import (
@@ -72,7 +72,7 @@ __all__ = [
     "ALL_STATIC_TOPICS", "LOG_TOPICS", "DATA_TOPICS",
     "LOG_DB", "LOG_ESI", "LOG_SCHEDULER", "LOG_MARKET", "LOG_STRUCTURES",
     "LOG_CHARACTER", "LOG_AUTH", "LOG_WEB", "LOG_SYSTEM", "LOG_APP",
-    "ESI_RATE", "DB_STATS", "SYSTEM_PROCESS", "QUEUE_TASKS",
+    "ESI_RATE", "DB_STATS", "SYSTEM_PROCESS", "TASK_EVENTS",
     "classify",
     # Handler
     "BusHandler", "bus_handler",

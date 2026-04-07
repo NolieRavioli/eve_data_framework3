@@ -32,7 +32,7 @@ register_websock(
     "/db/ws",
     ["db/stats"],
     access_level="user",
-    required_role="db",
+    required_role="database",
 )
 
 # Admin tier: global db/stats push (all owners)
@@ -46,7 +46,7 @@ register_websock(
 # ── Landing ───────────────────────────────────────────────────────────────────────────────────────────────
 
 @db_bp.route("/")
-@require_role("db")
+@require_role("database")
 def index():
     owner_id = session.get("owner_id")
     is_admin = session.get("is_admin", False)
@@ -100,7 +100,7 @@ def index():
 # ── Personal tier — private DB ────────────────────────────────────────────────
 
 @db_bp.route("/private/")
-@require_role("db")
+@require_role("database")
 def private_browser_self():
     owner_id = session.get("owner_id")
     try:
@@ -118,7 +118,7 @@ def private_browser_self():
 
 
 @db_bp.route("/private/query", methods=["POST"])
-@require_role("db")
+@require_role("database")
 def private_query_self():
     owner_id = session.get("owner_id")
     data = request.get_json(force=True, silent=True) or {}
@@ -246,7 +246,7 @@ def query():
 # ── Stats JSON ────────────────────────────────────────────────────────────────
 
 @db_bp.route("/stats")
-@require_role("db")
+@require_role("database")
 def stats():
     is_admin = session.get("is_admin", False)
     if is_admin:
@@ -262,7 +262,7 @@ def stats():
 
 
 @db_bp.route("/stats/personal")
-@require_role("db")
+@require_role("database")
 def stats_personal():
     """Return DB-activity stats filtered to the current owner's tasks."""
     owner_id = session.get("owner_id")

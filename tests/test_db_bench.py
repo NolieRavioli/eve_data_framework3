@@ -326,8 +326,8 @@ def setUpModule() -> None:  # noqa: N802 (unittest convention)
 
     # Create production schemas in the temp DB
     import duckdb
-    from analysis.market.regions import ensure_tables as _ensure_market
-    from analysis.structures.discover import (
+    from collectors.market.regions import ensure_tables as _ensure_market
+    from collectors.structures.discover import (
         ensure_tables as _ensure_structures,
         ensure_columns as _ensure_struct_cols,
     )

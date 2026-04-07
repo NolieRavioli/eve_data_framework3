@@ -20,7 +20,7 @@ class DBViewer(BaseTool):
         nav_weight=5,
         nav_section="tools",
         access_level="user",
-        required_role="db",
+        required_role="database",
     )
 
     def create_blueprint(self) -> Blueprint:

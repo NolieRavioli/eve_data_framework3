@@ -18,6 +18,15 @@
      data-is-admin="0"
      style="display:none"></div>
 
+<!-- ── Tab bar ──────────────────────────────────────────────────────────── -->
+<div class="tab-bar" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem">
+  <button class="tab-btn active" data-tab="overview" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--txt);cursor:pointer;font-weight:600">Overview</button>
+  <button class="tab-btn" data-tab="db-queue" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer">DB Queue</button>
+  <button class="tab-btn" data-tab="reads" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer">Read Stats</button>
+</div>
+
+<!-- ── Tab: Overview ───────────────────────────────────────────────────── -->
+<div id="tab-overview" class="tab-panel">
 <div class="pg-body">
 
   {# ── DB Write Activity ──────────────────────────────────── #}
@@ -165,8 +174,82 @@
   </div>
   {% endif %}
 </div>
+</div><!-- end tab-overview -->
+
+<!-- ── Tab: DB Queue ───────────────────────────────────────────────────── -->
+<div id="tab-db-queue" class="tab-panel" style="display:none"
+     data-url-bus="/bus">
+  <div class="card stack">
+    <div class="ct" style="margin-bottom:0.75rem">Public DuckDB Writer</div>
+    <div class="stat-row">
+      <div class="stat"><span class="v" id="db-writes-total">—</span><span class="l">Writes Total</span></div>
+      <div class="stat"><span class="v" id="db-writes-error">—</span><span class="l">Errors</span></div>
+      <div class="stat"><span class="v" id="db-queue-depth">—</span><span class="l">Queue Depth</span></div>
+      <div class="stat"><span class="v" id="db-p50">—</span><span class="l">p50 ms</span></div>
+      <div class="stat"><span class="v" id="db-p95">—</span><span class="l">p95 ms</span></div>
+      <div class="stat"><span class="v" id="db-p99">—</span><span class="l">p99 ms</span></div>
+    </div>
+  </div>
+
+  <div class="card stack" style="margin-top:1rem">
+    <div class="ct" style="margin-bottom:0.75rem">Per-Task Attribution</div>
+    <div class="tw tw-scroll">
+      <table id="db-attr-table">
+        <thead><tr><th>Task ID</th><th>Write Ops</th><th>Rows Written</th></tr></thead>
+        <tbody id="db-attr-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card stack" style="margin-top:1rem">
+    <div class="ct" style="margin-bottom:0.75rem">Private SQLite Queues</div>
+    <div class="tw tw-scroll">
+      <table id="db-priv-table">
+        <thead><tr><th>Owner ID</th><th>Ops</th><th>Rows</th><th>Queue Depth</th><th>Thread</th></tr></thead>
+        <tbody id="db-priv-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Read Stats ─────────────────────────────────────────────────── -->
+<div id="tab-reads" class="tab-panel" style="display:none">
+  <div class="card stack">
+    <div class="ct" style="margin-bottom:0.75rem">Public DuckDB Reads</div>
+    <div class="stat-row">
+      <div class="stat"><span class="v" id="reads-total">—</span><span class="l">Reads Total</span></div>
+      <div class="stat"><span class="v" id="reads-rows">—</span><span class="l">Rows Returned</span></div>
+      <div class="stat"><span class="v" id="reads-last-ms">—</span><span class="l">Last Latency ms</span></div>
+      <div class="stat"><span class="v" id="reads-avg-ms">—</span><span class="l">Avg Latency ms</span></div>
+    </div>
+  </div>
+
+  <div class="card stack" style="margin-top:1rem">
+    <div class="ct" style="margin-bottom:0.75rem">Market Buffer Cache</div>
+    <div class="stat-row">
+      <div class="stat"><span class="v" id="cache-hits">—</span><span class="l">Cache Hits</span></div>
+      <div class="stat"><span class="v" id="cache-misses">—</span><span class="l">Cache Misses</span></div>
+      <div class="stat"><span class="v" id="cache-rate">—</span><span class="l">Hit Rate %</span></div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('db_viewer.static', filename='db_stats.js') }}"></script>
+<script src="{{ url_for('db_viewer.static', filename='db_queue.js') }}"></script>
+<script>
+(function(){
+  var btns = document.querySelectorAll('.tab-btn');
+  btns.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      btns.forEach(function(b){ b.classList.remove('active'); b.style.borderBottomColor='transparent'; b.style.color='var(--muted)'; b.style.fontWeight='400'; });
+      btn.classList.add('active'); btn.style.borderBottomColor='var(--accent)'; btn.style.color='var(--txt)'; btn.style.fontWeight='600';
+      document.querySelectorAll('.tab-panel').forEach(function(p){ p.style.display='none'; });
+      var panel = document.getElementById('tab-' + btn.dataset.tab);
+      if(panel) panel.style.display='';
+    });
+  });
+}());
+</script>
 {% endblock %}

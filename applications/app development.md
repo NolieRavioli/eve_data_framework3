@@ -138,7 +138,7 @@ Long-running work (ESI fetches, calculations) must run in a background worker, n
 
 ```python
 from applications._api import tasks
-from analysis.market.regions import fetch_all_market_data
+from collectors.market.regions import fetch_all_market_data
 
 task_id = tasks.enqueue(
     "Market refresh",       # display name shown in queue viewer

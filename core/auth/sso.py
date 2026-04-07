@@ -42,9 +42,9 @@ def _get_default_roles() -> list[str]:
         try:
             from core.config import load_config, CONFIG_PATH
             cfg = load_config(CONFIG_PATH)
-            _cached_default_roles = list(cfg.get("Auth", {}).get("default_roles", ["dashboard", "queue"]))
+            _cached_default_roles = list(cfg.get("Auth", {}).get("default_roles", ["dashboard", "database", "sde", "tasks"]))
         except Exception:
-            _cached_default_roles = ["dashboard", "queue"]
+            _cached_default_roles = ["dashboard", "database", "sde", "tasks"]
     return _cached_default_roles
 
 
@@ -262,8 +262,8 @@ def callback():
             session["roles"]         = _identity.get_user_roles(owner_id)
 
         # Kick off async character data collection
-        from core.tasks.queue import enqueue as _enqueue
-        from analysis.character.populate import populate_all
+        from core.tasks.task_manager.queue import enqueue as _enqueue
+        from collectors.character.populate import populate_all
         _enqueue(
             "Populate Character",
             populate_all,

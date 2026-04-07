@@ -37,24 +37,24 @@ _static_configs["esi/rate"] = TopicConfig(
     name="esi/rate",
     description="ESI rate-limiter live stats",
     access_level="user",
-    required_role="queue",
+    required_role="tasks",
 )
 _static_configs["db/stats"] = TopicConfig(
     name="db/stats",
     description="Database queue and read statistics",
     access_level="user",
-    required_role="queue",
+    required_role="database",
 )
 _static_configs["system/process"] = TopicConfig(
     name="system/process",
     description="Process health metrics (PID, RSS, threads, CPU)",
     access_level="admin",
 )
-_static_configs["queue/tasks"] = TopicConfig(
-    name="queue/tasks",
+_static_configs["task/events"] = TopicConfig(
+    name="task/events",
     description="Live task-list snapshot (all tasks, brief)",
     access_level="user",
-    required_role="queue",
+    required_role="tasks",
 )
 
 

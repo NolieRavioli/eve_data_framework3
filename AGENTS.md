@@ -57,8 +57,14 @@ This document is the authoritative reference for **human contributors** and **AI
 - **Flask** — web server, thread-safe, `threaded=True`
 - **SQLAlchemy** — ORM; SQLite per character; `PublicBase`/`PrivateBase` declarative bases
 - **DuckDB** — single shared public store (SDE, market orders, structures, ESI spec metadata, scheduler state)
-- **requests** — all HTTP; wrapped by `core/queue/esi_req.py` (rate limiter + caching)
+- **requests** — all HTTP; wrapped by `core/esi/request.py` (rate limiter + caching)
 - **`config.yaml`** — runtime configuration; loaded once at startup (gitignored, never committed)
+
+### TODO List
+
+| item | description | ... |
+|------|-------------|-----|
+| Fix `core/auth` for 'creeping scopes' |  auth requests EVERY scope from the user immediately-- instead, we could only ask for the scopes needed for the given 'application'. We can add a 'additional scopes required' message whenever a use tries to load an application they are not scoped for with a 'update esi scopes' button. | ... |
 
 ---
 
@@ -72,57 +78,76 @@ requirements.txt         # pip dependencies
 build.py                 # refresh ESI spec + regenerate codegen packages
 
 core/                    # ── INFRASTRUCTURE ──────────────────────────────────
-  config.py              # load_config(), RuntimeSettings, ensure_dependencies(), get_runtime_settings()
+  config.py              # load_config(), RuntimeSettings, ensure_dependencies(), get_runtime_settings(), get_db_unit_weights()
+  auth/
+    __init__.py          # re-exports: require_login, require_admin, require_role, pick_token, fresh_token, get_token, resolve_default_owner_id, link_public_user, get_user_roles, grant_user_roles, revoke_user_role, CredentialManager, …
+    decorators.py        # require_login, require_admin, require_role — Flask route decorators
+    identity.py          # user/admin/role CRUD: link_public_user, list_public_users, get_user_roles, grant_user_roles, revoke_user_role, get_site_admin, upsert_site_admin, …
+    credentials.py       # CredentialManager — Fernet-encrypts/decrypts client_id/client_secret to _publicData/client_cred
+    tokens.py            # TokenDBManager, get_token(), pick_token(), fresh_token(), resolve_default_owner_id()
+    sso.py               # auth_bp — EVE SSO OAuth2 flow: OAuthStateCache, /login, /callback, /logout, /add_toon, /switch_character
+  bus/
+    __init__.py          # re-exports topics, BusHandler, registry fns, websocket helpers
+    topics.py            # LOG_DB, LOG_ESI, LOG_SCHEDULER, …, ESI_RATE, DB_STATS, SYSTEM_PROCESS, QUEUE_TASKS, classify()
+    handler.py           # BusHandler(logging.Handler) — ring-buffer per-topic, publish(), subscribe(), install_bus_handler()
+    registry.py          # TopicConfig, register_topic(), get_topic_config(), get_all_topic_configs()
+    websocket.py         # /bus WebSocket endpoint, register_websock(), attach_all_websocks()
+    process_pub.py       # SYSTEM_PROCESS periodic publisher
   db/
-    __init__.py          # ensure_schema(), warm_caches(), initialize_all()
-    publicDB.py          # DuckDB: connect(), CRUD helpers, identity-table DDL
-    privateDB.py         # SQLite per owner: initialize_private_database(), get_private_session()
+    __init__.py          # ensure_schema(), warm_caches(), initialize_all(), initialize_analysis_tables()
+    public.py            # DuckDB: connect(), CRUD helpers, identity-table DDL  [was publicDB.py]
+    private.py           # SQLite per owner: initialize_private_database(), get_private_session(), read_private()  [was privateDB.py]
+    reader.py            # thread-safe reads: query_rows(), query_one(), query_scalar(), get_db_file_stats()
+    writer.py            # serialised DuckDB write thread: start_writer(), stop_writer(), db_write(), db_executemany()
+    stats.py             # get_table_stats(), get_write_rate_stats(), start_db_stats_publisher()
+    market_buffer.py     # ephemeral in-process market buffer: begin_region(), add_page(), finish_region(), try_market_price()
+    sde.py               # in-memory SDE caches: name_from_type_id, region_from_system_id, get_type(), get_market_tree(), …
     models/
       __init__.py        # re-exports: PublicBase, PrivateBase, User, SiteAdmin, Character
       identity.py        # User, SiteAdmin (DuckDB ORM), Character (SQLite ORM)
-    sde.py               # in-memory SDE caches: name_from_type_id, region_id_from_system_id, etc.
   esi/
-    __init__.py          # (empty)
-    auth.py              # OAuth token storage (Fernet-encrypted), CredentialManager, TokenDBManager
-    registry.py          # fetch_openapi_spec(), refresh_esi_spec_registry()
+    __init__.py          # re-exports: esi_get, esi_post, esi_request
+    request.py           # esi_request(), esi_get(), esi_post() — ALL ESI HTTP goes here  [was esi_req.py]
+    rate.py              # ESIRateLimiter — floating-window token bucket, ETag caching, 429 backoff
+    cache.py             # DuckDB-backed response cache (esi_cache table), TTL lookup, store/lookup helpers
+    registry.py          # fetch_openapi_spec(), sync_esi_registry_to_warehouse(), ensure_esi_registry_current()
     generated/           # AUTO-GENERATED — do not edit by hand
       client.py          # execute_operation(), fetch_all_pages()
       manifest.py        # OPERATIONS dict, ALL_SCOPES, COMPATIBILITY_DATE
       operations.py      # typed operation definitions
       schemas.py         # TypedDict-compatible schema definitions
+      cache_ddl.py       # pre-computed route TTL & rate-limit metadata
     personal/            # AUTO-GENERATED per-character domain wrappers
     corp/                # AUTO-GENERATED corporation-scoped domain wrappers
     public/              # AUTO-GENERATED public domain wrappers
-  queue/
-    __init__.py          # re-exports: Task, enqueue, get_task, cancel_task, rate_stream, log_stream, db_write, db_executemany
-    esi_req.py           # esi_request(), esi_get(), esi_post() — ALL ESI HTTP goes here
-    scheduler.py         # enqueue(), get_task(), get_tasks_for_owner(), cancel_task(), clear_tasks()
-    streams.py           # rate_stream(), log_stream() — SSE generators
-    writer.py            # serialised DuckDB write thread: start_writer(), stop_writer(), db_write(), db_executemany()
   tasks/
-    __init__.py          # re-exports: get_engine, SchedulerEngine, register_all_jobs
+    __init__.py          # re-exports: Task, enqueue, get_task, get_all_tasks, cancel_task, clear_tasks, rate_stream, log_stream, get_engine, SchedulerEngine, register_all_jobs, start_writer, stop_writer
+    queue.py             # Task class, enqueue(), get_task(), get_all_tasks(), get_tasks_for_owner(), cancel_task(), clear_tasks()
+    engine.py            # SchedulerEngine class, get_engine() singleton  [was scheduler.py]
+    persist.py           # scheduler_jobs DDL + CRUD helpers  [was scheduler_db.py]
+    jobs.py              # job catalog, _build_catalog(), register_all_jobs()  [was scheduler_jobs.py]
+    context.py           # thread-local task context
+    output.py            # IO routing + SSE streams: rate_stream(), log_stream()
     sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
-    scheduler.py         # SchedulerEngine class, get_engine() singleton
-    scheduler_db.py      # ensure_tables(), upsert_job_registration()
-    scheduler_jobs.py    # job catalog — add new scheduled jobs here
   web/
-    __init__.py          # create_app() — Flask app factory
+    __init__.py          # create_app() — Flask app factory + WebSocket attachment
     app.py               # start_webUI(settings) — entry point called by main.py
-    auth.py              # EVE SSO OAuth2 flow (auth_bp) + require_login/admin/role decorators
     context.py           # base_ctx(active_page) — sidebar template context helper
     home.py              # home_bp — unauthenticated landing page
     setup.py             # setup_bp — first-run credential wizard
     templates/           # base.html, home.html, setup.html (shared)
+    static/              # framework CSS, JS, images
 
 analysis/                # ── DATA COLLECTION ─────────────────────────────────
-  __init__.py            # (docstring only — no re-exports)
+  __init__.py            # (docstring — describes write discipline; no re-exports)
   character/
     __init__.py          # re-exports: populate_all
     populate.py          # per-character ESI → private SQLite (skills, wallet, assets)
   market/
-    __init__.py          # re-exports: fetch_all_market_data, update_structure_market_orders
+    __init__.py          # re-exports: fetch_all_market_data, update_structure_market_orders, fetch_market_history, cache_history_rows
     regions.py           # NPC station market orders — owns market_orders, market_region_cooldowns
     structures.py        # player-structure market orders — owns market_structures, enriches structures
+    history.py           # market order history (daily price snapshots)
   structures/
     __init__.py          # re-exports: discover_structures
     discover.py          # discover + enrich public structures — owns structures table
@@ -130,13 +155,14 @@ analysis/                # ── DATA COLLECTION ──────────
 applications/            # ── USER-FACING TOOLS ───────────────────────────────
   __init__.py            # pkgutil auto-discovery, tool_registry singleton
   _api.py                # single interface: BaseTool, ToolManifest, base_ctx, require_* and all adapters
-  dashboard/             # nav_section="overview" — character overview; access_level="user", required_role="dashboard"
-  queue_viewer/          # nav_section="tools"    — live job progress + ESI rate SSE; access_level="user", required_role="queue"
-  admin_panel/           # nav_section="admin"    — logs, stats, user mgmt; access_level="admin"
-  db_browser/            # nav_section="admin"    — DuckDB/SQLite browser; access_level="admin"
-  esi_browser/           # nav_section="admin"    — ESI operation explorer; access_level="admin"
-  scheduler/             # nav_section="admin"    — background job management; access_level="admin", required_role="scheduler"
-  market_browser/        # nav_section="apps"     — live market orders; access_level="public"
+  dashboard/             # nav_section="overview"  — character overview; access_level="user", required_role="dashboard"
+  esi_viewer/            # nav_section="tools"     — ESI queue + rate monitor + API explorer; access_level="user", required_role="queue"
+  db_viewer/             # nav_section="tools"     — DB stats + query browser; access_level="user", required_role="db"
+  admin_panel/           # nav_section="admin"     — user management; access_level="admin"
+  scheduler/             # nav_section="admin"     — background job management; access_level="admin", required_role="scheduler"
+  sde_browser/           # nav_section="admin"     — SDE table browser + update trigger; access_level="admin"
+  system/                # nav_section="admin"     — process metrics + system update; access_level="admin"
+  market_browser/        # nav_section="overview"  — live market orders; access_level="public"
 
 utils/                   # ── UTILITIES & CODE GENERATION ─────────────────────
   build/
@@ -170,8 +196,8 @@ The three main layers have strict import rules. **Never violate these.**
 ### `analysis/`
 
 - Data collection workers. Import from `core.*` only.
-- Use `core.queue.esi_req` functions (`esi_get`, `esi_post`), `core.esi.auth` helpers, and `core.db.sde` directly.
-- Use `core.db.publicDB` directly **only** for owned-table DDL and write operations.
+- Use `core.esi` functions (`esi_get`, `esi_post`), `core.auth` token helpers, and `core.db.sde` directly.
+- Use `core.db.public` directly **only** for owned-table DDL and write operations.
 - Never import from `applications/`.
 
 ### `applications/`
@@ -187,24 +213,24 @@ The three main layers have strict import rules. **Never violate these.**
 from applications._api import base_ctx, require_role, db, sde, tasks, esi
 
 # ✅ Correct — analysis worker
-from core.queue.esi_req import esi_get
-from core.db import publicDB
+from core.esi import esi_get
+import core.db.public as db
 import core.db.sde as sde
 
 # ❌ Wrong — application importing from core directly
-from core.db.publicDB import connect          # forbidden in applications/
+from core.db.public import connect          # forbidden in applications/
 ```
 
 ---
 
 ## Code Conventions
 
-- **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** via `core.queue.esi_req`. Never use `requests` directly.
+- **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** via `core.esi` (`core/esi/request.py`). Never use `requests` directly.
 - **Logging**: `logger = logging.getLogger(__name__)` at module level. No bare `print()` in production code.
 - **Thread safety**: fresh `connect()` per thread for DuckDB; `threading.Lock()` for shared mutable state.
 - **No raw SQL with user input** — always parameterised: `con.execute("WHERE id = ?", [val])`.
 - **Token handling**: 401 → token expired (stop, raise, do not retry); 403 → no permission (not retryable, return None).
-- **Table DDL belongs to analysis workers** — never add domain table DDL to `core/db/publicDB.py`.
+- **Table DDL belongs to analysis workers** — never add domain table DDL to `core/db/public.py`.
 - **`access_level` and `required_role` go in `ToolManifest`** — set them directly in the `ToolManifest` constructor in each application's `__init__.py`. There is no `auth.json` file.
 - **`@require_role` on new routes** — prefer over bare `@require_login`. Use `@require_admin` only for genuinely admin-only routes.
 - **Do not edit auto-generated packages** — `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, `core/esi/public/` are overwritten each `build.py` run.
@@ -219,9 +245,9 @@ from core.db.publicDB import connect          # forbidden in applications/
 Single file, shared across all threads. **Get a fresh connection per thread; connections are not thread-safe.**
 
 ```python
-from core.db import publicDB
+import core.db.public as db
 
-con = publicDB.connect()
+con = db.connect()
 try:
     rows = con.execute("SELECT type_id, name_en FROM dim_types WHERE type_id = ?", [34]).fetchall()
 finally:
@@ -231,7 +257,7 @@ finally:
 For write operations (INSERT / UPDATE / DELETE) dispatched from multiple threads, use the serialised writer:
 
 ```python
-from core.queue.writer import db_write, db_executemany
+from core.db.writer import db_write, db_executemany
 
 db_write("INSERT INTO my_table VALUES (?, ?)", [1, "value"])
 db_executemany("INSERT INTO my_table VALUES (?, ?)", [(1, "a"), (2, "b")])
@@ -240,7 +266,7 @@ db_executemany("INSERT INTO my_table VALUES (?, ?)", [(1, "a"), (2, "b")])
 ### Private — SQLite (per owner)
 
 ```python
-from core.db.privateDB import get_private_session
+from core.db.private import get_private_session
 
 session = get_private_session(owner_id)
 try:
@@ -264,14 +290,15 @@ Each collector or application **owns** the DDL for its tables via an `ensure_tab
 
 | Table | Owner |
 |---|---|
-| `users`, `site_admins`, `user_roles` | `core/db/publicDB.py` |
-| `scheduler_jobs` | `core/tasks/scheduler_db.py` |
+| `users`, `site_admins`, `user_roles` | `core/db/public.py` |
+| `scheduler_jobs` | `core/tasks/persist.py` |
 | `structures` | `analysis/structures/discover.py` |
 | `market_orders`, `market_region_cooldowns` | `analysis/market/regions.py` |
 | `market_structures` | `analysis/market/structures.py` |
 | `structures` cooldown columns | `analysis/market/structures.py` (`ensure_columns`) |
 | `character_skills`, `character_wallet`, `character_assets` | `analysis/character/populate.py` |
 | SDE dimension tables (`dim_types`, etc.) | `core/tasks/sde_loader.py` |
+| `esi_cache` | `core/esi/cache.py` |
 | `esi_routes`, `esi_schemas`, `esi_scopes` | `core/esi/registry.py` |
 
 ### Enrichment Pattern
@@ -291,10 +318,10 @@ def ensure_columns(con) -> None:
 
 ## Making ESI Requests
 
-**Never use `requests` directly.** All ESI HTTP must go through `core/queue/esi_req.py`.
+**Never use `requests` directly.** All ESI HTTP must go through `core/esi/request.py`.
 
 ```python
-from core.queue.esi_req import esi_get, esi_post, esi_request
+from core.esi import esi_get, esi_post, esi_request
 
 resp = esi_get("https://esi.evetech.net/latest/markets/10000002/orders/",
                params={"page": 1, "order_type": "all"})
@@ -346,7 +373,7 @@ for page in range(2, total_pages + 1):
 
 ### Rate Limiting
 
-The `esi_req.py` module automatically:
+The `core/esi/request.py` module automatically:
 
 - Enforces a floating-window token bucket per `(rate_limit_group, app:character)` pair.
 - Reads `X-Ratelimit-*` headers and adjusts dynamically.
@@ -360,7 +387,7 @@ The `esi_req.py` module automatically:
 
 ### EVE SSO Flow
 
-`core/web/auth.py` handles the OAuth 2.0 Authorization Code flow via `auth_bp`:
+`core/auth/sso.py` handles the OAuth 2.0 Authorization Code flow via `auth_bp`:
 
 - `/login` — redirect to CCP's auth page with a CSRF `state` token
 - `/callback` — validate `state`, exchange code for tokens, persist encrypted tokens
@@ -372,15 +399,19 @@ CSRF protection: `OAuthStateCache` issues each `state` token once and consumes i
 
 ### Token Storage
 
-`core/esi/auth.py` manages:
+`core/auth/credentials.py` and `core/auth/tokens.py` manage:
 
 - `CredentialManager` — Fernet-encrypts and stores `client_id`/`client_secret` in `_publicData/client_cred`.
 - `TokenDBManager` — stores per-character access/refresh tokens Fernet-encrypted in the owner's private SQLite `characters` table.
 
+User and role CRUD (link users, grant/revoke roles, promote admins) lives in `core/auth/identity.py`.
+
+Access-control decorators (`require_login`, `require_admin`, `require_role`) live in `core/auth/decorators.py`.
+
 ### Token Refresh
 
 ```python
-from core.esi.auth import fresh_token, pick_token
+from core.auth import fresh_token, pick_token
 
 # Pick any character token for an owner
 char_id, token_data = pick_token(owner_id)
@@ -400,7 +431,7 @@ access_token = fresh_data["access_token"]
 | Unauthenticated | Only `minimum_level="public"` tools |
 
 ```python
-from core.db.publicDB import get_user_roles, grant_user_roles, revoke_user_role
+from core.auth import get_user_roles, grant_user_roles, revoke_user_role
 
 roles = get_user_roles(owner_id)                       # list[str]
 grant_user_roles(owner_id, ["dashboard", "queue"], granted_by=admin_id)
@@ -412,15 +443,15 @@ revoke_user_role(owner_id, "queue")
 ## Background Task Queue
 
 ```python
-from core.queue import enqueue
+from core.tasks import enqueue
 
 task_id = enqueue("My Task", worker_fn, arg1, arg2, owner_id=owner_id, queue="public")
 ```
 
-Two FIFO queues (`tq-pub` and `tq-prv`) run concurrently. Each queue is strictly serial (FIFO within the queue). `logging` calls and `print()` from worker threads are captured and streamed via SSE to `/stream/<task_id>`.
+Two FIFO queues (`public` and `private`) run concurrently. Each queue is strictly serial (FIFO within the queue). `logging` calls and `print()` from worker threads are captured and streamed via SSE to the browser.
 
 ```python
-from core.queue import get_task, cancel_task, get_all_tasks, clear_tasks
+from core.tasks import get_task, cancel_task, get_all_tasks, clear_tasks
 
 task = get_task(task_id)   # returns Task dataclass or None
 cancel_task(task_id)       # signals pending task; running tasks complete normally
@@ -432,11 +463,11 @@ Use `queue="public"` for market data, SDE, and other public tasks. Use `queue="p
 
 ## Scheduler
 
-`core/tasks/scheduler.py` runs a background thread (`_TICK_INTERVAL = 30s`) that fires jobs when their `next_run` is due. Job metadata is persisted in `scheduler_jobs` (DuckDB) so enabled/disabled state and intervals survive restarts.
+`core/tasks/engine.py` runs a background thread (`_TICK_INTERVAL = 30s`) that fires jobs when their `next_run` is due. Job metadata is persisted in `scheduler_jobs` (DuckDB) so enabled/disabled state and intervals survive restarts.
 
 ### Job Catalog
 
-All jobs are declared in `core/tasks/scheduler_jobs.py`. To add a new job, append an entry to `_build_catalog()`:
+All jobs are declared in `core/tasks/jobs.py`. To add a new job, append an entry to `_build_catalog()`:
 
 ```python
 try:
@@ -457,7 +488,7 @@ The `try/except` guard prevents import errors in any one collector from blocking
 ### Public Interface
 
 ```python
-from core.tasks.scheduler import get_engine
+from core.tasks.engine import get_engine
 
 engine = get_engine()
 engine.list_jobs()              # list[dict]
@@ -561,7 +592,7 @@ Every collector that writes to DuckDB must implement `ensure_tables(con)` and ca
 
 ```python
 import logging
-from core.db import publicDB
+import core.db.public as db
 
 logger = logging.getLogger(__name__)
 
@@ -579,7 +610,7 @@ def ensure_tables(con) -> None:
 
 def collect_data() -> None:
     """Public entry point — called by scheduler or enqueue."""
-    con = publicDB.connect()
+    con = db.connect()
     try:
         ensure_tables(con)
         # ... fetch from ESI and write ...
@@ -590,7 +621,7 @@ def collect_data() -> None:
 ### ESI Pagination in Collectors
 
 ```python
-from core.queue.esi_req import esi_get
+from core.esi import esi_get
 
 def _fetch_all_pages(url: str, base_params: dict) -> list:
     resp = esi_get(url, params={**base_params, "page": 1})
@@ -648,10 +679,10 @@ All singletons live directly in `applications/_api.py` and are imported from `co
 | `tasks` | `enqueue(name, fn, *args, owner_id, queue)` |
 | `char_data` | `get_character()`, `get_scopes()` |
 | `esi_registry` | `get_status()` |
-| `db_admin` | `list_tables()`, `query_sql()`, `list_users()`, `upsert_site_admin()`, … |
+| `db_admin` | `list_tables()`, `list_private_tables()`, `query_sql()`, `query_private_sql()`, `table_counts()`, `list_users()`, `upsert_site_admin()`, `delete_site_admin()`, `delete_user()`, `get_user_roles()`, `grant_user_roles()`, `revoke_user_role()`, `get_db_unit_weights()`, … |
 | `esi_manifest` | `get_operations()`, `get_operation(op_id)`, `get_meta()` |
-| `queue_info` | `get_all_tasks()`, `get_task()`, `cancel_task()`, `rate_stream()`, `log_stream()` |
-| `scheduler` | `list_jobs()`, `set_enabled()`, `run_now()` |
+| `queue_info` | `get_all_tasks()`, `get_tasks_for_owner()`, `get_task()`, `cancel_task()`, `clear_tasks()`, `rate_stream()`, `log_stream()`, `get_esi_rate_stats()` |
+| `scheduler` | `list_jobs()`, `set_enabled()`, `run_now()`, `get_job()`, `set_interval()`, `get_run_history()` |
 
 ### Exposing New Core Functionality
 
@@ -746,7 +777,7 @@ print(settings.debug_mode)   # bool
 These rules are non-negotiable. Any code review must verify compliance:
 
 1. **Never commit secrets** — `config.yaml`, `_publicData/key`, `_publicData/client_cred`, `_privateData/` are all gitignored. Never add them to source control.
-2. **Never use `requests` directly** — all outbound ESI HTTP goes through `core.queue.esi_req`.
+2. **Never use `requests` directly** — all outbound ESI HTTP goes through `core.esi` (`core/esi/request.py`).
 3. **Always use parameterised queries** — `con.execute("WHERE id = ?", [val])`. Never interpolate user input into SQL strings.
 4. **Validate state on SSO callback** — `OAuthStateCache` must consume the token; duplicates must be rejected.
 5. **Never log refresh tokens** — access tokens in debug log at `TRACE` level maximum; refresh tokens never.
@@ -768,7 +799,7 @@ Use this when you need to expose a new piece of core infrastructure to applicati
 
 **Step 1 — Implement the functionality in `core/`.**
 
-Decide which `core/` sub-module is the right home. Database-related helpers go in `core/db/publicDB.py`; ESI-related helpers go in `core/esi/`.
+Decide which `core/` sub-module is the right home. Database-related helpers go in `core/db/public.py`; ESI-related helpers go in `core/esi/`; auth-related helpers go in `core/auth/`.
 
 **Step 2 — Add an import to `applications/_api.py`.**
 
@@ -805,8 +836,8 @@ analysis/my_domain/
 ```python
 # analysis/my_domain/worker.py
 import logging
-from core.db import publicDB
-from core.queue.esi_req import esi_get
+import core.db.public as db
+from core.esi import esi_get
 
 logger = logging.getLogger(__name__)
 
@@ -824,7 +855,7 @@ def ensure_tables(con) -> None:
 
 def fetch_my_domain_data() -> None:
     """Collect data and write to DuckDB. Called by scheduler or manually."""
-    con = publicDB.connect()
+    con = db.connect()
     try:
         ensure_tables(con)
         resp = esi_get("https://esi.evetech.net/latest/my/endpoint/")
@@ -949,7 +980,7 @@ Document the new role name in `example.config.yaml` under the `Auth` section com
 
 ### Registering a New Scheduled Job
 
-**Step 1 — Open `core/tasks/scheduler_jobs.py`.**
+**Step 1 — Open `core/tasks/jobs.py`.**
 
 Find `_build_catalog()`. Add a new try/except block:
 
@@ -971,7 +1002,7 @@ The `try/except` guard is mandatory — it prevents import failures in any colle
 
 **Step 2 — Restart the server.**
 
-`register_all_jobs(engine)` is called from `core/web/__init__.py` (inside `create_app`) during startup. The new job row will be upserted into `scheduler_jobs` and visible in the Scheduler admin panel (`/admin/scheduler`).
+`register_all_jobs(engine)` is called from `core/web/__init__.py` (inside `create_app`) during startup. The new job row will be upserted into `scheduler_jobs` and visible in the Scheduler admin panel (`/scheduler`).
 
 ---
 

@@ -18,9 +18,9 @@ class SDEBrowser(BaseTool):
         url_prefix="/sde",
         required_scopes=[],
         nav_weight=10,
-        nav_section="admin",
-        access_level="admin",
-        required_role=None,
+        nav_section="tools",
+        access_level="user",
+        required_role="sde",
     )
 
     def create_blueprint(self) -> Blueprint:

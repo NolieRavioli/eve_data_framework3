@@ -83,4 +83,4 @@ def update_system():
         logger.info("System updated — manual restart required.")
 
     task_id = tasks.enqueue("System Update", _do_update, queue="public")
-    return redirect(url_for("esi_viewer.task_detail", task_id=task_id))
+    return redirect(url_for("task_viewer.task_detail", task_id=task_id))

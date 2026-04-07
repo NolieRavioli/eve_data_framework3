@@ -169,7 +169,9 @@ Environment Variables:
 Auth:
   default_roles:
     - dashboard
-    - queue
+    - database
+    - sde
+    - tasks
 
 """
 

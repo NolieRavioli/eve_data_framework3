@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Task Manager - EVE Data Framework{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Task Manager</h1>
+    <div class="pg-sub">Your background work and live sync state</div>
+  </div>
+  <div class="toolbar">
+    <button class="btn btn-g" id="clear-done-btn">Clear Completed</button>
+  </div>
+</div>
+
+<div id="bus-root" data-subscriptions='["esi/rate","task/events"]' style="display:none"></div>
+<div id="task-queue-root"
+     data-url-cancel="{{ url_for('task_viewer.cancel_task', task_id='PLACEHOLDER') }}"
+     data-url-clear="{{ url_for('task_viewer.clear_tasks') }}"
+     style="display:none"></div>
+
+<!-- ── Tab bar ──────────────────────────────────────────────────────────── -->
+<div class="tab-bar" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem">
+  <button class="tab-btn active" data-tab="esi" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--txt);cursor:pointer;font-weight:600">Tasks</button>
+  {% if is_admin %}
+  <a href="{{ url_for('task_viewer.scheduler_index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">Scheduler</a>
+  <a href="{{ url_for('task_viewer.admin_index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">Admin Queue</a>
+  <a href="{{ url_for('task_viewer.explore_index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">ESI Explorer</a>
+  {% endif %}
+</div>
+
+<!-- ── Tab: ESI Queue ──────────────────────────────────────────────────── -->
+<div id="tab-esi" class="tab-panel">
+<div id="esi-rate-card" class="card stack" style="display:none;margin-bottom:1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+    <div>
+      <div class="ct" style="margin:0;margin-bottom:0.2rem">ESI Floating Window Rate Limits</div>
+      <div class="muted" style="font-size:0.78rem">Each bucket is per-character &mdash; tokens release as the window slides forward</div>
+    </div>
+    <span class="muted mono" style="font-size:0.78rem" id="esi-reqs">—</span>
+  </div>
+  <div id="esi-groups" style="display:flex;flex-wrap:wrap;gap:0.75rem"></div>
+</div>
+
+<div class="pg-body">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="v">{{ task_summary.total }}</span>
+      <span class="l">Visible Jobs</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.running }}</span>
+      <span class="l">Running</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.pending }}</span>
+      <span class="l">Pending</span>
+    </div>
+    <div class="stat">
+      <span class="v ok">{{ task_summary.complete }}</span>
+      <span class="l">Complete</span>
+    </div>
+    <div class="stat">
+      <span class="v">{{ task_summary.failed + task_summary.cancelled }}</span>
+      <span class="l">Stopped</span>
+    </div>
+  </div>
+
+  {% if tasks %}
+  <div class="card stack">
+    <div class="section-head">
+      <div class="ct" style="margin:0">Queue Detail</div>
+      {% if task_summary.running or task_summary.pending %}
+      <span class="pill">Live via WebSocket</span>
+      {% else %}
+      <span class="pill">Idle</span>
+      {% endif %}
+    </div>
+    <div class="tw tw-scroll">
+      <table id="esi-queue-table">
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Status</th>
+            <th>Queue</th>
+            <th>Queued</th>
+            <th>Started</th>
+            <th>Finished</th>
+            <th>ESI Req</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks | reverse %}
+          <tr id="row-{{ t.task_id }}">
+            <td>
+              <a href="{{ url_for('task_viewer.task_detail', task_id=t.task_id) }}" class="lnk">{{ t.name }}</a>
+              <div class="mono muted" style="margin-top:0.18rem">{{ t.task_id }}</div>
+            </td>
+            <td>
+              <span class="bdg
+                {% if t.status == 'complete' %}bdg-ok
+                {% elif t.status == 'failed' %}bdg-bad
+                {% elif t.status == 'running' %}bdg-blue
+                {% elif t.status == 'pending' %}bdg-warn
+                {% else %}bdg-warn{% endif %}">{{ t.status }}</span>
+            </td>
+            <td>
+              <span class="bdg {% if t.queue == 'public' %}bdg-blue{% endif %}" data-col="queue">{{ t.queue or 'private' }}</span>
+            </td>
+            <td class="mono muted" style="white-space:nowrap">{{ t.created_at or '\u2014' }}</td>
+            <td class="mono muted" style="white-space:nowrap" data-col="started">{{ t.started_at or '\u2014' }}</td>
+            <td class="mono muted" style="white-space:nowrap" data-col="finished">{{ t.finished_at or '\u2014' }}</td>
+            <td class="esi-rate-cell">
+              {% if t.esi_rate %}
+              {% set pct = ((t.esi_rate.tokens_limit - (t.esi_rate.tokens_remaining or 0)) / t.esi_rate.tokens_limit * 100) if t.esi_rate.tokens_limit else 0 %}
+              <div style="width:90px;background:rgba(0,0,0,0.35);border-radius:999px;height:5px;overflow:hidden;margin-bottom:0.3rem">
+                <div class="esi-mini-bar" style="height:100%;border-radius:999px;width:{{ pct|round(1) }}%;background:{% if pct >= 90 %}var(--bad){% elif pct >= 70 %}var(--warn){% else %}var(--accent){% endif %}"></div>
+              </div>
+              <span class="esi-mini-label mono" style="font-size:0.68rem;color:var(--muted)">{{ t.esi_rate.requests_total }} req &nbsp;{{ t.esi_rate.tokens_remaining }}/{{ t.esi_rate.tokens_limit }}</span>
+              {% else %}
+              <span class="muted" style="font-size:0.72rem">—</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap" data-col="action">
+              {% if t.status == 'pending' %}
+              <button class="btn btn-g cancel-btn" data-task-id="{{ t.task_id }}" style="padding:0.3rem 0.65rem;font-size:0.72rem">Cancel</button>
+              {% endif %}
+              <a href="{{ url_for('task_viewer.task_detail', task_id=t.task_id) }}" class="btn btn-g" style="padding:0.3rem 0.65rem;font-size:0.72rem">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty card">
+    <div class="ei">~</div>
+    <p>No jobs in queue.</p>
+    <p>Use the <a href="{{ url_for('dashboard.home') }}" class="lnk">Dashboard</a> to start collection.</p>
+  </div>
+  {% endif %}
+</div>
+</div><!-- end tab-esi -->
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('task_viewer.static', filename='bus.js') }}"></script>
+<script src="{{ url_for('task_viewer.static', filename='task_queue.js') }}"></script>
+{% endblock %}
+

@@ -35,11 +35,10 @@ Python Console:
   # applications.admin_panel.routes: INFO
   # applications.dashboard.routes: INFO
   # applications.db_viewer.routes: INFO
-  # applications.esi_viewer.routes: INFO
   # applications.market_browser.routes: INFO
-  # applications.scheduler.routes: INFO
   # applications.sde_browser.routes: INFO
   # applications.system.routes: INFO
+  # applications.task_viewer.routes: INFO
   # core.auth.credentials: INFO
   # core.auth.identity: INFO
   # core.auth.sso: INFO
@@ -114,10 +113,10 @@ Python Console:
   # core.esi.public.wars: INFO
   # core.esi.rate: INFO
   # core.esi.registry: INFO
-  # core.tasks.engine: INFO
-  # core.tasks.jobs: INFO
-  # core.tasks.persist: INFO
   # core.tasks.sde_loader: INFO
+  # core.tasks.task_manager.engine: INFO
+  # core.tasks.task_manager.jobs: INFO
+  # core.tasks.task_manager.persist: INFO
   # core.web: INFO
   # main: INFO
 
@@ -148,7 +147,9 @@ Environment Variables:
 Auth:
   default_roles:
     - dashboard
-    - queue
+    - database
+    - sde
+    - tasks
 
 Structures:
   forbidden_cooldown_days: 21       # days to skip transiently-inaccessible structures (404/network)
@@ -161,17 +162,3 @@ Market:
   authorized_cooldown_seconds: 3600     # seconds to skip structures that succeed on market endpoint
   max_retries: 3                        # per-page fetch retry limit before skipping a structure
   rate_limit_sleep_seconds: 10          # sleep duration when ESI returns 420 (error rate limit)
-
-DB Units:
-  # Weighted cost metric: db-units = Σ(operation_count × weight).
-  # Weights are derived from benchmark ms/row ratios relative to a plain batched
-  # INSERT through the writer thread (baseline = 1.0).  See website layout.md
-  # §Appendix B for full benchmark results and methodology.
-  read: 0.001        # SELECT — cost is per statement, not per row (nearly free)
-  insert: 1.0        # baseline — batched executemany through writer
-  upsert: 9.0        # INSERT OR REPLACE / ON CONFLICT — PK conflict overhead
-  update: 0.0002     # UPDATE … WHERE — single statement (nearly free)
-  delete: 0.003      # DELETE … WHERE — single statement (nearly free)
-  truncate: 4.69     # scales with table-reset iteration count
-  ddl: 1.8           # CREATE TABLE IF NOT EXISTS / ALTER TABLE ADD COLUMN
-  bulk_load: 0.04    # vectorised DataFrame import via db_write_dataframe

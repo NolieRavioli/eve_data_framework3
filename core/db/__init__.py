@@ -48,6 +48,32 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+# Role renames: old_name → new_name.  Applied once at startup.
+_ROLE_RENAMES = {
+    "queue": "tasks",
+    "db": "database",
+}
+
+
+def _migrate_renamed_roles() -> None:
+    """Rename legacy role values in user_roles. Idempotent."""
+    from core.db.public import connect
+    con = connect()
+    try:
+        for old, new in _ROLE_RENAMES.items():
+            changed = con.execute(
+                "UPDATE user_roles SET role_name = ? WHERE role_name = ?",
+                [new, old],
+            ).rowcount
+            if changed:
+                logger.info("Migrated %d user role(s): %r -> %r", changed, old, new)
+    except Exception as exc:
+        # Table may not exist yet on a fresh install — that's fine.
+        logger.debug("Role migration skipped: %s", exc)
+    finally:
+        con.close()
+
+
 def ensure_data_dirs() -> None:
     """Create _publicData/ and _privateData/ if missing."""
     os.makedirs(os.getenv("PUBLIC_DATA_FOLDER", "_publicData"), exist_ok=True)
@@ -70,6 +96,7 @@ def ensure_schema() -> None:
     """Create / migrate the DuckDB operational schema (fast — idempotent)."""
     logger.info("Ensuring public DuckDB schema...")
     ensure_public_database()
+    _migrate_renamed_roles()
     logger.info("Public DuckDB schema ready.")
 
 

@@ -43,7 +43,7 @@ def index():
 def update():
     from core.tasks.sde_loader import update_sde
     task_id = tasks.enqueue("SDE Update", update_sde, queue="public")
-    return redirect(url_for("esi_viewer.task_detail", task_id=task_id))
+    return redirect(url_for("task_viewer.task_detail", task_id=task_id))
 
 
 @sde_bp.route("/lookup")

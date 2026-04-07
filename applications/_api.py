@@ -286,8 +286,6 @@ from core.tasks import (
     get_tasks_for_owner,
     cancel_task,
     clear_tasks,
-    rate_stream,
-    log_stream,
 )
 
 tasks = types.SimpleNamespace(enqueue=_enqueue)
@@ -305,13 +303,11 @@ queue_info = types.SimpleNamespace(
     get_task=get_task,
     cancel_task=cancel_task,
     clear_tasks=clear_tasks,
-    rate_stream=rate_stream,
-    log_stream=log_stream,
     get_esi_rate_stats=_get_esi_rate_stats,
 )
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-from core.tasks.engine import get_engine as _get_scheduler
+from core.tasks.task_manager.engine import get_engine as _get_scheduler
 
 
 def _scheduler_list_jobs() -> list[dict]:

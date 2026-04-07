@@ -158,7 +158,7 @@ def get_attribution_snapshot() -> dict[str, dict]:
         rows       — int: total rows written across all op types
     """
     try:
-        from core.tasks.queue import get_task as _get_task
+        from core.tasks.task_manager.queue import get_task as _get_task
     except Exception:
         def _get_task(_): return None  # noqa: E731
     with _stats_lock:
@@ -421,7 +421,7 @@ def _submit(op: _Op) -> None:
 
 def _current_task_id() -> str | None:
     """Read the calling thread's active task_id (if any)."""
-    from core.tasks.context import _thread_task
+    from core.tasks.task_manager.context import _thread_task
     return getattr(_thread_task, "task_id", None)
 
 
