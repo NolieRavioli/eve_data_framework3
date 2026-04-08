@@ -93,7 +93,7 @@ def update_system():
         subprocess.check_call(["git", "fetch", "--tags", "origin"], timeout=60)
         try:
             tag = subprocess.check_output(
-                ["git", "tag", "--sort=-v:refversion"],
+                ["git", "tag", "--sort=-version:refname"],
                 timeout=10,
             ).decode().strip().split("\n")[0]
         except Exception:
