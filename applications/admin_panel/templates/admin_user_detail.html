@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}User {{ user.owner_id }} - Admin{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">{% endblock %}
+
+{% block content %}
+<div id="user-detail-app" hidden
+     data-owner-id="{{ user.owner_id }}"
+     data-url-roles="{{ url_for('admin.manage_roles', owner_id=user.owner_id) }}"
+     data-url-admin="{{ url_for('admin.toggle_admin', owner_id=user.owner_id) }}"
+     data-url-delete="{{ url_for('admin.delete_user', owner_id=user.owner_id) }}"
+     data-url-users="{{ url_for('admin.users') }}"></div>
+<div class="pg-hd">
+  <div>
+    <h1>Owner {{ user.owner_id }}</h1>
+    <div class="pg-sub">
+      {% if user.is_site_owner %}Site Owner
+      {% elif user.is_admin %}Site Admin
+      {% else %}User
+      {% endif %}
+      · {{ user.character_count }} character{{ 's' if user.character_count != 1 else '' }}
+    </div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('admin.users') }}" class="btn btn-g">← All Users</a>
+    <a href="{{ url_for('db_viewer.private_browser', owner_id=user.owner_id) }}" class="btn btn-g">Private DB</a>
+  </div>
+</div>
+
+<div class="pg-body">
+    <div id="msg-bar" class="admin-msg"></div>
+
+    <!-- Characters -->
+    <section class="card">
+      <h2>Linked Characters</h2>
+      {% if characters %}
+      <div class="table-wrap" style="max-height:none">
+        <table>
+          <thead><tr><th>Character ID</th><th>Name</th><th>Scopes</th></tr></thead>
+          <tbody>
+            {% for c in characters %}
+            <tr>
+              <td class="mono">{{ c.character_id }}</td>
+              <td>{{ c.name or '—' }}</td>
+              <td class="muted" style="font-size:0.72rem">{{ (c.scopes or '') | truncate(80) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="muted" style="font-size:0.82rem">No characters linked.</p>
+      {% endif %}
+    </section>
+
+    <!-- Roles -->
+    <section class="card">
+      <h2>Named Roles</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.85rem">
+        {% for r in roles %}
+        <span class="badge badge-role" style="position:relative;padding-right:1.8rem">
+          {{ r }}
+          <button class="role-remove-btn" data-role="{{ r }}" title="Revoke {{ r }}">&times;</button>
+        </span>
+        {% endfor %}
+        {% if not roles %}
+        <span class="muted" style="font-size:0.82rem">No roles assigned.</span>
+        {% endif %}
+      </div>
+
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <input id="new-role-input" class="input" type="text" placeholder="Role name to grant" style="max-width:260px">
+        <button id="grant-role-btn" class="btn btn-ok" style="padding:0.45rem 0.85rem;font-size:0.78rem">Grant</button>
+      </div>
+    </section>
+
+    <!-- Admin status -->
+    <section class="card">
+      <h2>Admin Status</h2>
+      {% if user.is_site_owner %}
+      <p class="muted" style="font-size:0.82rem">Site Owner — cannot be changed.</p>
+      {% elif is_site_owner %}
+        {% if user.is_admin %}
+        <p style="font-size:0.82rem;margin-bottom:0.6rem">This user is a <span class="badge badge-admin">Site Admin</span>.</p>
+        <button id="demote-btn" class="btn btn-danger" style="font-size:0.78rem">Demote to User</button>
+        {% else %}
+        <p style="font-size:0.82rem;margin-bottom:0.6rem">This user is a regular <span class="badge badge-none">User</span>.</p>
+        <button id="promote-btn" class="btn btn-ok" style="font-size:0.78rem">Promote to Admin</button>
+        {% endif %}
+      {% else %}
+      <p class="muted" style="font-size:0.82rem">Only the site owner can change admin status.</p>
+      {% endif %}
+    </section>
+
+    <!-- Delete user -->
+    {% if is_site_owner and not user.is_site_owner %}
+    <section class="card" style="border-color:rgba(248,113,113,0.22)">
+      <h2 style="color:var(--bad)">Danger Zone</h2>
+      <p style="font-size:0.82rem;margin-bottom:0.6rem">Permanently remove this user and all associated data from public tables.</p>
+      <button id="delete-user-btn" class="btn btn-danger">Delete User</button>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('admin.static', filename='admin_user_detail.js') }}"></script>
+{% endblock %}

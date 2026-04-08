@@ -96,6 +96,28 @@
       color: var(--muted);
     }
 
+    .badge-role {
+      background: rgba(139, 92, 246, 0.12);
+      border-color: rgba(139, 92, 246, 0.18);
+      color: #a78bfa;
+    }
+
+    .role-remove-btn {
+      position: absolute;
+      right: 0.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--bad);
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 0.2rem;
+      opacity: 0.6;
+    }
+    .role-remove-btn:hover { opacity: 1; }
+
     .admin-msg {
       display: none;
       padding: 0.65rem 0.85rem;

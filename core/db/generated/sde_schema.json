@@ -1,0 +1,3151 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-04-07T22:59:22.639920+00:00",
+  "source_root": "_sde",
+  "table_count": 46,
+  "tables": [
+    {
+      "table_name": "sde_agents",
+      "source_file": "fsd/agents.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "agent_id",
+      "columns": [
+        {
+          "name": "agent_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "agent_type_id",
+          "dtype": "BIGINT",
+          "source": "agentTypeID",
+          "nullable": true
+        },
+        {
+          "name": "corporation_id",
+          "dtype": "BIGINT",
+          "source": "corporationID",
+          "nullable": true
+        },
+        {
+          "name": "division_id",
+          "dtype": "BIGINT",
+          "source": "divisionID",
+          "nullable": true
+        },
+        {
+          "name": "is_locator",
+          "dtype": "BOOLEAN",
+          "source": "isLocator",
+          "nullable": true
+        },
+        {
+          "name": "level",
+          "dtype": "BIGINT",
+          "source": "level",
+          "nullable": true
+        },
+        {
+          "name": "location_id",
+          "dtype": "BIGINT",
+          "source": "locationID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_agentsInSpace",
+      "source_file": "fsd/agentsInSpace.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "agents_in_space_id",
+      "columns": [
+        {
+          "name": "agents_in_space_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "dungeon_id",
+          "dtype": "BIGINT",
+          "source": "dungeonID",
+          "nullable": false
+        },
+        {
+          "name": "solar_system_id",
+          "dtype": "BIGINT",
+          "source": "solarSystemID",
+          "nullable": false
+        },
+        {
+          "name": "spawn_point_id",
+          "dtype": "BIGINT",
+          "source": "spawnPointID",
+          "nullable": false
+        },
+        {
+          "name": "type_id",
+          "dtype": "BIGINT",
+          "source": "typeID",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_ancestries",
+      "source_file": "fsd/ancestries.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "ancestry_id",
+      "columns": [
+        {
+          "name": "ancestry_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "bloodline_id",
+          "dtype": "BIGINT",
+          "source": "bloodlineID",
+          "nullable": false
+        },
+        {
+          "name": "charisma",
+          "dtype": "BIGINT",
+          "source": "charisma",
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "intelligence",
+          "dtype": "BIGINT",
+          "source": "intelligence",
+          "nullable": false
+        },
+        {
+          "name": "memory",
+          "dtype": "BIGINT",
+          "source": "memory",
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "perception",
+          "dtype": "BIGINT",
+          "source": "perception",
+          "nullable": false
+        },
+        {
+          "name": "short_description",
+          "dtype": "VARCHAR",
+          "source": "shortDescription",
+          "nullable": true
+        },
+        {
+          "name": "willpower",
+          "dtype": "BIGINT",
+          "source": "willpower",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_bloodlines",
+      "source_file": "fsd/bloodlines.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "bloodline_id",
+      "columns": [
+        {
+          "name": "bloodline_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "charisma",
+          "dtype": "BIGINT",
+          "source": "charisma",
+          "nullable": false
+        },
+        {
+          "name": "corporation_id",
+          "dtype": "BIGINT",
+          "source": "corporationID",
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "intelligence",
+          "dtype": "BIGINT",
+          "source": "intelligence",
+          "nullable": false
+        },
+        {
+          "name": "memory",
+          "dtype": "BIGINT",
+          "source": "memory",
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "perception",
+          "dtype": "BIGINT",
+          "source": "perception",
+          "nullable": false
+        },
+        {
+          "name": "race_id",
+          "dtype": "BIGINT",
+          "source": "raceID",
+          "nullable": false
+        },
+        {
+          "name": "willpower",
+          "dtype": "BIGINT",
+          "source": "willpower",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_blueprints",
+      "source_file": "fsd/blueprints.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "blueprint_type_id",
+      "columns": [
+        {
+          "name": "blueprint_type_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "activities_json",
+          "dtype": "VARCHAR",
+          "source": "activities",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "max_production_limit",
+          "dtype": "BIGINT",
+          "source": "maxProductionLimit",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_categories",
+      "source_file": "fsd/categories.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "category_id",
+      "columns": [
+        {
+          "name": "category_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "published",
+          "dtype": "BOOLEAN",
+          "source": "published",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_certificates",
+      "source_file": "fsd/certificates.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "certificate_id",
+      "columns": [
+        {
+          "name": "certificate_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": false
+        },
+        {
+          "name": "group_id",
+          "dtype": "BIGINT",
+          "source": "groupID",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "nullable": false
+        },
+        {
+          "name": "recommended_for_json",
+          "dtype": "VARCHAR",
+          "source": "recommendedFor",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "skill_types_json",
+          "dtype": "VARCHAR",
+          "source": "skillTypes",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_characterAttributes",
+      "source_file": "fsd/characterAttributes.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "character_attribute_id",
+      "columns": [
+        {
+          "name": "character_attribute_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "dtype": "VARCHAR",
+          "source": "notes",
+          "nullable": false
+        },
+        {
+          "name": "short_description",
+          "dtype": "VARCHAR",
+          "source": "shortDescription",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_contrabandTypes",
+      "source_file": "fsd/contrabandTypes.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "contraband_type_id",
+      "columns": [
+        {
+          "name": "contraband_type_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "factions_json",
+          "dtype": "VARCHAR",
+          "source": "factions",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_controlTowerResources",
+      "source_file": "fsd/controlTowerResources.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "control_tower_resource_id",
+      "columns": [
+        {
+          "name": "control_tower_resource_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "resources_json",
+          "dtype": "VARCHAR",
+          "source": "resources",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_corporationActivities",
+      "source_file": "fsd/corporationActivities.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "corporation_activity_id",
+      "columns": [
+        {
+          "name": "corporation_activity_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_dogmaAttributeCategories",
+      "source_file": "fsd/dogmaAttributeCategories.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "dogma_attribute_category_id",
+      "columns": [
+        {
+          "name": "dogma_attribute_category_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_dogmaAttributes",
+      "source_file": "fsd/dogmaAttributes.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "dogma_attribute_id",
+      "columns": [
+        {
+          "name": "dogma_attribute_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "attribute_id",
+          "dtype": "BIGINT",
+          "source": "attributeID",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "dtype": "BIGINT",
+          "source": "categoryID",
+          "nullable": true
+        },
+        {
+          "name": "charge_recharge_time_id",
+          "dtype": "BIGINT",
+          "source": "chargeRechargeTimeID",
+          "nullable": true
+        },
+        {
+          "name": "data_type",
+          "dtype": "BIGINT",
+          "source": "dataType",
+          "nullable": false
+        },
+        {
+          "name": "default_value",
+          "dtype": "DOUBLE",
+          "source": "defaultValue",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": true
+        },
+        {
+          "name": "display_name_en",
+          "dtype": "VARCHAR",
+          "source": "displayNameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "display_when_zero",
+          "dtype": "BOOLEAN",
+          "source": "displayWhenZero",
+          "nullable": true
+        },
+        {
+          "name": "high_is_good",
+          "dtype": "BOOLEAN",
+          "source": "highIsGood",
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "max_attribute_id",
+          "dtype": "BIGINT",
+          "source": "maxAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "min_attribute_id",
+          "dtype": "BIGINT",
+          "source": "minAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "nullable": false
+        },
+        {
+          "name": "published",
+          "dtype": "BOOLEAN",
+          "source": "published",
+          "nullable": false
+        },
+        {
+          "name": "stackable",
+          "dtype": "BOOLEAN",
+          "source": "stackable",
+          "nullable": false
+        },
+        {
+          "name": "tooltip_description_en",
+          "dtype": "VARCHAR",
+          "source": "tooltipDescriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "tooltip_title_en",
+          "dtype": "VARCHAR",
+          "source": "tooltipTitleID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "unit_id",
+          "dtype": "BIGINT",
+          "source": "unitID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_dogmaEffects",
+      "source_file": "fsd/dogmaEffects.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "dogma_effect_id",
+      "columns": [
+        {
+          "name": "dogma_effect_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "disallow_auto_repeat",
+          "dtype": "BOOLEAN",
+          "source": "disallowAutoRepeat",
+          "nullable": false
+        },
+        {
+          "name": "discharge_attribute_id",
+          "dtype": "BIGINT",
+          "source": "dischargeAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "display_name_en",
+          "dtype": "VARCHAR",
+          "source": "displayNameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "distribution",
+          "dtype": "BIGINT",
+          "source": "distribution",
+          "nullable": true
+        },
+        {
+          "name": "duration_attribute_id",
+          "dtype": "BIGINT",
+          "source": "durationAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "effect_category",
+          "dtype": "BIGINT",
+          "source": "effectCategory",
+          "nullable": false
+        },
+        {
+          "name": "effect_id",
+          "dtype": "BIGINT",
+          "source": "effectID",
+          "nullable": false
+        },
+        {
+          "name": "effect_name",
+          "dtype": "VARCHAR",
+          "source": "effectName",
+          "nullable": false
+        },
+        {
+          "name": "electronic_chance",
+          "dtype": "BOOLEAN",
+          "source": "electronicChance",
+          "nullable": false
+        },
+        {
+          "name": "falloff_attribute_id",
+          "dtype": "BIGINT",
+          "source": "falloffAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "fitting_usage_chance_attribute_id",
+          "dtype": "BIGINT",
+          "source": "fittingUsageChanceAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "guid",
+          "dtype": "VARCHAR",
+          "source": "guid",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "is_assistance",
+          "dtype": "BOOLEAN",
+          "source": "isAssistance",
+          "nullable": false
+        },
+        {
+          "name": "is_offensive",
+          "dtype": "BOOLEAN",
+          "source": "isOffensive",
+          "nullable": false
+        },
+        {
+          "name": "is_warp_safe",
+          "dtype": "BOOLEAN",
+          "source": "isWarpSafe",
+          "nullable": false
+        },
+        {
+          "name": "modifier_info_json",
+          "dtype": "VARCHAR",
+          "source": "modifierInfo",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "npc_activation_chance_attribute_id",
+          "dtype": "BIGINT",
+          "source": "npcActivationChanceAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "npc_usage_chance_attribute_id",
+          "dtype": "BIGINT",
+          "source": "npcUsageChanceAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "propulsion_chance",
+          "dtype": "BOOLEAN",
+          "source": "propulsionChance",
+          "nullable": false
+        },
+        {
+          "name": "published",
+          "dtype": "BOOLEAN",
+          "source": "published",
+          "nullable": false
+        },
+        {
+          "name": "range_attribute_id",
+          "dtype": "BIGINT",
+          "source": "rangeAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "range_chance",
+          "dtype": "BOOLEAN",
+          "source": "rangeChance",
+          "nullable": false
+        },
+        {
+          "name": "resistance_attribute_id",
+          "dtype": "BIGINT",
+          "source": "resistanceAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "sfx_name",
+          "dtype": "VARCHAR",
+          "source": "sfxName",
+          "nullable": true
+        },
+        {
+          "name": "tracking_speed_attribute_id",
+          "dtype": "BIGINT",
+          "source": "trackingSpeedAttributeID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_factions",
+      "source_file": "fsd/factions.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "faction_id",
+      "columns": [
+        {
+          "name": "faction_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "corporation_id",
+          "dtype": "BIGINT",
+          "source": "corporationID",
+          "nullable": true
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "flat_logo",
+          "dtype": "VARCHAR",
+          "source": "flatLogo",
+          "nullable": true
+        },
+        {
+          "name": "flat_logo_with_name",
+          "dtype": "VARCHAR",
+          "source": "flatLogoWithName",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": false
+        },
+        {
+          "name": "member_races_json",
+          "dtype": "VARCHAR",
+          "source": "memberRaces",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "militia_corporation_id",
+          "dtype": "BIGINT",
+          "source": "militiaCorporationID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "short_description_en",
+          "dtype": "VARCHAR",
+          "source": "shortDescriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "size_factor",
+          "dtype": "DOUBLE",
+          "source": "sizeFactor",
+          "nullable": false
+        },
+        {
+          "name": "solar_system_id",
+          "dtype": "BIGINT",
+          "source": "solarSystemID",
+          "nullable": false
+        },
+        {
+          "name": "unique_name",
+          "dtype": "BOOLEAN",
+          "source": "uniqueName",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_graphicIDs",
+      "source_file": "fsd/graphicIDs.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "graphic_id_id",
+      "columns": [
+        {
+          "name": "graphic_id_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": true
+        },
+        {
+          "name": "graphic_file",
+          "dtype": "VARCHAR",
+          "source": "graphicFile",
+          "nullable": true
+        },
+        {
+          "name": "icon_info_json",
+          "dtype": "VARCHAR",
+          "source": "iconInfo",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "sof_faction_name",
+          "dtype": "VARCHAR",
+          "source": "sofFactionName",
+          "nullable": true
+        },
+        {
+          "name": "sof_hull_name",
+          "dtype": "VARCHAR",
+          "source": "sofHullName",
+          "nullable": true
+        },
+        {
+          "name": "sof_layout_json",
+          "dtype": "VARCHAR",
+          "source": "sofLayout",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "sof_race_name",
+          "dtype": "VARCHAR",
+          "source": "sofRaceName",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_groups",
+      "source_file": "fsd/groups.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "group_id",
+      "columns": [
+        {
+          "name": "group_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "anchorable",
+          "dtype": "BOOLEAN",
+          "source": "anchorable",
+          "nullable": false
+        },
+        {
+          "name": "anchored",
+          "dtype": "BOOLEAN",
+          "source": "anchored",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "dtype": "BIGINT",
+          "source": "categoryID",
+          "nullable": false
+        },
+        {
+          "name": "fittable_non_singleton",
+          "dtype": "BOOLEAN",
+          "source": "fittableNonSingleton",
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "published",
+          "dtype": "BOOLEAN",
+          "source": "published",
+          "nullable": false
+        },
+        {
+          "name": "use_base_price",
+          "dtype": "BOOLEAN",
+          "source": "useBasePrice",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_iconIDs",
+      "source_file": "fsd/iconIDs.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "icon_id_id",
+      "columns": [
+        {
+          "name": "icon_id_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": true
+        },
+        {
+          "name": "icon_file",
+          "dtype": "VARCHAR",
+          "source": "iconFile",
+          "nullable": false
+        },
+        {
+          "name": "obsolete",
+          "dtype": "BOOLEAN",
+          "source": "obsolete",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_marketGroups",
+      "source_file": "fsd/marketGroups.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "market_group_id",
+      "columns": [
+        {
+          "name": "market_group_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "has_types",
+          "dtype": "BOOLEAN",
+          "source": "hasTypes",
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "parent_group_id",
+          "dtype": "BIGINT",
+          "source": "parentGroupID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_metaGroups",
+      "source_file": "fsd/metaGroups.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "meta_group_id",
+      "columns": [
+        {
+          "name": "meta_group_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "color_json",
+          "dtype": "VARCHAR",
+          "source": "color",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "icon_suffix",
+          "dtype": "VARCHAR",
+          "source": "iconSuffix",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_npcCorporationDivisions",
+      "source_file": "fsd/npcCorporationDivisions.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "npc_corporation_division_id",
+      "columns": [
+        {
+          "name": "npc_corporation_division_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "nullable": true
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "internal_name",
+          "dtype": "VARCHAR",
+          "source": "internalName",
+          "nullable": false
+        },
+        {
+          "name": "leader_type_name_en",
+          "dtype": "VARCHAR",
+          "source": "leaderTypeNameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_npcCorporations",
+      "source_file": "fsd/npcCorporations.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "npc_corporation_id",
+      "columns": [
+        {
+          "name": "npc_corporation_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "allowed_member_races_json",
+          "dtype": "VARCHAR",
+          "source": "allowedMemberRaces",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "ceo_id",
+          "dtype": "BIGINT",
+          "source": "ceoID",
+          "nullable": true
+        },
+        {
+          "name": "corporation_trades_json",
+          "dtype": "VARCHAR",
+          "source": "corporationTrades",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "deleted",
+          "dtype": "BOOLEAN",
+          "source": "deleted",
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "divisions_json",
+          "dtype": "VARCHAR",
+          "source": "divisions",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "enemy_id",
+          "dtype": "BIGINT",
+          "source": "enemyID",
+          "nullable": true
+        },
+        {
+          "name": "exchange_rates_json",
+          "dtype": "VARCHAR",
+          "source": "exchangeRates",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "extent",
+          "dtype": "VARCHAR",
+          "source": "extent",
+          "nullable": false
+        },
+        {
+          "name": "faction_id",
+          "dtype": "BIGINT",
+          "source": "factionID",
+          "nullable": true
+        },
+        {
+          "name": "friend_id",
+          "dtype": "BIGINT",
+          "source": "friendID",
+          "nullable": true
+        },
+        {
+          "name": "has_player_personnel_manager",
+          "dtype": "BOOLEAN",
+          "source": "hasPlayerPersonnelManager",
+          "nullable": false
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "initial_price",
+          "dtype": "BIGINT",
+          "source": "initialPrice",
+          "nullable": false
+        },
+        {
+          "name": "investors_json",
+          "dtype": "VARCHAR",
+          "source": "investors",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "lp_offer_tables_json",
+          "dtype": "VARCHAR",
+          "source": "lpOfferTables",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "main_activity_id",
+          "dtype": "BIGINT",
+          "source": "mainActivityID",
+          "nullable": true
+        },
+        {
+          "name": "member_limit",
+          "dtype": "BIGINT",
+          "source": "memberLimit",
+          "nullable": false
+        },
+        {
+          "name": "min_security",
+          "dtype": "DOUBLE",
+          "source": "minSecurity",
+          "nullable": false
+        },
+        {
+          "name": "minimum_join_standing",
+          "dtype": "BIGINT",
+          "source": "minimumJoinStanding",
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "public_shares",
+          "dtype": "BIGINT",
+          "source": "publicShares",
+          "nullable": false
+        },
+        {
+          "name": "race_id",
+          "dtype": "BIGINT",
+          "source": "raceID",
+          "nullable": true
+        },
+        {
+          "name": "secondary_activity_id",
+          "dtype": "BIGINT",
+          "source": "secondaryActivityID",
+          "nullable": true
+        },
+        {
+          "name": "send_char_termination_message",
+          "dtype": "BOOLEAN",
+          "source": "sendCharTerminationMessage",
+          "nullable": false
+        },
+        {
+          "name": "shares",
+          "dtype": "BIGINT",
+          "source": "shares",
+          "nullable": false
+        },
+        {
+          "name": "size",
+          "dtype": "VARCHAR",
+          "source": "size",
+          "nullable": false
+        },
+        {
+          "name": "size_factor",
+          "dtype": "DOUBLE",
+          "source": "sizeFactor",
+          "nullable": true
+        },
+        {
+          "name": "solar_system_id",
+          "dtype": "BIGINT",
+          "source": "solarSystemID",
+          "nullable": true
+        },
+        {
+          "name": "station_id",
+          "dtype": "BIGINT",
+          "source": "stationID",
+          "nullable": true
+        },
+        {
+          "name": "tax_rate",
+          "dtype": "DOUBLE",
+          "source": "taxRate",
+          "nullable": false
+        },
+        {
+          "name": "ticker_name",
+          "dtype": "VARCHAR",
+          "source": "tickerName",
+          "nullable": false
+        },
+        {
+          "name": "unique_name",
+          "dtype": "BOOLEAN",
+          "source": "uniqueName",
+          "nullable": false
+        },
+        {
+          "name": "url",
+          "dtype": "VARCHAR",
+          "source": "url",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_planetResources",
+      "source_file": "fsd/planetResources.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "planet_resource_id",
+      "columns": [
+        {
+          "name": "planet_resource_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "cycle_minutes",
+          "dtype": "BIGINT",
+          "source": "cycle_minutes",
+          "nullable": true
+        },
+        {
+          "name": "harvest_silo_max",
+          "dtype": "BIGINT",
+          "source": "harvest_silo_max",
+          "nullable": true
+        },
+        {
+          "name": "maturation_cycle_minutes",
+          "dtype": "BIGINT",
+          "source": "maturation_cycle_minutes",
+          "nullable": true
+        },
+        {
+          "name": "maturation_percent",
+          "dtype": "BIGINT",
+          "source": "maturation_percent",
+          "nullable": true
+        },
+        {
+          "name": "mature_silo_max",
+          "dtype": "DOUBLE",
+          "source": "mature_silo_max",
+          "nullable": true
+        },
+        {
+          "name": "power",
+          "dtype": "BIGINT",
+          "source": "power",
+          "nullable": true
+        },
+        {
+          "name": "reagent_harvest_amount",
+          "dtype": "BIGINT",
+          "source": "reagent_harvest_amount",
+          "nullable": true
+        },
+        {
+          "name": "reagent_type_id",
+          "dtype": "BIGINT",
+          "source": "reagent_type_id",
+          "nullable": true
+        },
+        {
+          "name": "workforce",
+          "dtype": "BIGINT",
+          "source": "workforce",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_planetSchematics",
+      "source_file": "fsd/planetSchematics.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "planet_schematic_id",
+      "columns": [
+        {
+          "name": "planet_schematic_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "cycle_time",
+          "dtype": "BIGINT",
+          "source": "cycleTime",
+          "nullable": false
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "pins_json",
+          "dtype": "VARCHAR",
+          "source": "pins",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "types_json",
+          "dtype": "VARCHAR",
+          "source": "types",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_races",
+      "source_file": "fsd/races.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "race_id",
+      "columns": [
+        {
+          "name": "race_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "nameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "ship_type_id",
+          "dtype": "BIGINT",
+          "source": "shipTypeID",
+          "nullable": true
+        },
+        {
+          "name": "skills_json",
+          "dtype": "VARCHAR",
+          "source": "skills",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_researchAgents",
+      "source_file": "fsd/researchAgents.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "research_agent_id",
+      "columns": [
+        {
+          "name": "research_agent_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "skills_json",
+          "dtype": "VARCHAR",
+          "source": "skills",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_skinLicenses",
+      "source_file": "fsd/skinLicenses.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "skin_licens_id",
+      "columns": [
+        {
+          "name": "skin_licens_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "duration",
+          "dtype": "BIGINT",
+          "source": "duration",
+          "nullable": true
+        },
+        {
+          "name": "license_type_id",
+          "dtype": "BIGINT",
+          "source": "licenseTypeID",
+          "nullable": true
+        },
+        {
+          "name": "skin_id",
+          "dtype": "BIGINT",
+          "source": "skinID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_skinMaterials",
+      "source_file": "fsd/skinMaterials.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "skin_material_id",
+      "columns": [
+        {
+          "name": "skin_material_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "display_name_id",
+          "dtype": "BIGINT",
+          "source": "displayNameID",
+          "nullable": false
+        },
+        {
+          "name": "material_set_id",
+          "dtype": "BIGINT",
+          "source": "materialSetID",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_skins",
+      "source_file": "fsd/skins.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "skin_id",
+      "columns": [
+        {
+          "name": "skin_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "allow_ccp_devs",
+          "dtype": "BOOLEAN",
+          "source": "allowCCPDevs",
+          "nullable": true
+        },
+        {
+          "name": "internal_name",
+          "dtype": "VARCHAR",
+          "source": "internalName",
+          "nullable": true
+        },
+        {
+          "name": "is_structure_skin",
+          "dtype": "BOOLEAN",
+          "source": "isStructureSkin",
+          "nullable": true
+        },
+        {
+          "name": "skin_description",
+          "dtype": "VARCHAR",
+          "source": "skinDescription",
+          "nullable": true
+        },
+        {
+          "name": "skin_material_id",
+          "dtype": "BIGINT",
+          "source": "skinMaterialID",
+          "nullable": true
+        },
+        {
+          "name": "types_json",
+          "dtype": "VARCHAR",
+          "source": "types",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "visible_serenity",
+          "dtype": "BOOLEAN",
+          "source": "visibleSerenity",
+          "nullable": true
+        },
+        {
+          "name": "visible_tranquility",
+          "dtype": "BOOLEAN",
+          "source": "visibleTranquility",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_sovereigntyUpgrades",
+      "source_file": "fsd/sovereigntyUpgrades.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "sovereignty_upgrade_id",
+      "columns": [
+        {
+          "name": "sovereignty_upgrade_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "fuel_hourly_upkeep",
+          "dtype": "BIGINT",
+          "source": "fuel_hourly_upkeep",
+          "nullable": true
+        },
+        {
+          "name": "fuel_startup_cost",
+          "dtype": "BIGINT",
+          "source": "fuel_startup_cost",
+          "nullable": true
+        },
+        {
+          "name": "fuel_type_id",
+          "dtype": "BIGINT",
+          "source": "fuel_type_id",
+          "nullable": true
+        },
+        {
+          "name": "mutually_exclusive_group",
+          "dtype": "VARCHAR",
+          "source": "mutually_exclusive_group",
+          "nullable": false
+        },
+        {
+          "name": "power_allocation",
+          "dtype": "BIGINT",
+          "source": "power_allocation",
+          "nullable": false
+        },
+        {
+          "name": "workforce_allocation",
+          "dtype": "BIGINT",
+          "source": "workforce_allocation",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_stationOperations",
+      "source_file": "fsd/stationOperations.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "station_operation_id",
+      "columns": [
+        {
+          "name": "station_operation_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "activity_id",
+          "dtype": "BIGINT",
+          "source": "activityID",
+          "nullable": false
+        },
+        {
+          "name": "border",
+          "dtype": "DOUBLE",
+          "source": "border",
+          "nullable": false
+        },
+        {
+          "name": "corridor",
+          "dtype": "DOUBLE",
+          "source": "corridor",
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "fringe",
+          "dtype": "DOUBLE",
+          "source": "fringe",
+          "nullable": false
+        },
+        {
+          "name": "hub",
+          "dtype": "DOUBLE",
+          "source": "hub",
+          "nullable": false
+        },
+        {
+          "name": "manufacturing_factor",
+          "dtype": "DOUBLE",
+          "source": "manufacturingFactor",
+          "nullable": false
+        },
+        {
+          "name": "operation_name_en",
+          "dtype": "VARCHAR",
+          "source": "operationNameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "ratio",
+          "dtype": "DOUBLE",
+          "source": "ratio",
+          "nullable": false
+        },
+        {
+          "name": "research_factor",
+          "dtype": "DOUBLE",
+          "source": "researchFactor",
+          "nullable": false
+        },
+        {
+          "name": "services_json",
+          "dtype": "VARCHAR",
+          "source": "services",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "station_types_json",
+          "dtype": "VARCHAR",
+          "source": "stationTypes",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_stationServices",
+      "source_file": "fsd/stationServices.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "station_service_id",
+      "columns": [
+        {
+          "name": "station_service_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "descriptionID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "service_name_en",
+          "dtype": "VARCHAR",
+          "source": "serviceNameID",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_tournamentRuleSets",
+      "source_file": "fsd/tournamentRuleSets.yaml",
+      "layer": "fsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": null,
+      "columns": [
+        {
+          "name": "banned_json",
+          "dtype": "VARCHAR",
+          "source": "banned",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "maximum_pilots_match",
+          "dtype": "BIGINT",
+          "source": "maximumPilotsMatch",
+          "nullable": false
+        },
+        {
+          "name": "maximum_points_match",
+          "dtype": "BIGINT",
+          "source": "maximumPointsMatch",
+          "nullable": false
+        },
+        {
+          "name": "points_json",
+          "dtype": "VARCHAR",
+          "source": "points",
+          "nullable": false,
+          "extract": "json"
+        },
+        {
+          "name": "rule_set_id",
+          "dtype": "VARCHAR",
+          "source": "ruleSetID",
+          "nullable": false
+        },
+        {
+          "name": "rule_set_name",
+          "dtype": "VARCHAR",
+          "source": "ruleSetName",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_translationLanguages",
+      "source_file": "fsd/translationLanguages.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "translation_language_id",
+      "columns": [
+        {
+          "name": "translation_language_id",
+          "dtype": "VARCHAR",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_typeDogma",
+      "source_file": "fsd/typeDogma.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "type_id",
+      "columns": [
+        {
+          "name": "type_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "dogma_attributes_json",
+          "dtype": "VARCHAR",
+          "source": "dogmaAttributes",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "dogma_effects_json",
+          "dtype": "VARCHAR",
+          "source": "dogmaEffects",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_typeMaterials",
+      "source_file": "fsd/typeMaterials.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "type_id",
+      "columns": [
+        {
+          "name": "type_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "materials_json",
+          "dtype": "VARCHAR",
+          "source": "materials",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_types",
+      "source_file": "fsd/types.yaml",
+      "layer": "fsd",
+      "structure": "dict_of_dicts",
+      "custom_handler": false,
+      "pk_column": "type_id",
+      "columns": [
+        {
+          "name": "type_id",
+          "dtype": "BIGINT",
+          "source": "_key",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "base_price",
+          "dtype": "DOUBLE",
+          "source": "basePrice",
+          "nullable": true
+        },
+        {
+          "name": "capacity",
+          "dtype": "DOUBLE",
+          "source": "capacity",
+          "nullable": true
+        },
+        {
+          "name": "description_en",
+          "dtype": "VARCHAR",
+          "source": "description",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "faction_id",
+          "dtype": "BIGINT",
+          "source": "factionID",
+          "nullable": true
+        },
+        {
+          "name": "graphic_id",
+          "dtype": "BIGINT",
+          "source": "graphicID",
+          "nullable": true
+        },
+        {
+          "name": "group_id",
+          "dtype": "BIGINT",
+          "source": "groupID",
+          "nullable": true
+        },
+        {
+          "name": "icon_id",
+          "dtype": "BIGINT",
+          "source": "iconID",
+          "nullable": true
+        },
+        {
+          "name": "market_group_id",
+          "dtype": "BIGINT",
+          "source": "marketGroupID",
+          "nullable": true
+        },
+        {
+          "name": "mass",
+          "dtype": "DOUBLE",
+          "source": "mass",
+          "nullable": true
+        },
+        {
+          "name": "masteries_json",
+          "dtype": "VARCHAR",
+          "source": "masteries",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "meta_group_id",
+          "dtype": "BIGINT",
+          "source": "metaGroupID",
+          "nullable": true
+        },
+        {
+          "name": "name_en",
+          "dtype": "VARCHAR",
+          "source": "name",
+          "extract": "multilang_en",
+          "nullable": true
+        },
+        {
+          "name": "portion_size",
+          "dtype": "BIGINT",
+          "source": "portionSize",
+          "nullable": true
+        },
+        {
+          "name": "published",
+          "dtype": "BOOLEAN",
+          "source": "published",
+          "nullable": true
+        },
+        {
+          "name": "race_id",
+          "dtype": "BIGINT",
+          "source": "raceID",
+          "nullable": true
+        },
+        {
+          "name": "radius",
+          "dtype": "DOUBLE",
+          "source": "radius",
+          "nullable": true
+        },
+        {
+          "name": "sof_faction_name",
+          "dtype": "VARCHAR",
+          "source": "sofFactionName",
+          "nullable": true
+        },
+        {
+          "name": "sof_material_set_id",
+          "dtype": "BIGINT",
+          "source": "sofMaterialSetID",
+          "nullable": true
+        },
+        {
+          "name": "sound_id",
+          "dtype": "BIGINT",
+          "source": "soundID",
+          "nullable": true
+        },
+        {
+          "name": "traits_json",
+          "dtype": "VARCHAR",
+          "source": "traits",
+          "nullable": true,
+          "extract": "json"
+        },
+        {
+          "name": "variation_parent_type_id",
+          "dtype": "BIGINT",
+          "source": "variationParentTypeID",
+          "nullable": true
+        },
+        {
+          "name": "volume",
+          "dtype": "DOUBLE",
+          "source": "volume",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_invFlags",
+      "source_file": "bsd/invFlags.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "flag_id",
+      "columns": [
+        {
+          "name": "flag_id",
+          "dtype": "BIGINT",
+          "source": "flagID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "flag_name",
+          "dtype": "VARCHAR",
+          "source": "flagName",
+          "nullable": false
+        },
+        {
+          "name": "flag_text",
+          "dtype": "VARCHAR",
+          "source": "flagText",
+          "nullable": false
+        },
+        {
+          "name": "order_id",
+          "dtype": "BIGINT",
+          "source": "orderID",
+          "nullable": false
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_invItems",
+      "source_file": "bsd/invItems.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "item_id",
+      "columns": [
+        {
+          "name": "flag_id",
+          "dtype": "BIGINT",
+          "source": "flagID",
+          "nullable": true
+        },
+        {
+          "name": "item_id",
+          "dtype": "BIGINT",
+          "source": "itemID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "location_id",
+          "dtype": "BIGINT",
+          "source": "locationID",
+          "nullable": true
+        },
+        {
+          "name": "owner_id",
+          "dtype": "BIGINT",
+          "source": "ownerID",
+          "nullable": true
+        },
+        {
+          "name": "quantity",
+          "dtype": "BIGINT",
+          "source": "quantity",
+          "nullable": true
+        },
+        {
+          "name": "type_id",
+          "dtype": "BIGINT",
+          "source": "typeID",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_invNames",
+      "source_file": "bsd/invNames.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "item_id",
+      "columns": [
+        {
+          "name": "item_id",
+          "dtype": "BIGINT",
+          "source": "itemID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "item_name",
+          "dtype": "VARCHAR",
+          "source": "itemName",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_invPositions",
+      "source_file": "bsd/invPositions.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "item_id",
+      "columns": [
+        {
+          "name": "item_id",
+          "dtype": "BIGINT",
+          "source": "itemID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "pitch",
+          "dtype": "DOUBLE",
+          "source": "pitch",
+          "nullable": true
+        },
+        {
+          "name": "roll",
+          "dtype": "DOUBLE",
+          "source": "roll",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "dtype": "DOUBLE",
+          "source": "x",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "dtype": "DOUBLE",
+          "source": "y",
+          "nullable": true
+        },
+        {
+          "name": "yaw",
+          "dtype": "DOUBLE",
+          "source": "yaw",
+          "nullable": true
+        },
+        {
+          "name": "z",
+          "dtype": "DOUBLE",
+          "source": "z",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_invUniqueNames",
+      "source_file": "bsd/invUniqueNames.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "item_id",
+      "columns": [
+        {
+          "name": "group_id",
+          "dtype": "BIGINT",
+          "source": "groupID",
+          "nullable": true
+        },
+        {
+          "name": "item_id",
+          "dtype": "BIGINT",
+          "source": "itemID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "item_name",
+          "dtype": "VARCHAR",
+          "source": "itemName",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_staStations",
+      "source_file": "bsd/staStations.yaml",
+      "layer": "bsd",
+      "structure": "list_of_dicts",
+      "custom_handler": false,
+      "pk_column": "station_id",
+      "columns": [
+        {
+          "name": "constellation_id",
+          "dtype": "BIGINT",
+          "source": "constellationID",
+          "nullable": true
+        },
+        {
+          "name": "corporation_id",
+          "dtype": "BIGINT",
+          "source": "corporationID",
+          "nullable": true
+        },
+        {
+          "name": "docking_cost_per_volume",
+          "dtype": "BIGINT",
+          "source": "dockingCostPerVolume",
+          "nullable": true
+        },
+        {
+          "name": "max_ship_volume_dockable",
+          "dtype": "BIGINT",
+          "source": "maxShipVolumeDockable",
+          "nullable": true
+        },
+        {
+          "name": "office_rental_cost",
+          "dtype": "BIGINT",
+          "source": "officeRentalCost",
+          "nullable": true
+        },
+        {
+          "name": "operation_id",
+          "dtype": "BIGINT",
+          "source": "operationID",
+          "nullable": true
+        },
+        {
+          "name": "region_id",
+          "dtype": "BIGINT",
+          "source": "regionID",
+          "nullable": true
+        },
+        {
+          "name": "reprocessing_efficiency",
+          "dtype": "DOUBLE",
+          "source": "reprocessingEfficiency",
+          "nullable": true
+        },
+        {
+          "name": "reprocessing_hangar_flag",
+          "dtype": "BIGINT",
+          "source": "reprocessingHangarFlag",
+          "nullable": true
+        },
+        {
+          "name": "reprocessing_stations_take",
+          "dtype": "DOUBLE",
+          "source": "reprocessingStationsTake",
+          "nullable": true
+        },
+        {
+          "name": "security",
+          "dtype": "DOUBLE",
+          "source": "security",
+          "nullable": true
+        },
+        {
+          "name": "solar_system_id",
+          "dtype": "BIGINT",
+          "source": "solarSystemID",
+          "nullable": true
+        },
+        {
+          "name": "station_id",
+          "dtype": "BIGINT",
+          "source": "stationID",
+          "nullable": false,
+          "pk": true
+        },
+        {
+          "name": "station_name",
+          "dtype": "VARCHAR",
+          "source": "stationName",
+          "nullable": true
+        },
+        {
+          "name": "station_type_id",
+          "dtype": "BIGINT",
+          "source": "stationTypeID",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "dtype": "DOUBLE",
+          "source": "x",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "dtype": "DOUBLE",
+          "source": "y",
+          "nullable": true
+        },
+        {
+          "name": "z",
+          "dtype": "DOUBLE",
+          "source": "z",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_regions",
+      "source_file": "universe/",
+      "layer": "universe",
+      "structure": "custom",
+      "custom_handler": true,
+      "pk_column": "region_id",
+      "columns": [
+        {
+          "name": "region_id",
+          "dtype": "BIGINT",
+          "source": "regionID",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "region_name",
+          "dtype": "VARCHAR",
+          "source": "_inv_name",
+          "nullable": true
+        },
+        {
+          "name": "space_type",
+          "dtype": "VARCHAR",
+          "source": "_space_type",
+          "nullable": false
+        },
+        {
+          "name": "faction_id",
+          "dtype": "BIGINT",
+          "source": "factionID",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "dtype": "DOUBLE",
+          "source": "center.x",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "dtype": "DOUBLE",
+          "source": "center.y",
+          "nullable": true
+        },
+        {
+          "name": "z",
+          "dtype": "DOUBLE",
+          "source": "center.z",
+          "nullable": true
+        },
+        {
+          "name": "x_min",
+          "dtype": "DOUBLE",
+          "source": "min.x",
+          "nullable": true
+        },
+        {
+          "name": "y_min",
+          "dtype": "DOUBLE",
+          "source": "min.y",
+          "nullable": true
+        },
+        {
+          "name": "z_min",
+          "dtype": "DOUBLE",
+          "source": "min.z",
+          "nullable": true
+        },
+        {
+          "name": "x_max",
+          "dtype": "DOUBLE",
+          "source": "max.x",
+          "nullable": true
+        },
+        {
+          "name": "y_max",
+          "dtype": "DOUBLE",
+          "source": "max.y",
+          "nullable": true
+        },
+        {
+          "name": "z_max",
+          "dtype": "DOUBLE",
+          "source": "max.z",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_constellations",
+      "source_file": "universe/",
+      "layer": "universe",
+      "structure": "custom",
+      "custom_handler": true,
+      "pk_column": "constellation_id",
+      "columns": [
+        {
+          "name": "constellation_id",
+          "dtype": "BIGINT",
+          "source": "constellationID",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "constellation_name",
+          "dtype": "VARCHAR",
+          "source": "_inv_name",
+          "nullable": true
+        },
+        {
+          "name": "space_type",
+          "dtype": "VARCHAR",
+          "source": "_space_type",
+          "nullable": false
+        },
+        {
+          "name": "region_id",
+          "dtype": "BIGINT",
+          "source": "_parent_region",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "dtype": "DOUBLE",
+          "source": "center.x",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "dtype": "DOUBLE",
+          "source": "center.y",
+          "nullable": true
+        },
+        {
+          "name": "z",
+          "dtype": "DOUBLE",
+          "source": "center.z",
+          "nullable": true
+        },
+        {
+          "name": "x_min",
+          "dtype": "DOUBLE",
+          "source": "min.x",
+          "nullable": true
+        },
+        {
+          "name": "y_min",
+          "dtype": "DOUBLE",
+          "source": "min.y",
+          "nullable": true
+        },
+        {
+          "name": "z_min",
+          "dtype": "DOUBLE",
+          "source": "min.z",
+          "nullable": true
+        },
+        {
+          "name": "x_max",
+          "dtype": "DOUBLE",
+          "source": "max.x",
+          "nullable": true
+        },
+        {
+          "name": "y_max",
+          "dtype": "DOUBLE",
+          "source": "max.y",
+          "nullable": true
+        },
+        {
+          "name": "z_max",
+          "dtype": "DOUBLE",
+          "source": "max.z",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "table_name": "sde_systems",
+      "source_file": "universe/",
+      "layer": "universe",
+      "structure": "custom",
+      "custom_handler": true,
+      "pk_column": "system_id",
+      "columns": [
+        {
+          "name": "system_id",
+          "dtype": "BIGINT",
+          "source": "solarSystemID",
+          "pk": true,
+          "nullable": false
+        },
+        {
+          "name": "system_name",
+          "dtype": "VARCHAR",
+          "source": "_inv_name",
+          "nullable": true
+        },
+        {
+          "name": "space_type",
+          "dtype": "VARCHAR",
+          "source": "_space_type",
+          "nullable": false
+        },
+        {
+          "name": "constellation_id",
+          "dtype": "BIGINT",
+          "source": "_parent_constellation",
+          "nullable": true
+        },
+        {
+          "name": "region_id",
+          "dtype": "BIGINT",
+          "source": "_parent_region",
+          "nullable": true
+        },
+        {
+          "name": "security",
+          "dtype": "DOUBLE",
+          "source": "security",
+          "nullable": true
+        },
+        {
+          "name": "sun_type_id",
+          "dtype": "BIGINT",
+          "source": "sunTypeID",
+          "nullable": true
+        },
+        {
+          "name": "border",
+          "dtype": "BOOLEAN",
+          "source": "border",
+          "nullable": true
+        },
+        {
+          "name": "corridor",
+          "dtype": "BOOLEAN",
+          "source": "corridor",
+          "nullable": true
+        },
+        {
+          "name": "fringe",
+          "dtype": "BOOLEAN",
+          "source": "fringe",
+          "nullable": true
+        },
+        {
+          "name": "hub",
+          "dtype": "BOOLEAN",
+          "source": "hub",
+          "nullable": true
+        },
+        {
+          "name": "international",
+          "dtype": "BOOLEAN",
+          "source": "international",
+          "nullable": true
+        },
+        {
+          "name": "regional",
+          "dtype": "BOOLEAN",
+          "source": "regional",
+          "nullable": true
+        },
+        {
+          "name": "planet_count",
+          "dtype": "BIGINT",
+          "source": "_computed",
+          "nullable": true
+        },
+        {
+          "name": "stargate_count",
+          "dtype": "BIGINT",
+          "source": "_computed",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "dtype": "DOUBLE",
+          "source": "center.x",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "dtype": "DOUBLE",
+          "source": "center.y",
+          "nullable": true
+        },
+        {
+          "name": "z",
+          "dtype": "DOUBLE",
+          "source": "center.z",
+          "nullable": true
+        },
+        {
+          "name": "x_min",
+          "dtype": "DOUBLE",
+          "source": "min.x",
+          "nullable": true
+        },
+        {
+          "name": "y_min",
+          "dtype": "DOUBLE",
+          "source": "min.y",
+          "nullable": true
+        },
+        {
+          "name": "z_min",
+          "dtype": "DOUBLE",
+          "source": "min.z",
+          "nullable": true
+        },
+        {
+          "name": "x_max",
+          "dtype": "DOUBLE",
+          "source": "max.x",
+          "nullable": true
+        },
+        {
+          "name": "y_max",
+          "dtype": "DOUBLE",
+          "source": "max.y",
+          "nullable": true
+        },
+        {
+          "name": "z_max",
+          "dtype": "DOUBLE",
+          "source": "max.z",
+          "nullable": true
+        },
+        {
+          "name": "payload_json",
+          "dtype": "VARCHAR",
+          "source": "_payload",
+          "nullable": true
+        }
+      ]
+    }
+  ]
+}

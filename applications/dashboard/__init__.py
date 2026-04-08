@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.dashboard import routes
 
 
@@ -13,7 +13,7 @@ class DashboardTool(BaseTool):
     manifest = ToolManifest(
         id="dashboard",
         name="Dashboard",
-        icon="🏠︎",
+        icon="🏡",
         description="Character overview, active ESI spec status, and granted scopes.",
         url_prefix="/dashboard",
         required_scopes=[],

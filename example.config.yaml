@@ -11,6 +11,8 @@ Runtime:
   # trace_esi: false               # print every ESI HTTP request to the console
   # auto_install: false            # pip-install missing requirements automatically
   # secret_key: "change-me"        # Flask session secret (use a long random string in prod)
+  # transport: "http"              # "http" or "https" — set to "https" when behind a TLS-terminating proxy
+  # github_repo: ""                # GitHub repository URL for system updates (default: NolieRavioli/eve_data_framework3)
 
 Python Console:
   global_log_level: INFO          # log level for the terminal / console output
@@ -25,36 +27,37 @@ Python Console:
   # urllib3: INFO
   # requests: INFO
   #
-  # analysis.character.populate: INFO
-  # analysis.market.regions: INFO
-  # analysis.market.structures: INFO
-  # analysis.sde_loader: INFO
-  # analysis.structures.discover: INFO
   # applications: INFO
   # applications.admin_panel.routes: INFO
   # applications.dashboard.routes: INFO
-  # applications.db_browser.routes: INFO
-  # applications.esi_browser.routes: INFO
-  # applications.industry_calculator.routes: INFO
-  # applications.industry_calculator.worker: INFO
-  # applications.isk_per_hour.routes: INFO
-  # applications.isk_per_hour.worker: INFO
+  # applications.db_viewer.routes: INFO
   # applications.market_browser.routes: INFO
-  # applications.market_browser.worker: INFO
-  # applications.queue_viewer.routes: INFO
-  # applications.scheduler.routes: INFO
-  # applications.sys_status.routes: INFO
+  # applications.sde_browser.routes: INFO
+  # applications.system.routes: INFO
+  # applications.task_viewer.routes: INFO
+  # collectors.character.collectors: INFO
+  # collectors.character.populate: INFO
+  # collectors.market.history: INFO
+  # collectors.market.regions: INFO
+  # collectors.market.structures: INFO
+  # collectors.structures.discover: INFO
+  # core.auth.credentials: INFO
+  # core.auth.identity: INFO
+  # core.auth.sso: INFO
+  # core.auth.tokens: INFO
   # core.bus.handler: INFO
+  # core.bus.process_pub: INFO
   # core.bus.websocket: INFO
   # core.config: INFO
   # core.db: INFO
   # core.db.market_buffer: INFO
-  # core.db.privateDB: INFO
-  # core.db.publicDB: INFO
+  # core.db.private: INFO
+  # core.db.public: INFO
   # core.db.reader: INFO
+  # core.db.sde: INFO
+  # core.db.sde_loader: INFO
   # core.db.stats: INFO
   # core.db.writer: INFO
-  # core.esi.auth: INFO
   # core.esi.cache: INFO
   # core.esi.corp.assets: INFO
   # core.esi.corp.contacts: INFO
@@ -111,16 +114,15 @@ Python Console:
   # core.esi.public.status: INFO
   # core.esi.public.universe: INFO
   # core.esi.public.wars: INFO
+  # core.esi.rate: INFO
   # core.esi.registry: INFO
-  # core.queue.db: INFO
-  # core.queue.db_access: INFO
-  # core.queue.esi_req: INFO
-  # core.scheduler: INFO
-  # core.scheduler.db: INFO
-  # core.scheduler.jobs: INFO
-  # core.sde.cache: INFO
+  # core.system.lifecycle: INFO
+  # core.system.updater: INFO
+  # core.tasks.engine: INFO
+  # core.tasks.jobs: INFO
+  # core.tasks.persist: INFO
+  # core.tasks.sde_loader: INFO
   # core.web: INFO
-  # core.web.auth: INFO
   # main: INFO
 
 # SDE section toggles — set false to skip loading a dataset at startup.
@@ -150,7 +152,9 @@ Environment Variables:
 Auth:
   default_roles:
     - dashboard
-    - queue
+    - database
+    - sde
+    - tasks
 
 Structures:
   forbidden_cooldown_days: 21       # days to skip transiently-inaccessible structures (404/network)
@@ -159,7 +163,7 @@ Structures:
 
 Market:
   unauthorized_cooldown_days: 7         # days to skip structures that return 403 on market endpoint
-  forbidden_cooldown_days: 21           # days to skip structures that return 401
+  forbidden_cooldown_days: 21           # days to skip structures that fail for other reasons
   authorized_cooldown_seconds: 3600     # seconds to skip structures that succeed on market endpoint
   max_retries: 3                        # per-page fetch retry limit before skipping a structure
   rate_limit_sleep_seconds: 10          # sleep duration when ESI returns 420 (error rate limit)

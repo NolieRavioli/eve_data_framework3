@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.market_browser import routes
 
 
@@ -16,6 +16,7 @@ class MarketBrowserTool(BaseTool):
         url_prefix="/market",
         required_scopes=[],
         nav_weight=10,
+        nav_section="overview",
         access_level="public",
     )
 

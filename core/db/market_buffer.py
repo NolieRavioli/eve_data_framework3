@@ -67,7 +67,7 @@ def finish_region(region_id: int) -> int:
         rows = _regions.get(region_id)
         if rows is None:
             return 0
-    from core.db.publicDB import replace_market_orders_for_region
+    from core.db.public import replace_market_orders_for_region
     try:
         count = replace_market_orders_for_region(region_id, rows)
     except Exception:

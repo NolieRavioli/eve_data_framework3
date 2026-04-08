@@ -20,9 +20,9 @@ _KEY_TABLES: list[str] = [
     "market_structures",
     "market_region_cooldowns",
     "structures",
-    "users",
-    "site_admins",
-    "user_roles",
+    "auth_users",
+    "auth_siteAdmins",
+    "auth_userRoles",
     "scheduler_jobs",
     "character_skills",
     "character_wallet",
@@ -30,12 +30,12 @@ _KEY_TABLES: list[str] = [
     "esi_routes",
     "esi_schemas",
     "esi_scopes",
-    "dim_types",
-    "dim_regions",
-    "dim_systems",
-    "dim_stations",
-    "dim_groups",
-    "dim_categories",
+    "sde_types",
+    "sde_regions",
+    "sde_systems",
+    "sde_staStations",
+    "sde_groups",
+    "sde_categories",
 ]
 
 
@@ -51,7 +51,7 @@ def get_table_stats(db_path: str | Path | None = None) -> list[dict]:
         estimated_size_bytes — int | None  (from DuckDB internal stats)
         column_count         — int | None
     """
-    from core.db.publicDB import connect, get_database_path
+    from core.db.public import connect, get_database_path
 
     target = Path(db_path) if db_path else get_database_path()
     if not target.exists():
@@ -188,7 +188,7 @@ def optimization_hints(db_path: str | Path | None = None) -> list[dict]:
             "severity": "critical",
             "category": "reliability",
             "message": f"{errors} write error(s) recorded since startup.",
-            "recommendation": "Check application logs for [writer] Write failed. Errors cause the writer connection to reset.",
+            "recommendation": "Check application logs for Write failed. Errors cause the writer connection to reset.",
         })
 
     if queue_depth > 100:
@@ -247,12 +247,12 @@ def table_optimization_hints(
                 "recommendation": "Growing toward the threshold where a dedicated market.duckdb becomes beneficial (>1M rows).",
             })
 
-    dim_types = tbl_map.get("dim_types")
-    if dim_types and dim_types.get("rows") is not None and dim_types["rows"] > 0 and db_bytes > 512 * 1024 ** 2:
+    sde_types = tbl_map.get("sde_types")
+    if sde_types and sde_types.get("rows") is not None and sde_types["rows"] > 0 and db_bytes > 512 * 1024 ** 2:
         hints.append({
             "severity": "info",
             "category": "db_layout",
-            "message": f"SDE dim_types ({dim_types['rows']:,} rows) is co-located with live write tables.",
+            "message": f"SDE sde_types ({sde_types['rows']:,} rows) is co-located with live write tables.",
             "recommendation": "SDE data is read-only after the pipeline runs. A separate sde.duckdb would reduce the main file's WAL size.",
         })
 
@@ -262,3 +262,130 @@ def table_optimization_hints(
         pass
 
     return hints
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DB-unit cost computation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Maps the plural attr-stats keys (inserts, upserts, …) to the config weight keys.
+_OP_PLURAL_TO_WEIGHT: dict[str, str] = {
+    "inserts":    "insert",
+    "upserts":    "upsert",
+    "updates":    "update",
+    "deletes":    "delete",
+    "truncates":  "truncate",
+    "ddls":       "ddl",
+    "bulk_loads": "bulk_load",
+    "reads":      "read",  # always 0 per-task, included for completeness
+}
+
+
+def compute_db_units(counts: dict, weights: dict) -> float:
+    """Compute the weighted db-units cost for a set of operation counts.
+
+    :param counts:  Dict with plural op-type keys (``inserts``, ``upserts``, …).
+    :param weights: Dict from ``get_db_unit_weights()`` (``insert``, ``upsert``, …).
+    :returns: Σ(count × weight) rounded to 4 decimal places.
+    """
+    total = 0.0
+    for plural_key, weight_key in _OP_PLURAL_TO_WEIGHT.items():
+        total += counts.get(plural_key, 0) * weights.get(weight_key, 0.0)
+    return round(total, 4)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DB gateway stats aggregation (absorbed from core/queue/db.py)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def get_db_gateway_stats() -> dict:
+    """Aggregate stats from writer, reader, private queues, and market buffer.
+
+    Extended payload keys vs. the original:
+        attribution   — per-task op-type breakdown + db_units + owner_id
+        owner_totals  — per-owner aggregated totals ("SYSTEM" bucket for owner_id 0)
+        weights       — configured DB-unit weights from config.yaml / defaults
+    """
+    from core.db.writer import get_writer_stats, get_attribution_snapshot
+    from core.db.reader import get_read_stats
+    from core.db.market_buffer import get_cache_stats
+    from core.config import get_db_unit_weights
+
+    weights = get_db_unit_weights()
+    raw_attribution = get_attribution_snapshot()
+
+    # Enrich each task entry with its db_units cost and build per-owner totals.
+    attribution: dict[str, dict] = {}
+    owner_totals: dict[str, dict] = {}
+    _ZERO_ENTRY = {
+        "inserts": 0, "upserts": 0, "updates": 0, "deletes": 0,
+        "truncates": 0, "ddls": 0, "bulk_loads": 0, "reads": 0,
+        "rows": 0, "db_units": 0.0,
+    }
+
+    for task_id, entry in raw_attribution.items():
+        enriched = dict(entry)
+        enriched["db_units"] = compute_db_units(entry, weights)
+        attribution[task_id] = enriched
+
+        # Route to the correct owner bucket (0 or missing → "SYSTEM").
+        raw_owner = entry.get("owner_id") or 0
+        bucket_key = "SYSTEM" if raw_owner == 0 else str(raw_owner)
+        if bucket_key not in owner_totals:
+            owner_totals[bucket_key] = dict(_ZERO_ENTRY)
+        bucket = owner_totals[bucket_key]
+        for op_key in ("inserts", "upserts", "updates", "deletes",
+                       "truncates", "ddls", "bulk_loads", "reads", "rows"):
+            bucket[op_key] += entry.get(op_key, 0)
+        bucket["db_units"] = round(bucket["db_units"] + enriched["db_units"], 4)
+
+    return {
+        "writer":        get_writer_stats(),
+        "attribution":   attribution,
+        "owner_totals":  owner_totals,
+        "weights":       weights,
+        "reads":         get_read_stats(),
+        "market_buffer": get_cache_stats(),
+        "private_queues": {},
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# db/stats bus publisher (absorbed from core/queue/db.py)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import threading
+import time
+
+_publisher_thread: threading.Thread | None = None
+
+
+def _publish_loop() -> None:
+    """Periodically publish DB stats to the bus."""
+    from core.bus import publish, DB_STATS
+    while True:
+        time.sleep(5.0)
+        try:
+            publish(DB_STATS, get_db_gateway_stats())
+        except Exception:
+            pass
+
+
+def start_db_stats_publisher() -> None:
+    """Start the daemon thread that publishes ``db/stats`` every 5 s."""
+    global _publisher_thread
+    if _publisher_thread is not None and _publisher_thread.is_alive():
+        return
+    _publisher_thread = threading.Thread(
+        target=_publish_loop, daemon=True, name="db-stats-pub"
+    )
+    _publisher_thread.start()
+    logger.info("[db-stats-pub] Started — publishing db/stats every 5s")
+
+    # Register with the central lifecycle coordinator.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().register("db-stats-pub", _publisher_thread)
+    except Exception:
+        pass

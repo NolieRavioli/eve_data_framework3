@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ character.name or 'Character' }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a></div>
+    <h1>{{ character.name or 'Unknown' }}</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    <div class="card stack">
+      <div class="char-profile">
+        <img class="char-portrait-lg" src="https://images.evetech.net/characters/{{ character.character_id }}/portrait?tenant=tranquility&size=256" alt="">
+        <div>
+          <h2>{{ character.name or 'Unknown' }}</h2>
+          <div class="mono" style="color:var(--muted);font-size:.85rem">ID {{ character.character_id }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="card stack">
+        <div class="ct">Token Info</div>
+        <div class="kv-list">
+          <div class="kv"><span class="k">Expires</span><span class="val">{{ character.token_expires or '—' }}</span></div>
+          <div class="kv"><span class="k">Scopes</span><span class="val">{{ (character.scopes or '').split()|length }}</span></div>
+        </div>
+      </div>
+      <div class="card stack">
+        <div class="ct">Granted Scopes</div>
+        {% if character.scopes %}
+        <div class="pill-row" style="flex-wrap:wrap;gap:.3rem">
+          {% for s in character.scopes.split() %}
+          <span class="pill" style="font-size:.68rem">{{ s }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty"><p>No scopes.</p></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

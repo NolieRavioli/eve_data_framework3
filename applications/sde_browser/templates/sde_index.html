@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}SDE Browser{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('sde_browser.static', filename='sde_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>📚 SDE Browser</h1>
+    <div class="pg-sub">Static Data Edition — status and lookup tools</div>
+  </div>
+  <form method="post" action="{{ url_for('sde_browser.update') }}">
+    <button class="btn btn-a" type="submit">Update SDE</button>
+  </form>
+</div>
+
+<div class="pg-body">
+
+  {# -- Quick Lookup -------------------------------------------------------- #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="ct" style="margin:0 0 0.5rem">Lookup</div>
+    <form action="{{ url_for('sde_browser.lookup') }}" method="get" style="display:flex;gap:0.5rem">
+      <input type="text" name="q" placeholder="Type name, system name, or numeric ID…"
+             style="flex:1;padding:0.4rem 0.6rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.9rem">
+      <button class="btn btn-a" type="submit">Search</button>
+    </form>
+  </div>
+
+  {# -- Table Row Counts --------------------------------------------------- #}
+  <section class="card">
+    <div class="section-head" style="margin-bottom:0.75rem">
+      <h2>SDE Tables</h2>
+    </div>
+    <div class="sde-grid">
+      {% for tbl, cnt in table_counts.items() %}
+      <div class="sde-stat-card">
+        <span class="sde-stat-name mono">{{ tbl }}</span>
+        <span class="sde-stat-count">{{ '{:,}'.format(cnt) if cnt is not none else '<span class="muted">not loaded</span>' }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sde_browser.static', filename='sde_browser.js') }}"></script>
+{% endblock %}

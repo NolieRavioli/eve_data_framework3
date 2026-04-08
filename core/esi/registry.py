@@ -352,7 +352,7 @@ def execute_route(
     compatibility_date: str | None = None,
     timeout: int = 30,
 ) -> dict:
-    from core.queue.esi_req import esi_request
+    from core.esi.request import esi_request
 
     selected_route = route or find_route(
         method=method,
@@ -444,9 +444,9 @@ def refresh_esi_spec_registry(compatibility_date: str | None = None) -> dict:
     latest_path.write_text(json.dumps(latest_payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     try:
-        from core.db import publicDB
+        from core.db import public
 
-        publicDB.sync_esi_registry_to_warehouse(
+        public.sync_esi_registry_to_warehouse(
             compatibility_date=active_date,
             registry_root=root,
         )

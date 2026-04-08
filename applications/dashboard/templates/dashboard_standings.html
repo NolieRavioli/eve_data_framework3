@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Standings — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Standings</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if standings %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Standings</div>
+        <span class="pill">{{ standings|length }} entries</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>From ID</th>
+            <th>Type</th>
+            <th class="text-right">Standing</th>
+          </tr></thead>
+          <tbody>
+            {% for s in standings %}
+            <tr>
+              <td class="mono">{{ s.from_id or '—' }}</td>
+              <td>{{ s.from_type or '—' }}</td>
+              <td class="text-right">
+                {% set val = s.standing or 0 %}
+                <div style="display:flex;align-items:center;justify-content:flex-end;gap:.4rem">
+                  <div class="standing-bar">
+                    <div class="standing-fill" style="width:{{ ((val + 10) / 20 * 100)|int }}%;background:{% if val > 0 %}var(--good){% elif val < 0 %}var(--bad){% else %}var(--muted){% endif %}"></div>
+                  </div>
+                  <span style="{% if val > 0 %}color:var(--good){% elif val < 0 %}color:var(--bad){% endif %}">
+                    {{ "{:.2f}".format(val) }}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No standings data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

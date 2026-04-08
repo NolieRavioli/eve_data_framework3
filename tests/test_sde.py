@@ -41,7 +41,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
         cls._db_file = str(Path(cls._tmp_dir.name) / "test_sde.duckdb")
 
-        from analysis.sde_loader import build_sde_warehouse
+        from core.db.sde_loader import build_sde_warehouse
         build_sde_warehouse(
             database_file=cls._db_file,
             source_root=str(SDE_ROOT),
@@ -84,41 +84,41 @@ class TestSDEWarehousePopulation(unittest.TestCase):
     # Type / group / category dimensions
     # ------------------------------------------------------------------
 
-    def test_dim_types_populated(self):
-        count = self._count("dim_types")
-        self.assertGreater(count, 30_000, f"dim_types has only {count} rows")
+    def test_sde_types_populated(self):
+        count = self._count("sde_types")
+        self.assertGreater(count, 30_000, f"sde_types has only {count} rows")
 
-    def test_dim_groups_populated(self):
-        count = self._count("dim_groups")
-        self.assertGreater(count, 1_500, f"dim_groups has only {count} rows")
+    def test_sde_groups_populated(self):
+        count = self._count("sde_groups")
+        self.assertGreater(count, 1_500, f"sde_groups has only {count} rows")
 
-    def test_dim_categories_populated(self):
-        count = self._count("dim_categories")
-        self.assertGreater(count, 40, f"dim_categories has only {count} rows")
+    def test_sde_categories_populated(self):
+        count = self._count("sde_categories")
+        self.assertGreater(count, 40, f"sde_categories has only {count} rows")
 
-    def test_dim_market_groups_populated(self):
-        count = self._count("dim_market_groups")
-        self.assertGreater(count, 500, f"dim_market_groups has only {count} rows")
+    def test_sde_marketGroups_populated(self):
+        count = self._count("sde_marketGroups")
+        self.assertGreater(count, 500, f"sde_marketGroups has only {count} rows")
 
     # ------------------------------------------------------------------
     # Blueprints — the most complex loader section
     # ------------------------------------------------------------------
 
-    def test_fact_blueprints_populated(self):
-        count = self._count("fact_blueprints")
-        self.assertGreater(count, 5_000, f"fact_blueprints has only {count} rows")
+    def test_sde_blueprints_populated(self):
+        count = self._count("sde_blueprints")
+        self.assertGreater(count, 5_000, f"sde_blueprints has only {count} rows")
 
-    def test_fact_blueprint_materials_populated(self):
-        count = self._count("fact_blueprint_materials")
-        self.assertGreater(count, 30_000, f"fact_blueprint_materials has only {count} rows")
+    def test_sde_blueprintMaterials_populated(self):
+        count = self._count("sde_blueprintMaterials")
+        self.assertGreater(count, 30_000, f"sde_blueprintMaterials has only {count} rows")
 
-    def test_fact_blueprint_products_populated(self):
-        count = self._count("fact_blueprint_products")
-        self.assertGreater(count, 5_000, f"fact_blueprint_products has only {count} rows")
+    def test_sde_blueprintProducts_populated(self):
+        count = self._count("sde_blueprintProducts")
+        self.assertGreater(count, 5_000, f"sde_blueprintProducts has only {count} rows")
 
     def test_blueprints_have_manufacturing_activity(self):
         rows = self._query(
-            "SELECT COUNT(*) FROM fact_blueprint_materials WHERE activity = 'manufacturing'"
+            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE activity = 'manufacturing'"
         )
         count = rows[0][0]
         self.assertGreater(count, 10_000,
@@ -126,7 +126,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
     def test_blueprints_have_research_activity(self):
         rows = self._query(
-            "SELECT COUNT(*) FROM fact_blueprint_materials WHERE activity IN ('research_time', 'research_material')"
+            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE activity IN ('research_time', 'research_material')"
         )
         count = rows[0][0]
         self.assertGreater(count, 0, "No research activity materials found")
@@ -134,7 +134,7 @@ class TestSDEWarehousePopulation(unittest.TestCase):
     def test_specific_blueprint_tritanium(self):
         """Tritanium (type_id=34) should appear as a manufacturing material in many blueprints."""
         rows = self._query(
-            "SELECT COUNT(*) FROM fact_blueprint_materials WHERE material_type_id = 34 AND activity = 'manufacturing'"
+            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE material_type_id = 34 AND activity = 'manufacturing'"
         )
         count = rows[0][0]
         self.assertGreater(count, 500,
@@ -144,37 +144,37 @@ class TestSDEWarehousePopulation(unittest.TestCase):
     # Type materials & dogma
     # ------------------------------------------------------------------
 
-    def test_fact_type_materials_populated(self):
-        count = self._count("fact_type_materials")
-        self.assertGreater(count, 5_000, f"fact_type_materials has only {count} rows")
+    def test_sde_typeMaterials_populated(self):
+        count = self._count("sde_typeMaterials")
+        self.assertGreater(count, 5_000, f"sde_typeMaterials has only {count} rows")
 
-    def test_fact_type_dogma_attributes_populated(self):
-        count = self._count("fact_type_dogma_attributes")
-        self.assertGreater(count, 100_000, f"fact_type_dogma_attributes has only {count} rows")
+    def test_sde_typeDogmaAttributes_populated(self):
+        count = self._count("sde_typeDogmaAttributes")
+        self.assertGreater(count, 100_000, f"sde_typeDogmaAttributes has only {count} rows")
 
     # ------------------------------------------------------------------
     # Universe
     # ------------------------------------------------------------------
 
-    def test_dim_regions_populated(self):
-        count = self._count("dim_regions")
-        self.assertGreater(count, 100, f"dim_regions has only {count} rows")
+    def test_sde_regions_populated(self):
+        count = self._count("sde_regions")
+        self.assertGreater(count, 100, f"sde_regions has only {count} rows")
 
-    def test_dim_constellations_populated(self):
-        count = self._count("dim_constellations")
-        self.assertGreater(count, 1_000, f"dim_constellations has only {count} rows")
+    def test_sde_constellations_populated(self):
+        count = self._count("sde_constellations")
+        self.assertGreater(count, 1_000, f"sde_constellations has only {count} rows")
 
-    def test_dim_systems_populated(self):
-        count = self._count("dim_systems")
-        self.assertGreater(count, 5_000, f"dim_systems has only {count} rows")
+    def test_sde_systems_populated(self):
+        count = self._count("sde_systems")
+        self.assertGreater(count, 5_000, f"sde_systems has only {count} rows")
 
     # ------------------------------------------------------------------
     # Stations (bsd)
     # ------------------------------------------------------------------
 
-    def test_dim_stations_populated(self):
-        count = self._count("dim_stations")
-        self.assertGreater(count, 500, f"dim_stations has only {count} rows")
+    def test_sde_staStations_populated(self):
+        count = self._count("sde_staStations")
+        self.assertGreater(count, 500, f"sde_staStations has only {count} rows")
 
     # ------------------------------------------------------------------
     # Manifest integrity
@@ -189,12 +189,12 @@ class TestSDEWarehousePopulation(unittest.TestCase):
 
     def test_dataset_manifest_covers_blueprints(self):
         rows = self._query(
-            "SELECT table_name, row_count FROM sde_dataset_manifest WHERE table_name LIKE 'fact_blueprint%'"
+            "SELECT table_name, row_count FROM sde_dataset_manifest WHERE table_name LIKE 'sde_blueprint%'"
         )
         tables = {r[0] for r in rows}
-        self.assertIn("fact_blueprints", tables)
-        self.assertIn("fact_blueprint_materials", tables)
-        self.assertIn("fact_blueprint_products", tables)
+        self.assertIn("sde_blueprints", tables)
+        self.assertIn("sde_blueprintMaterials", tables)
+        self.assertIn("sde_blueprintProducts", tables)
         for table, count in rows:
             self.assertGreater(count, 0, f"{table} recorded 0 rows in dataset manifest")
 
@@ -209,7 +209,7 @@ class TestSDECacheFacade(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from core.db.publicDB import get_database_path
+        from core.db.public import get_database_path
         cls._warehouse_exists = Path(get_database_path()).exists()
 
     def _skip_if_no_warehouse(self):
@@ -218,21 +218,21 @@ class TestSDECacheFacade(unittest.TestCase):
 
     def test_type_name_lookup(self):
         self._skip_if_no_warehouse()
-        import core.sde as sde
+        import core.db.sde as sde
         # Tritanium type_id = 34
         name = sde.name_from_type_id(34)
         self.assertEqual(name, "Tritanium", f"Expected 'Tritanium', got {name!r}")
 
     def test_unknown_type_returns_placeholder(self):
         self._skip_if_no_warehouse()
-        import core.sde as sde
+        import core.db.sde as sde
         result = sde.name_from_type_id(999_999_999)
         # The function never returns None; unknown IDs get a placeholder string.
         self.assertIn("Unknown", result)
 
     def test_region_from_system(self):
         self._skip_if_no_warehouse()
-        import core.sde as sde
+        import core.db.sde as sde
         # Jita is in The Forge (region 10000002), system 30000142
         region_id = sde.region_id_from_system_id(30000142)
         self.assertEqual(region_id, 10000002,
@@ -240,7 +240,7 @@ class TestSDECacheFacade(unittest.TestCase):
 
     def test_system_name_lookup(self):
         self._skip_if_no_warehouse()
-        import core.sde as sde
+        import core.db.sde as sde
         name = sde.system_name_from_id(30000142)
         self.assertEqual(name, "Jita", f"Expected 'Jita', got {name!r}")
 

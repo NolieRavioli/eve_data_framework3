@@ -89,3 +89,17 @@
       .mb-layout { grid-template-columns: 1fr; }
       .mb-sidebar { border-right: none; border-bottom: 1px solid var(--border); border-radius: 1.1rem 1.1rem 0 0; max-height: 40vh; }
     }
+
+    /* ── Type detail page ───────────────────────────────────────────── */
+
+    .mt-order-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 900px) {
+      .mt-order-grid { grid-template-columns: 1fr; }
+    }
+
+    .tw-scroll { max-height: 420px; overflow-y: auto; }

@@ -97,8 +97,8 @@ def _discover_loggers(root: Path) -> list[str]:
 
 
 def _get_sde_defaults() -> dict[str, bool]:
-    """Read _SECTION_DEFAULTS from core.sde.cache without side-effects."""
-    from core.sde.cache import _SECTION_DEFAULTS  # type: ignore
+    """Read _SECTION_DEFAULTS from core.db.sde without side-effects."""
+    from core.db.sde import _SECTION_DEFAULTS  # type: ignore
     return dict(_SECTION_DEFAULTS)
 
 
@@ -151,6 +151,19 @@ Runtime:
   # trace_esi: false               # print every ESI HTTP request to the console
   # auto_install: false            # pip-install missing requirements automatically
   # secret_key: "change-me"        # Flask session secret (use a long random string in prod)
+  # transport: "http"              # "http" or "https" — set to "https" when behind a TLS-terminating proxy
+  # github_repo: ""                # GitHub repository URL for system updates (default: NolieRavioli/eve_data_framework3)
+
+"""
+
+_TEMPLATE_BOOTSTRAP = """\
+# Bootstrap controls which subsystems auto-update when the server starts.
+# Set either flag to false to skip auto-update on boot (useful for production
+# deployments that pin generated code to git and update manually).
+# Changes take effect on the next server restart.
+Bootstrap:
+  auto_update_sde: true   # download + rebuild SDE warehouse if stale
+  auto_update_esi: true   # fetch latest ESI spec + regenerate codegen if stale
 
 """
 
@@ -169,7 +182,9 @@ Environment Variables:
 Auth:
   default_roles:
     - dashboard
-    - queue
+    - database
+    - sde
+    - tasks
 
 """
 
@@ -199,6 +214,7 @@ def generate_example_config(output_path: str = "example.config.yaml", root: Path
 
     parts: list[str] = []
     parts.append(_TEMPLATE_HEADER)
+    parts.append(_TEMPLATE_BOOTSTRAP)
     parts.append("\n".join(_python_console_section(loggers)))
     parts.append("\n\n")
     parts.append("\n".join(_sde_section(sde_defaults)))

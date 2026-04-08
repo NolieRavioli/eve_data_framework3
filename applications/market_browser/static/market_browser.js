@@ -122,18 +122,6 @@
         var treeEl = document.getElementById('mb-tree');
         treeEl.innerHTML = '';
         renderChildren(treeEl, rootGroups, 0);
-
-        // Auto-expand to show the active type_id's group path
-        if (TYPE_ID) expandToType(TYPE_ID, groups);
-    }
-
-    // Walk up from the active type's group to root and expand each ancestor
-    function expandToType(typeId, groups) {
-        // Find which group contains this type via the server
-        fetch(_URL_TREE.replace('tree', 'group/for_type/' + typeId))
-            .catch(function () { /* optional endpoint — graceful */ });
-        // Simpler: we don't know the group id from the page alone without an extra call.
-        // The sidebar will highlight the active type when its parent is opened naturally.
     }
 
         fetch(_URL_TREE)

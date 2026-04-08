@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Scheduler - EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('task_viewer.static', filename='scheduler.css') }}">{% endblock %}
+
+{% block content %}
+<div id="scheduler-app" hidden
+     data-url-toggle="{{ url_for('task_viewer.scheduler_toggle', job_id='PLACEHOLDER') }}"
+     data-url-run-now="{{ url_for('task_viewer.scheduler_run_now', job_id='PLACEHOLDER') }}"
+     data-url-progress="{{ url_for('task_viewer.task_detail', task_id='PLACEHOLDER') }}"
+     data-csrf="{{ csrf_token }}"></div>
+<div class="pg-hd">
+  <div>
+    <h1>Task Manager</h1>
+    <div class="pg-sub">Background jobs: enable/disable, inspect intervals, and trigger on demand.</div>
+  </div>
+</div>
+
+<div class="tab-bar" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem">
+  <a href="{{ url_for('task_viewer.index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">Tasks</a>
+  <a href="{{ url_for('task_viewer.scheduler_index') }}" class="tab-btn active" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--txt);cursor:pointer;font-weight:600;text-decoration:none">Scheduler</a>
+  <a href="{{ url_for('task_viewer.admin_index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">Admin Queue</a>
+  <a href="{{ url_for('task_viewer.explore_index') }}" class="tab-btn" style="padding:0.5rem 1.2rem;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;text-decoration:none">ESI Explorer</a>
+</div>
+
+<div class="pg-body">
+  {% if not jobs %}
+  <div class="card" style="color:var(--muted);text-align:center;padding:2rem">
+    No jobs registered. Jobs appear here after the first application start with collectors installed.
+  </div>
+  {% else %}
+  <section class="card">
+    <div class="section-head" style="margin-bottom:0.75rem">
+      <h2>Registered Jobs</h2>
+      <span class="pill">{{ jobs | length }} job{{ 's' if jobs | length != 1 }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="job-table">
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Interval</th>
+            <th>Last Run</th>
+            <th>Last Status</th>
+            <th>Next Run</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+          <tr id="row-{{ job.job_id }}">
+            <td>
+              <a href="{{ url_for('task_viewer.scheduler_detail', job_id=job.job_id) }}" style="color:var(--accent);text-decoration:none">
+                <strong>{{ job.label }}</strong>
+              </a>
+              <div class="mono" style="font-size:0.74rem;margin-top:0.1rem">{{ job.job_id }}</div>
+            </td>
+            <td class="mono">{{ job.interval_seconds }}s</td>
+            <td class="mono">{{ job.last_run.strftime('%Y-%m-%d %H:%M') if job.last_run else '&mdash;' }}</td>
+            <td>
+              {% if job.last_run_status == 'success' %}
+              <span class="badge badge-on">success</span>
+              {% elif job.last_run_status == 'failed' %}
+              <span class="badge badge-off">failed</span>
+              {% elif job.last_run_status == 'running' %}
+              <span class="badge badge-running">running</span>
+              {% else %}
+              <span class="muted">&mdash;</span>
+              {% endif %}
+            </td>
+            <td class="mono">{{ job.next_run.strftime('%Y-%m-%d %H:%M') if job.next_run else '&mdash;' }}</td>
+            <td>
+              <span class="badge {{ 'badge-on' if job.enabled else 'badge-off' }}" id="badge-{{ job.job_id }}">
+                {{ 'Enabled' if job.enabled else 'Disabled' }}
+              </span>
+            </td>
+            <td>
+              <div class="tbl-actions">
+                <button class="btn btn-g js-toggle-btn"
+                        data-job="{{ job.job_id }}"
+                        data-enabled="{{ 'true' if job.enabled else 'false' }}">
+                  {{ 'Disable' if job.enabled else 'Enable' }}
+                </button>
+                <button class="btn btn-a js-run-btn" data-job="{{ job.job_id }}">
+                  Run Now
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('task_viewer.static', filename='scheduler.js') }}"></script>
+{% endblock %}
+

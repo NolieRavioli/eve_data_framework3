@@ -1,0 +1,41 @@
+{# Character sub-navigation — included in all character detail pages #}
+<nav class="char-nav">
+  <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'overview' }}">Overview</a>
+  <a href="{{ url_for('dashboard.skills', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'skills' }}">Skills</a>
+  <a href="{{ url_for('dashboard.wallet', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'wallet' }}">Wallet</a>
+  <a href="{{ url_for('dashboard.assets', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'assets' }}">Assets</a>
+  <a href="{{ url_for('dashboard.mail', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'mail' }}">Mail</a>
+  <a href="{{ url_for('dashboard.contracts', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'contracts' }}">Contracts</a>
+  <a href="{{ url_for('dashboard.contacts', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'contacts' }}">Contacts</a>
+  <a href="{{ url_for('dashboard.industry', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'industry' }}">Industry</a>
+  <a href="{{ url_for('dashboard.market', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'market' }}">Market</a>
+  <a href="{{ url_for('dashboard.blueprints', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'blueprints' }}">Blueprints</a>
+  <a href="{{ url_for('dashboard.pi', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'pi' }}">PI</a>
+  <a href="{{ url_for('dashboard.mining', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'mining' }}">Mining</a>
+  <a href="{{ url_for('dashboard.loyalty', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'loyalty' }}">Loyalty</a>
+  <a href="{{ url_for('dashboard.research', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'research' }}">Research</a>
+  <a href="{{ url_for('dashboard.fittings', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'fittings' }}">Fittings</a>
+  <a href="{{ url_for('dashboard.standings', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'standings' }}">Standings</a>
+  <a href="{{ url_for('dashboard.killmails', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'killmails' }}">Killmails</a>
+  <a href="{{ url_for('dashboard.notifications', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'notifications' }}">Notifications</a>
+  <a href="{{ url_for('dashboard.calendar', character_id=character.character_id) }}"
+     class="char-nav-link {{ 'active' if active_tab == 'calendar' }}">Calendar</a>
+</nav>

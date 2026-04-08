@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}SDE Lookup{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('sde_browser.static', filename='sde_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>📚 SDE Lookup</h1>
+    <div class="pg-sub">
+      <a href="{{ url_for('sde_browser.index') }}" style="color:var(--accent);text-decoration:none">← SDE Browser</a>
+    </div>
+  </div>
+</div>
+
+<div class="pg-body">
+
+  {# -- Search ------------------------------------------------------------ #}
+  <div class="card" style="margin-bottom:1rem">
+    <form action="{{ url_for('sde_browser.lookup') }}" method="get" style="display:flex;gap:0.5rem">
+      <input type="text" name="q" value="{{ query }}" placeholder="Type name, system name, or numeric ID…"
+             style="flex:1;padding:0.4rem 0.6rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.9rem">
+      <button class="btn btn-a" type="submit">Search</button>
+    </form>
+  </div>
+
+  {% if results is none %}
+  <div class="card muted" style="text-align:center;padding:2rem">Enter a search term above.</div>
+  {% else %}
+
+  {% set total = results.types|length + results.systems|length + results.regions|length %}
+  {% if total == 0 %}
+  <div class="card muted" style="text-align:center;padding:2rem">No results for "{{ query }}".</div>
+  {% endif %}
+
+  {# -- Types ------------------------------------------------------------- #}
+  {% if results.types %}
+  <section class="card" style="margin-bottom:1rem">
+    <div class="section-head" style="margin-bottom:0.5rem">
+      <h2>Types</h2>
+      <span class="pill">{{ results.types|length }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="sde-table">
+        <thead><tr><th>ID</th><th>Name</th></tr></thead>
+        <tbody>
+          {% for t in results.types %}
+          <tr>
+            <td class="mono">{{ t.type_id }}</td>
+            <td><a href="{{ url_for('sde_browser.type_detail', type_id=t.type_id) }}" style="color:var(--accent);text-decoration:none">{{ t.name or '(unnamed)' }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# -- Systems ----------------------------------------------------------- #}
+  {% if results.systems %}
+  <section class="card" style="margin-bottom:1rem">
+    <div class="section-head" style="margin-bottom:0.5rem">
+      <h2>Systems</h2>
+      <span class="pill">{{ results.systems|length }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="sde-table">
+        <thead><tr><th>ID</th><th>Name</th></tr></thead>
+        <tbody>
+          {% for s in results.systems %}
+          <tr>
+            <td class="mono">{{ s.system_id }}</td>
+            <td><a href="{{ url_for('sde_browser.system_detail', system_id=s.system_id) }}" style="color:var(--accent);text-decoration:none">{{ s.name or '(unnamed)' }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# -- Regions ----------------------------------------------------------- #}
+  {% if results.regions %}
+  <section class="card" style="margin-bottom:1rem">
+    <div class="section-head" style="margin-bottom:0.5rem">
+      <h2>Regions</h2>
+      <span class="pill">{{ results.regions|length }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="sde-table">
+        <thead><tr><th>ID</th><th>Name</th></tr></thead>
+        <tbody>
+          {% for r in results.regions %}
+          <tr>
+            <td class="mono">{{ r.region_id }}</td>
+            <td><a href="{{ url_for('sde_browser.region_detail', region_id=r.region_id) }}" style="color:var(--accent);text-decoration:none">{{ r.name or '(unnamed)' }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sde_browser.static', filename='sde_browser.js') }}"></script>
+{% endblock %}

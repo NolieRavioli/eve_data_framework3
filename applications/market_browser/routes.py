@@ -6,12 +6,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, jsonify, render_template, request
 
-from applications._adapters import db, tasks, get_regions
-from applications._base import base_ctx
-from applications.market_browser.worker import refresh_region
-from analysis.market.regions import fetch_all_market_data
+from applications._api import db, raw_esi, sde, get_regions, base_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +62,7 @@ def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
                    mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
                    COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
             FROM market_orders mo
-            LEFT JOIN dim_stations ds ON ds.station_id = mo.location_id
+            LEFT JOIN sde_staStations ds ON ds.station_id = mo.location_id
             WHERE mo.type_id = ? {exclude_clause}
         """
         try:
@@ -127,7 +124,7 @@ def orders():
 
     if type_id:
         try:
-            type_name = db.scalar("SELECT name_en FROM dim_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
+            type_name = db.scalar("SELECT name_en FROM sde_types WHERE type_id = ?", [type_id]) or f"Type {type_id}"
         except Exception:
             type_name = f"Type {type_id}"
         sells, buys = _query_orders(type_id, region_id)
@@ -147,37 +144,6 @@ def orders():
     return render_template("market_browser.html", **ctx)
 
 
-@market_bp.route("/refresh", methods=["POST"])
-def refresh():
-    try:
-        region_id = int(request.form.get("region_id", 0))
-    except (ValueError, TypeError):
-        region_id = 0
-
-    if not region_id:
-        return redirect(url_for("market_browser.index"))
-
-    task_id = tasks.enqueue(
-        f"Market refresh — region {region_id}",
-        refresh_region,
-        region_id,
-        owner_id=0,
-        queue="public",
-    )
-    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
-
-
-@market_bp.route("/refresh_all", methods=["POST"])
-def refresh_all():
-    task_id = tasks.enqueue(
-        "Market refresh — all regions",
-        fetch_all_market_data,
-        owner_id=0,
-        queue="public",
-    )
-    return redirect(url_for("queue_viewer.task_progress", task_id=task_id))
-
-
 # ── Tree API ──────────────────────────────────────────────────────────────────
 
 @market_bp.route("/tree")
@@ -187,7 +153,7 @@ def tree():
         rows = db.query(
             """
             SELECT market_group_id, parent_group_id, name_en, has_types
-            FROM dim_market_groups
+            FROM sde_marketGroups
             ORDER BY name_en
             """
         )
@@ -203,7 +169,7 @@ def group_types(group_id: int):
         rows = db.query(
             """
             SELECT type_id, name_en
-            FROM dim_types
+            FROM sde_types
             WHERE market_group_id = ? AND published = true
             ORDER BY name_en
             """,
@@ -224,7 +190,7 @@ def search():
         rows = db.query(
             """
             SELECT type_id, name_en, market_group_id
-            FROM dim_types
+            FROM sde_types
             WHERE name_en ILIKE ? AND published = true AND market_group_id IS NOT NULL
             ORDER BY name_en
             LIMIT 40
@@ -235,3 +201,97 @@ def search():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+
+# ── Type detail ───────────────────────────────────────────────────────────────
+
+@market_bp.route("/type/<int:type_id>")
+def type_detail(type_id: int):
+    """Dedicated type page: full order book, metadata, and price history chart."""
+    type_name = sde.name_from_type_id(type_id)
+    if not type_name:
+        abort(404)
+
+    # Type metadata from SDE
+    try:
+        type_info = db.query_one(
+            """
+            SELECT t.type_id, t.name_en, t.description_en, t.published,
+                   t.group_id, t.market_group_id, t.volume, t.mass,
+                   g.name_en AS group_name, g.category_id,
+                   c.name_en AS category_name,
+                   mg.name_en AS market_group_name
+            FROM sde_types t
+            LEFT JOIN sde_groups g     ON g.group_id = t.group_id
+            LEFT JOIN sde_categories c ON c.category_id = g.category_id
+            LEFT JOIN sde_marketGroups mg ON mg.market_group_id = t.market_group_id
+            WHERE t.type_id = ?
+            """,
+            [type_id],
+        )
+    except Exception:
+        type_info = None
+
+    # Current orders
+    sells, buys = _query_orders(type_id, 0)
+
+    best_sell = min((o["price"] for o in sells), default=None)
+    best_buy = max((o["price"] for o in buys), default=None)
+    sell_volume = sum(o["volume_remain"] for o in sells)
+    buy_volume = sum(o["volume_remain"] for o in buys)
+
+    ctx = base_ctx("market_browser")
+    ctx.update({
+        "type_id": type_id,
+        "type_name": type_name,
+        "type_info": type_info,
+        "sells": sells,
+        "buys": buys,
+        "best_sell": best_sell,
+        "best_buy": best_buy,
+        "sell_volume": sell_volume,
+        "buy_volume": buy_volume,
+        "regions": get_regions(),
+    })
+    return render_template("market_type.html", **ctx)
+
+
+@market_bp.route("/type/<int:type_id>/history")
+def type_history(type_id: int):
+    """Return price history for a type in a region as JSON."""
+    region_id = request.args.get("region_id", 10000002, type=int)
+
+    # Check DuckDB cache first
+    try:
+        cached = db.query(
+            """
+            SELECT date, lowest, highest, average, volume, order_count
+            FROM market_history
+            WHERE type_id = ? AND region_id = ?
+            ORDER BY date DESC
+            LIMIT 365
+            """,
+            [type_id, region_id],
+        )
+        if cached:
+            return jsonify([dict(r) for r in cached])
+    except Exception:
+        pass
+
+    # Fallback: fetch from ESI on demand
+    resp = raw_esi.get(
+        f"https://esi.evetech.net/latest/markets/{region_id}/history/",
+        params={"type_id": type_id},
+    )
+    if not resp.ok:
+        return jsonify([])
+
+    data = resp.json()
+
+    # Cache the results asynchronously
+    try:
+        from collectors.market.history import cache_history_rows
+        cache_history_rows(type_id, region_id, data)
+    except Exception:
+        pass
+
+    return jsonify(data)

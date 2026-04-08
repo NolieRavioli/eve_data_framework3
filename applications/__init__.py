@@ -13,7 +13,7 @@ import importlib
 import logging
 import pkgutil
 
-from applications._base import ToolRegistry
+from applications._api import ToolRegistry
 
 logger = logging.getLogger(__name__)
 tool_registry: ToolRegistry = ToolRegistry()

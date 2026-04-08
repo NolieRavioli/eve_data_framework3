@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ item.system_name if item else 'Unknown' }} — SDE System{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('sde_browser.static', filename='sde_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>{{ item.system_name if item else 'Unknown System' }}</h1>
+    <div class="pg-sub">
+      <a href="{{ url_for('sde_browser.index') }}" style="color:var(--accent);text-decoration:none">← SDE Browser</a>
+      &middot; System ID <span class="mono">{{ system_id }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="pg-body">
+  {% if item is none %}
+  <div class="card muted" style="text-align:center;padding:2rem">System {{ system_id }} not found in SDE.</div>
+  {% else %}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="stat-row">
+      <div class="stat">
+        <span class="v mono">{{ item.system_id }}</span>
+        <span class="l">System ID</span>
+      </div>
+      <div class="stat">
+        <span class="v">
+          {% if item.region_id %}
+          <a href="{{ url_for('sde_browser.region_detail', region_id=item.region_id) }}" style="color:var(--accent);text-decoration:none">{{ item.region_name or item.region_id }}</a>
+          {% else %}—{% endif %}
+        </span>
+        <span class="l">Region</span>
+      </div>
+      <div class="stat">
+        <span class="v">{{ item.constellation_name or '—' }}</span>
+        <span class="l">Constellation</span>
+      </div>
+      <div class="stat">
+        <span class="v mono {% if item.security is not none %}{% if item.security > 0.5 %}sec-high{% elif item.security > 0.0 %}sec-low{% else %}sec-null{% endif %}{% endif %}">
+          {{ '{:.1f}'.format(item.security) if item.security is not none else '—' }}
+        </span>
+        <span class="l">Security</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ item.planet_count or '—' }}</span>
+        <span class="l">Planets</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ item.stargate_count or '—' }}</span>
+        <span class="l">Stargates</span>
+      </div>
+    </div>
+  </div>
+
+  {% if stations %}
+  <section class="card">
+    <div class="section-head" style="margin-bottom:0.5rem">
+      <h2>Stations</h2>
+      <span class="pill">{{ stations|length }}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="sde-table">
+        <thead><tr><th>ID</th><th>Name</th></tr></thead>
+        <tbody>
+          {% for st in stations %}
+          <tr>
+            <td class="mono">{{ st.station_id }}</td>
+            <td>{{ st.station_name }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('sde_browser.static', filename='sde_browser.js') }}"></script>
+{% endblock %}

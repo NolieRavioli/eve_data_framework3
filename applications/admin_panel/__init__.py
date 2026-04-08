@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from applications._base import BaseTool, ToolManifest
+from applications._api import BaseTool, ToolManifest
 from applications.admin_panel import routes
 
 
@@ -13,7 +13,7 @@ class AdminPanelTool(BaseTool):
     manifest = ToolManifest(
         id="admin_panel",
         name="Admin Panel",
-        icon="!",
+        icon="🛡️",
         description="Live log console, system stats, and user management.",
         url_prefix="/admin",
         required_scopes=[],

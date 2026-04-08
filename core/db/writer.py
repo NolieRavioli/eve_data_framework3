@@ -33,11 +33,37 @@ import duckdb
 
 logger = logging.getLogger(__name__)
 
+
+def _classify_op_type(sql: str, df: Any = None, many: bool = False) -> str:  # noqa: ARG001
+    """Classify a DuckDB write op by its SQL keyword for attribution tracking.
+
+    Returns one of: ``insert`` | ``upsert`` | ``update`` | ``delete``
+                  | ``truncate`` | ``ddl`` | ``bulk_load``
+    """
+    if df is not None:
+        return "bulk_load"
+    first = (sql.lstrip().upper().split() or [""])[0]
+    sql_upper = sql.upper()
+    if first in ("CREATE", "ALTER", "DROP"):
+        return "ddl"
+    if first == "TRUNCATE":
+        return "truncate"
+    if first == "DELETE":
+        return "delete"
+    if first == "UPDATE":
+        return "update"
+    if first == "INSERT":
+        if "OR REPLACE" in sql_upper or "ON CONFLICT" in sql_upper:
+            return "upsert"
+        return "insert"
+    return "insert"  # safe fallback for unknown/exotic statements
+
+
 # ── Internal op ───────────────────────────────────────────────────────────────
 
 
 class _Op:
-    __slots__ = ("sql", "params", "many", "rows", "df", "event", "error", "enqueued_at", "task_id")
+    __slots__ = ("sql", "params", "many", "rows", "df", "event", "error", "enqueued_at", "task_id", "op_type")
 
     def __init__(
         self,
@@ -57,6 +83,7 @@ class _Op:
         self.error: BaseException | None = None
         self.enqueued_at: float = time.monotonic()
         self.task_id: str | None = task_id
+        self.op_type: str = _classify_op_type(sql, df=df, many=many)
 
 
 _STOP = object()  # sentinel
@@ -71,7 +98,7 @@ _db_path: Path | None = None
 
 _stats_lock = threading.Lock()
 _latencies: deque = deque(maxlen=500)  # rolling window of execute_ms values
-_attr_stats: dict[str, dict[str, int]] = {}  # task_id → {"ops": int, "rows": int}
+_attr_stats: dict[str, dict] = {}  # task_id → op-type breakdown + row count
 _stats: dict[str, Any] = {
     "writes_total": 0,
     "writes_error": 0,
@@ -116,10 +143,32 @@ def get_writer_stats() -> dict:
     return snap
 
 
-def get_attribution_snapshot() -> dict[str, dict[str, int]]:
-    """Return per-task write attribution: ``{task_id: {"ops": N, "rows": N}}``."""
+def get_attribution_snapshot() -> dict[str, dict]:
+    """Return per-task write attribution with op-type breakdown and owner_id.
+
+    Each value dict contains:
+        owner_id   — int: task owner (0 for system/background tasks)
+        inserts    — int: plain INSERT statement count
+        upserts    — int: INSERT OR REPLACE / ON CONFLICT count
+        updates    — int: UPDATE statement count
+        deletes    — int: DELETE statement count
+        truncates  — int: TRUNCATE statement count
+        ddls       — int: DDL statement count (CREATE/ALTER/DROP)
+        bulk_loads — int: DataFrame vectorised bulk-import count
+        rows       — int: total rows written across all op types
+    """
+    try:
+        from core.tasks.queue import get_task as _get_task
+    except Exception:
+        def _get_task(_): return None  # noqa: E731
     with _stats_lock:
-        return {tid: dict(vals) for tid, vals in _attr_stats.items()}
+        snap: dict[str, dict] = {}
+        for tid, vals in _attr_stats.items():
+            entry = dict(vals)
+            task = _get_task(tid)
+            entry["owner_id"] = task.owner_id if task is not None else 0
+            snap[tid] = entry
+        return snap
 
 
 # ── Writer loop ────────────────────────────────────────────────────────────────
@@ -144,9 +193,9 @@ def _writer_loop(db_path: Path) -> None:
             # blocking mid-burst.  The default 16 MB threshold causes a multi-
             # second stall after a large market-order executemany() fires it.
             con.execute("SET checkpoint_threshold='10GB'")
-            logger.debug("[writer] Connected to %s", db_path)
+            logger.debug("Connected to %s", db_path)
         except Exception as exc:
-            logger.error("[writer] Failed to open connection: %s", exc)
+            logger.error("Failed to open connection: %s", exc)
             con = None
 
     def _checkpoint() -> None:
@@ -162,9 +211,9 @@ def _writer_loop(db_path: Path) -> None:
                     _stats["last_checkpoint_at"] = time.monotonic()
                     _stats["last_checkpoint_ms"] = elapsed_ms
                     _stats["checkpoints_total"] += 1
-                logger.info("[writer] checkpoint %.0fms — %d ops flushed to disk", elapsed_ms, to_flush)
+                logger.info("checkpoint %.0fms — %d ops flushed to disk", elapsed_ms, to_flush)
             except Exception as exc:
-                logger.debug("[writer] Checkpoint failed: %s", exc)
+                logger.debug("Checkpoint failed: %s", exc)
 
     _connect()
 
@@ -218,7 +267,7 @@ def _writer_loop(db_path: Path) -> None:
         t0 = time.monotonic()
         depth = _write_queue.qsize()
         if depth > 100:
-            logger.warning("[writer] queue depth %d — writes are backing up", depth)
+            logger.warning("queue depth %d — writes are backing up", depth)
         try:
             if con is None:
                 _connect()
@@ -241,7 +290,7 @@ def _writer_loop(db_path: Path) -> None:
                         con.executemany(op.sql, combined)
                         if len(batch) > 1:
                             logger.debug(
-                                "[writer] coalesced %d ops → %d rows",
+                                "coalesced %d ops → %d rows",
                                 len(batch), len(combined),
                             )
                 else:
@@ -257,7 +306,7 @@ def _writer_loop(db_path: Path) -> None:
             execute_ms = (time.monotonic() - t0) * 1000
             if execute_ms > 500:
                 logger.warning(
-                    "[writer] slow write %.0fms (queued %.0fms) | %d ops | %s",
+                    "slow write %.0fms (queued %.0fms) | %d ops | %s",
                     execute_ms, enqueue_wait_ms, len(batch), op.sql.strip()[:80],
                 )
             with _stats_lock:
@@ -266,14 +315,21 @@ def _writer_loop(db_path: Path) -> None:
                 _stats["last_execute_ms"] = execute_ms
                 _stats["last_write_latency_ms"] = execute_ms
                 _latencies.append(execute_ms)
-                # ── Attribution: accumulate per-task op/row counts ────────
+                # ── Attribution: accumulate per-task op-type counts ───────
                 for b in batch:
                     if b.task_id:
                         entry = _attr_stats.get(b.task_id)
                         if entry is None:
-                            entry = {"ops": 0, "rows": 0}
+                            entry = {
+                                "inserts": 0, "upserts": 0, "updates": 0,
+                                "deletes": 0, "truncates": 0, "ddls": 0,
+                                "bulk_loads": 0, "rows": 0,
+                            }
                             _attr_stats[b.task_id] = entry
-                        entry["ops"] += 1
+                        # Increment the correct op-type counter
+                        type_key = b.op_type + "s"  # insert→inserts, ddl→ddls, bulk_load→bulk_loads
+                        entry[type_key] = entry.get(type_key, 0) + 1
+                        # Accumulate row count
                         if b.many and b.rows:
                             entry["rows"] += len(b.rows)
                         elif b.df is not None:
@@ -281,7 +337,7 @@ def _writer_loop(db_path: Path) -> None:
                         else:
                             entry["rows"] += 1
         except Exception as exc:
-            logger.warning("[writer] Write failed (%s): %s", type(exc).__name__, exc)
+            logger.warning("Write failed (%s): %s", type(exc).__name__, exc)
             for b in batch:
                 b.error = exc
             with _stats_lock:
@@ -302,7 +358,7 @@ def _writer_loop(db_path: Path) -> None:
             con.close()
         except Exception:
             pass
-    logger.debug("[writer] Thread stopped.")
+    logger.debug("Thread stopped.")
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -319,7 +375,7 @@ def start_writer(db_path: str | Path | None = None) -> None:
         return  # already running
 
     if db_path is None:
-        from core.db.publicDB import get_database_path
+        from core.db.public import get_database_path
         db_path = get_database_path()
 
     _db_path = Path(db_path)
@@ -330,7 +386,14 @@ def start_writer(db_path: str | Path | None = None) -> None:
         daemon=True,
     )
     _writer_thread.start()
-    logger.info("[writer] Started — serializing writes to %s", _db_path)
+    logger.info("Started — serializing writes to %s", _db_path)
+
+    # Register with the central lifecycle coordinator for graceful shutdown.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().register("db-writer", _writer_thread, stop_fn=stop_writer)
+    except Exception:
+        pass  # lifecycle not yet initialised — caller manages shutdown
 
 
 def stop_writer(timeout: float = 10.0) -> None:
@@ -347,7 +410,7 @@ def stop_writer(timeout: float = 10.0) -> None:
     _write_queue.put(_STOP)
     _writer_thread.join(timeout=timeout)
     _writer_thread = None
-    logger.info("[writer] Stopped.")
+    logger.info("Stopped.")
 
 
 def is_running() -> bool:
@@ -365,13 +428,13 @@ def _submit(op: _Op) -> None:
 
 def _current_task_id() -> str | None:
     """Read the calling thread's active task_id (if any)."""
-    from core.queue._context import _thread_task
+    from core.tasks.context import _thread_task
     return getattr(_thread_task, "task_id", None)
 
 
 def _fallback_write(sql: str, params: list[Any] | None) -> None:
     """Direct-connection fallback used when the writer is not running."""
-    from core.db.publicDB import connect, get_database_path
+    from core.db.public import connect, get_database_path
     con = connect(get_database_path())
     try:
         con.execute(sql, params or [])
@@ -382,7 +445,7 @@ def _fallback_write(sql: str, params: list[Any] | None) -> None:
 
 def _fallback_executemany(sql: str, rows: list[Sequence[Any]]) -> None:
     """Direct-connection fallback used when the writer is not running."""
-    from core.db.publicDB import connect, get_database_path
+    from core.db.public import connect, get_database_path
     con = connect(get_database_path())
     try:
         if rows:
@@ -457,7 +520,7 @@ def db_write_dataframe(sql: str, df: Any) -> int:
         return 0
     if not is_running():
         # Fallback: direct connection
-        from core.db.publicDB import connect, get_database_path
+        from core.db.public import connect, get_database_path
         con = connect(get_database_path())
         try:
             con.register("_df_staging", df)

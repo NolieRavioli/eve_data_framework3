@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Database Admin — EVE Data Framework{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('db_viewer.static', filename='db_browser.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <h1>Database Admin</h1>
+    <div class="pg-sub">Global warehouse statistics</div>
+  </div>
+  <div class="toolbar">
+    <a href="{{ url_for('db_viewer.index') }}" class="btn btn-g">← Back</a>
+    <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-a">Public Browser</a>
+  </div>
+</div>
+
+{# Data island for JS #}
+<div id="db-stats-app"
+     data-ws-url="/db/admin/ws"
+     data-owner-id=""
+     data-is-admin="1"
+     style="display:none"></div>
+
+<div class="pg-body">
+
+  {# ── Global DB Write Activity ──────────────────────────── #}
+  <div class="card">
+    <h2>DB Write Activity <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">all owners · since last restart · live</span></h2>
+
+    {# Op-type overview mini-cards #}
+    <div class="stat-row" style="flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+      {% set ops = [
+        ('inserts',   'INSERT',    'insert'),
+        ('upserts',   'UPSERT',    'upsert'),
+        ('updates',   'UPDATE',    'update'),
+        ('deletes',   'DELETE',    'delete'),
+        ('truncates', 'TRUNCATE',  'truncate'),
+        ('ddls',      'DDL',       'ddl'),
+        ('bulk_loads','BULK LOAD', 'bulk_load'),
+        ('reads',     'READ',      'read'),
+      ] %}
+      {% for key, label, wkey in ops %}
+      <div class="stat-card card" style="min-width:120px">
+        <div class="stat-label">{{ label }}</div>
+        <div class="stat-value" id="stat-count-{{ key }}">{{ "{:,}".format(global_totals.get(key, 0)) }}</div>
+        <div style="font-size:.7rem;color:var(--text-muted)">
+          <span id="stat-units-{{ key }}">{{ "%.2f"|format(global_totals.get(key, 0) * weights.get(wkey, 0)) }}</span> db-units
+        </div>
+      </div>
+      {% endfor %}
+      <div class="stat-card card" style="min-width:120px;border-left:2px solid var(--accent)">
+        <div class="stat-label">Total db-units</div>
+        <div class="stat-value" id="stat-total-db-units">{{ "%.2f"|format(global_totals.get('db_units', 0)) }}</div>
+        <div style="font-size:.7rem;color:var(--text-muted)">
+          <span id="stat-total-rows">{{ "{:,}".format(global_totals.get('rows', 0)) }}</span> rows
+        </div>
+      </div>
+    </div>
+
+    {# Per-owner breakdown table #}
+    {% if owner_totals %}
+    <div class="table-wrap tw-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Owner</th>
+            <th class="num">INSERT</th>
+            <th class="num">UPSERT</th>
+            <th class="num">UPDATE</th>
+            <th class="num">DELETE</th>
+            <th class="num">TRUNCATE</th>
+            <th class="num">DDL</th>
+            <th class="num">BULK LOAD</th>
+            <th class="num">READ</th>
+            <th class="num">Rows</th>
+            <th class="num">db-units</th>
+          </tr>
+        </thead>
+        <tbody id="db-stats-tbody">
+          {% for oid, row in owner_totals.items()|sort %}
+          <tr{% if oid == "SYSTEM" %} class="system-row"{% endif %}>
+            <td>{{ oid }}</td>
+            <td class="num">{{ row.get('inserts', 0) }}</td>
+            <td class="num">{{ row.get('upserts', 0) }}</td>
+            <td class="num">{{ row.get('updates', 0) }}</td>
+            <td class="num">{{ row.get('deletes', 0) }}</td>
+            <td class="num">{{ row.get('truncates', 0) }}</td>
+            <td class="num">{{ row.get('ddls', 0) }}</td>
+            <td class="num">{{ row.get('bulk_loads', 0) }}</td>
+            <td class="num">{{ row.get('reads', 0) }}</td>
+            <td class="num">{{ "{:,}".format(row.get('rows', 0)) }}</td>
+            <td class="num db-units">{{ "%.2f"|format(row.get('db_units', 0)) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty" style="padding:1.5rem 0">
+      <p>No write activity recorded yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Summary row ─────────────────────────────────────── #}
+  <div class="stat-row">
+    <div class="stat-card card">
+      <div class="stat-label">Tables</div>
+      <div class="stat-value">{{ table_count }}</div>
+    </div>
+    <div class="stat-card card">
+      <div class="stat-label">Total Rows</div>
+      <div class="stat-value">{{ "{:,}".format(total_rows) }}</div>
+    </div>
+  </div>
+
+  {# ── Table breakdown ─────────────────────────────────── #}
+  <div class="card">
+    <h2>Table Sizes</h2>
+    {% if table_counts %}
+    <div class="table-wrap tw-scroll">
+      <table>
+        <thead><tr><th>Table</th><th style="text-align:right">Row Count</th></tr></thead>
+        <tbody>
+          {% for tname, cnt in table_counts.items() %}
+          <tr>
+            <td>{{ tname }}</td>
+            <td style="text-align:right">{{ "{:,}".format(cnt) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty" style="padding:2rem 0">
+      <div class="ei">⛁</div>
+      <p>No tables in the public warehouse.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('db_viewer.static', filename='db_stats.js') }}"></script>
+{% endblock %}

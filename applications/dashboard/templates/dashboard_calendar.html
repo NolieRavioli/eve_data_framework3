@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Calendar — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Calendar</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if calendar_events %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Events</div>
+        <span class="pill">{{ calendar_events|length }} events</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Date</th>
+            <th>Title</th>
+            <th>Response</th>
+          </tr></thead>
+          <tbody>
+            {% for e in calendar_events %}
+            <tr>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ e.event_date or '—' }}</td>
+              <td>{{ e.title or '(untitled)' }}</td>
+              <td><span class="pill" style="font-size:.68rem">{{ e.event_response or '—' }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No calendar data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

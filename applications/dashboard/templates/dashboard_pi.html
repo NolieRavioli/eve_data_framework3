@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Planetary Interaction — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Planetary Interaction</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if planets %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Colonies</div>
+        <span class="pill">{{ planets|length }} planets</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Planet ID</th>
+            <th>Type</th>
+            <th>Upgrade Level</th>
+            <th>Pins</th>
+            <th>Last Update</th>
+          </tr></thead>
+          <tbody>
+            {% for p in planets %}
+            <tr>
+              <td class="mono">{{ p.planet_id or '—' }}</td>
+              <td>{{ p.planet_type or '—' }}</td>
+              <td class="text-right mono">{{ p.upgrade_level or 0 }}</td>
+              <td class="text-right mono">{{ p.num_pins or '—' }}</td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ p.last_update or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No PI data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

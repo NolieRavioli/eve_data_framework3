@@ -13,7 +13,7 @@
     <div class="pg-sub">Live logs, privilege management, and public database overview.</div>
   </div>
   <div class="toolbar">
-    <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">DB Browser</a>
+    <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-a">DB Browser</a>
   </div>
 </div>
 
@@ -49,7 +49,7 @@
               {% for user in stats.users %}
               <tr data-owner="{{ user.owner_id }}" data-role="{% if user.is_site_owner %}site owner{% elif user.is_admin %}admin{% else %}user{% endif %}">
                 <td class="mono">
-                  <a href="{{ url_for('db_browser.index', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
+                  <a href="{{ url_for('db_viewer.private_browser', owner_id=user.owner_id) }}" class="lnk" style="font-family:inherit">{{ user.owner_id }}</a>
                 </td>
                 <td>{{ user.character_count }}</td>
                 <td>
@@ -147,7 +147,7 @@
           <h2 style="margin-bottom:0.35rem">Public Database Table Counts</h2>
           <div class="muted" style="font-size:0.8rem">Fast snapshot of row counts in the shared database.</div>
         </div>
-        <a href="{{ url_for('db_browser.index') }}" class="btn btn-a">Open SQL Browser</a>
+        <a href="{{ url_for('db_viewer.public_browser') }}" class="btn btn-a">Open SQL Browser</a>
       </div>
 
       <div class="table-wrap">

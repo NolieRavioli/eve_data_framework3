@@ -524,7 +524,7 @@ Provides:
 
     Generic executor for any operation in the manifest.  Routes all HTTP
 
-    through core.queue.esi_req.esi_request — never calls requests directly.
+    through core.esi.request.esi_request — never calls requests directly.
 
 
 
@@ -754,11 +754,11 @@ def execute_operation(
 
     Response dict keys: route, url, status_code, headers, body, queue_channel.
 
-    All HTTP goes through core.queue.esi_req.esi_request.
+    All HTTP goes through core.esi.request.esi_request.
 
     """
 
-    from core.queue.esi_req import esi_request
+    from core.esi.request import esi_request
 
 
 

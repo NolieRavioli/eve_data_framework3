@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Market Orders — {{ character.name }} - Dashboard{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('dashboard.static', filename='dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<div class="pg-hd">
+  <div>
+    <div class="pg-sub"><a href="{{ url_for('dashboard.home') }}">Dashboard</a> · <a href="{{ url_for('dashboard.character', character_id=character.character_id) }}">{{ character.name }}</a></div>
+    <h1>Personal Orders</h1>
+  </div>
+</div>
+
+<div class="pg-body dash-layout">
+  {% include "_character_nav.html" %}
+
+  <div class="dash-content">
+    {% if orders %}
+    <div class="card">
+      <div class="section-head">
+        <div class="ct" style="margin:0">Orders</div>
+        <span class="pill">{{ orders|length }} orders</span>
+      </div>
+      <div class="tw tw-scroll">
+        <table>
+          <thead><tr>
+            <th>Type</th>
+            <th>Buy/Sell</th>
+            <th class="text-right">Price</th>
+            <th class="text-right">Volume</th>
+            <th>State</th>
+            <th>Issued</th>
+          </tr></thead>
+          <tbody>
+            {% for o in orders %}
+            <tr>
+              <td>{{ o.type_name or o.get('type_id', '—') }}</td>
+              <td>
+                {% if o.is_buy_order %}<span style="color:var(--good)">Buy</span>{% else %}<span style="color:var(--bad)">Sell</span>{% endif %}
+              </td>
+              <td class="text-right mono">{{ "{:,.2f}".format(o.price or 0) }}</td>
+              <td class="text-right mono">{{ o.volume_remain or 0 }}/{{ o.volume_total or 0 }}</td>
+              <td><span class="pill" style="font-size:.68rem">{{ o.state or '—' }}</span></td>
+              <td class="mono" style="font-size:.82rem;white-space:nowrap">{{ o.issued or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty"><div class="ei">~</div><p>No personal market order data collected yet.</p></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
