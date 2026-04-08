@@ -80,3 +80,24 @@ def restart_process() -> None:
     """
     logger.info("[updater] Restarting: %s %s", sys.executable, " ".join(sys.argv))
     os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+def get_latest_github_release() -> str | None:
+    """Fetch the latest release tag from GitHub.
+
+    Returns the ``tag_name`` string (e.g. ``'v0.2.1'``) or ``None`` if the
+    request fails for any reason (network error, rate-limited, private repo,
+    parse error).
+    """
+    import requests
+    try:
+        resp = requests.get(
+            "https://api.github.com/repos/NolieRavioli/eve_data_framework3/releases/latest",
+            headers={"User-Agent": "eve-data-framework"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("tag_name")
+    except Exception:
+        pass
+    return None
