@@ -1,8 +1,8 @@
-"""DuckDB-backed SDE facade with YAML fallback.
+"""DuckDB-backed SDE facade with JSONL fallback.
 
 The public helper surface stays stable for the rest of the app, but the primary
 backend is the persisted `_publicData/public.duckdb` warehouse. When that file is
-missing, helpers fall back to direct YAML reads from `_sde`.
+missing, helpers fall back to direct JSONL reads from `_sde`.
 """
 
 import json
@@ -10,8 +10,6 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from core.db import public as sde_store
 
@@ -52,10 +50,6 @@ _type_materials: dict[int, list[dict]] | None = None
 _type_dogma: dict[int, dict] | None = None
 
 
-def _yaml_loader():
-    return getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-
-
 def _sde_root() -> Path:
     return Path(os.getenv("SDE_PATH", "_sde"))
 
@@ -82,12 +76,19 @@ def _query_one(sql: str, params: list[Any] | None = None) -> dict | None:
     return query_one(sql, params, _warehouse_path())
 
 
-def _load_yaml(rel_path: str) -> Any:
+def _load_jsonl(rel_path: str) -> list[dict]:
+    """Load a JSONL file from the SDE root, returning a list of dicts."""
     path = _sde_root() / rel_path
     if not path.exists():
-        return None
-    with path.open("r", encoding="utf-8") as handle:
-        return yaml.load(handle, Loader=_yaml_loader())
+        return []
+    entries: list[dict] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            entries.append(json.loads(line))
+    return entries
 
 
 def _warm_types() -> None:
@@ -112,15 +113,16 @@ def _warm_types() -> None:
             _type_to_market_group[type_id] = row.get("market_group_id")
         return
 
-    data = _load_yaml("fsd/types.yaml") or {}
-    for type_id, props in data.items():
-        tid = int(type_id)
-        name = ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else None)
+    data = _load_jsonl("types.jsonl")
+    for entry in data:
+        tid = int(entry.get("_key", 0))
+        name_dict = entry.get("name") or entry.get("nameID") or {}
+        name = name_dict.get("en") if isinstance(name_dict, dict) else None
         if name:
             _type_id_to_name[tid] = name
             _name_to_type_id[name.lower()] = tid
-        _type_to_group[tid] = props.get("groupID")
-        _type_to_market_group[tid] = props.get("marketGroupID")
+        _type_to_group[tid] = entry.get("groupID")
+        _type_to_market_group[tid] = entry.get("marketGroupID")
 
 
 def _warm_groups() -> None:
@@ -137,13 +139,14 @@ def _warm_groups() -> None:
                 "published": row.get("published"),
             }
         return
-    data = _load_yaml("fsd/groups.yaml") or {}
-    for group_id, props in data.items():
-        gid = int(group_id)
+    data = _load_jsonl("groups.jsonl")
+    for entry in data:
+        gid = int(entry.get("_key", 0))
+        name_dict = entry.get("name") or entry.get("nameID") or {}
         _groups[gid] = {
-            "name": ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else f"Group {gid}"),
-            "categoryID": props.get("categoryID"),
-            "published": props.get("published", False),
+            "name": (name_dict.get("en") if isinstance(name_dict, dict) else f"Group {gid}"),
+            "categoryID": entry.get("categoryID"),
+            "published": entry.get("published", False),
         }
 
 
@@ -157,10 +160,11 @@ def _warm_categories() -> None:
         for row in rows:
             _categories[int(row["category_id"])] = row.get("name_en") or f"Category {row['category_id']}"
         return
-    data = _load_yaml("fsd/categories.yaml") or {}
-    for category_id, props in data.items():
-        cid = int(category_id)
-        _categories[cid] = ((props.get("name") or {}).get("en") if isinstance(props.get("name"), dict) else f"Category {cid}")
+    data = _load_jsonl("categories.jsonl")
+    for entry in data:
+        cid = int(entry.get("_key", 0))
+        name_dict = entry.get("name") or entry.get("nameID") or {}
+        _categories[cid] = (name_dict.get("en") if isinstance(name_dict, dict) else f"Category {cid}")
 
 
 def _warm_market_tree() -> None:
@@ -192,14 +196,15 @@ def _warm_market_tree() -> None:
             if node is not None:
                 node["types"].append(int(row["type_id"]))
     else:
-        data = _load_yaml("fsd/marketGroups.yaml") or {}
-        for group_id, props in data.items():
-            gid = int(group_id)
+        data = _load_jsonl("marketGroups.jsonl")
+        for entry in data:
+            gid = int(entry.get("_key", 0))
+            name_dict = entry.get("nameID") or entry.get("name") or {}
             _market_flat[gid] = {
                 "id": gid,
-                "name": ((props.get("nameID") or {}).get("en") if isinstance(props.get("nameID"), dict) else f"Unknown {gid}"),
-                "description": ((props.get("descriptionID") or {}).get("en") if isinstance(props.get("descriptionID"), dict) else ""),
-                "parent": props.get("parentGroupID"),
+                "name": (name_dict.get("en") if isinstance(name_dict, dict) else f"Unknown {gid}"),
+                "description": ((entry.get("descriptionID") or {}).get("en") if isinstance(entry.get("descriptionID"), dict) else ""),
+                "parent": entry.get("parentGroupID"),
                 "children": [],
                 "types": [],
             }
@@ -224,31 +229,44 @@ def _warm_universe() -> None:
     _system_id_to_security = {}
     _region_id_to_name = {}
     if _warehouse_ready():
-        rows = _query_rows("SELECT system_id, region_id, system_name, security FROM sde_systems")
+        rows = _query_rows(
+            "SELECT system_id, region_id, name_en, security_status FROM sde_mapSolarSystems"
+        )
         for row in rows:
             system_id = int(row["system_id"])
             _system_id_to_region[system_id] = row.get("region_id")
-            _system_id_to_name[system_id] = row.get("system_name") or f"SystemID {system_id}"
-            _system_id_to_security[system_id] = row.get("security")
-        region_rows = _query_rows("SELECT region_id, region_name FROM sde_regions")
+            _system_id_to_name[system_id] = row.get("name_en") or f"SystemID {system_id}"
+            _system_id_to_security[system_id] = row.get("security_status")
+        region_rows = _query_rows("SELECT region_id, name_en FROM sde_mapRegions")
         for row in region_rows:
-            _region_id_to_name[int(row["region_id"])] = row.get("region_name") or f"RegionID {row['region_id']}"
+            _region_id_to_name[int(row["region_id"])] = row.get("name_en") or f"RegionID {row['region_id']}"
         return
 
-    for system_path in _sde_root().rglob("solarsystem.yaml"):
-        with system_path.open("r", encoding="utf-8") as handle:
-            data = yaml.load(handle, Loader=_yaml_loader()) or {}
-        system_id = int(data.get("solarSystemID"))
-        _system_id_to_name[system_id] = system_path.parent.name
-        _system_id_to_security[system_id] = data.get("security")
-        region_path = system_path.parent.parent.parent / "region.yaml"
-        if region_path.exists():
-            with region_path.open("r", encoding="utf-8") as handle:
-                region = yaml.load(handle, Loader=_yaml_loader()) or {}
-            region_id = region.get("regionID")
-            _system_id_to_region[system_id] = region_id
-            if region_id is not None:
-                _region_id_to_name[int(region_id)] = region_path.parent.name
+    # JSONL fallback: read from flat files
+    jsonl_systems = _sde_root() / "mapSolarSystems.jsonl"
+    jsonl_regions = _sde_root() / "mapRegions.jsonl"
+    if jsonl_systems.exists():
+        with jsonl_systems.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                data = json.loads(line)
+                system_id = int(data.get("_key") or data.get("solarSystemID", 0))
+                name_dict = data.get("name") or {}
+                _system_id_to_name[system_id] = name_dict.get("en") if isinstance(name_dict, dict) else f"SystemID {system_id}"
+                _system_id_to_security[system_id] = data.get("securityStatus")
+                _system_id_to_region[system_id] = data.get("regionID")
+    if jsonl_regions.exists():
+        with jsonl_regions.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                data = json.loads(line)
+                region_id = int(data.get("_key") or data.get("regionID", 0))
+                name_dict = data.get("name") or {}
+                _region_id_to_name[region_id] = name_dict.get("en") if isinstance(name_dict, dict) else f"RegionID {region_id}"
 
 
 def _warm_blueprints() -> None:
@@ -274,13 +292,13 @@ def _warm_blueprints() -> None:
             }
         return
 
-    data = _load_yaml("fsd/blueprints.yaml") or {}
-    for blueprint_type_id, props in data.items():
-        activities = props.get("activities") or {}
+    data = _load_jsonl("blueprints.jsonl")
+    for entry in data:
+        activities = entry.get("activities") or {}
         manufacturing = activities.get("manufacturing") or {}
-        _blueprints[int(blueprint_type_id)] = {
-            "blueprintTypeID": int(blueprint_type_id),
-            "maxProductionLimit": props.get("maxProductionLimit"),
+        _blueprints[int(entry.get("_key", 0))] = {
+            "blueprintTypeID": int(entry.get("_key", 0)),
+            "maxProductionLimit": entry.get("maxProductionLimit"),
             "materials": manufacturing.get("materials", []),
             "products": manufacturing.get("products", []),
             "time": manufacturing.get("time"),
@@ -299,9 +317,9 @@ def _warm_type_materials() -> None:
             raw = row.get("materials_json")
             _type_materials[int(row["type_id"])] = json.loads(raw) if raw else []
         return
-    data = _load_yaml("fsd/typeMaterials.yaml") or {}
-    for type_id, props in data.items():
-        _type_materials[int(type_id)] = props.get("materials", [])
+    data = _load_jsonl("typeMaterials.jsonl")
+    for entry in data:
+        _type_materials[int(entry.get("_key", 0))] = entry.get("materials", [])
 
 
 def _warm_type_dogma() -> None:
@@ -327,11 +345,11 @@ def _warm_type_dogma() -> None:
                 "dogmaEffects": [e["effectID"] for e in effects_list if "effectID" in e],
             }
         return
-    data = _load_yaml("fsd/typeDogma.yaml") or {}
-    for type_id, props in data.items():
-        _type_dogma[int(type_id)] = {
-            "dogmaAttributes": {str(item["attributeID"]): item.get("value") for item in props.get("dogmaAttributes", [])},
-            "dogmaEffects": [item["effectID"] for item in props.get("dogmaEffects", [])],
+    data = _load_jsonl("typeDogma.jsonl")
+    for entry in data:
+        _type_dogma[int(entry.get("_key", 0))] = {
+            "dogmaAttributes": {str(item["attributeID"]): item.get("value") for item in (entry.get("dogmaAttributes") or [])},
+            "dogmaEffects": [item["effectID"] for item in (entry.get("dogmaEffects") or [])],
         }
 
 

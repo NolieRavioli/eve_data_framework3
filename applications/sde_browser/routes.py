@@ -17,7 +17,7 @@ sde_bp = Blueprint("sde_browser", __name__,
 
 _SDE_TABLES = [
     "sde_types", "sde_groups", "sde_categories", "sde_marketGroups",
-    "sde_regions", "sde_constellations", "sde_systems", "sde_staStations",
+    "sde_mapRegions", "sde_mapConstellations", "sde_mapSolarSystems", "sde_npcStations",
 ]
 
 
@@ -66,13 +66,13 @@ def lookup():
                 results["types"].append({"type_id": row[0], "name": row[1]})
 
             srow = con.execute(
-                "SELECT system_id, system_name FROM sde_systems WHERE system_id = ?", [tid]
+                "SELECT system_id, name_en FROM sde_mapSolarSystems WHERE system_id = ?", [tid]
             ).fetchone()
             if srow:
                 results["systems"].append({"system_id": srow[0], "name": srow[1]})
 
             rrow = con.execute(
-                "SELECT region_id, region_name FROM sde_regions WHERE region_id = ?", [tid]
+                "SELECT region_id, name_en FROM sde_mapRegions WHERE region_id = ?", [tid]
             ).fetchone()
             if rrow:
                 results["regions"].append({"region_id": rrow[0], "name": rrow[1]})
@@ -88,7 +88,7 @@ def lookup():
                 results["types"].append({"type_id": r[0], "name": r[1]})
 
         systems = con.execute(
-            "SELECT system_id, system_name FROM sde_systems WHERE system_name ILIKE ? LIMIT 50",
+            "SELECT system_id, name_en FROM sde_mapSolarSystems WHERE name_en ILIKE ? LIMIT 50",
             [name_param],
         ).fetchall()
         for r in systems:
@@ -96,7 +96,7 @@ def lookup():
                 results["systems"].append({"system_id": r[0], "name": r[1]})
 
         regions = con.execute(
-            "SELECT region_id, region_name FROM sde_regions WHERE region_name ILIKE ? LIMIT 50",
+            "SELECT region_id, name_en FROM sde_mapRegions WHERE name_en ILIKE ? LIMIT 50",
             [name_param],
         ).fetchall()
         for r in regions:
@@ -138,13 +138,16 @@ def type_detail(type_id: int):
 def system_detail(system_id: int):
     row = db.query_one(
         """
-        SELECT s.system_id, s.system_name, s.constellation_id, s.region_id,
-               s.security, s.sun_type_id, s.planet_count, s.stargate_count,
-               cn.constellation_name,
-               r.region_name
-        FROM sde_systems s
-        LEFT JOIN sde_constellations cn ON s.constellation_id = cn.constellation_id
-        LEFT JOIN sde_regions r ON s.region_id = r.region_id
+        SELECT s.system_id, s.name_en AS system_name,
+               s.constellation_id, s.region_id,
+               s.security_status AS security, s.star_id AS sun_type_id,
+               json_array_length(s.planet_ids_json) AS planet_count,
+               json_array_length(s.stargate_ids_json) AS stargate_count,
+               cn.name_en AS constellation_name,
+               r.name_en AS region_name
+        FROM sde_mapSolarSystems s
+        LEFT JOIN sde_mapConstellations cn ON s.constellation_id = cn.constellation_id
+        LEFT JOIN sde_mapRegions r ON s.region_id = r.region_id
         WHERE s.system_id = ?
         """,
         [system_id],
@@ -152,7 +155,7 @@ def system_detail(system_id: int):
     stations = []
     if row:
         stations = db.query(
-            "SELECT station_id, station_name FROM sde_staStations WHERE solar_system_id = ? ORDER BY station_name",
+            "SELECT station_id, station_id AS station_name FROM sde_npcStations WHERE solar_system_id = ? ORDER BY station_id",
             [system_id],
         )
     return render_template(
@@ -168,7 +171,7 @@ def system_detail(system_id: int):
 @require_admin
 def region_detail(region_id: int):
     row = db.query_one(
-        "SELECT region_id, region_name, faction_id FROM sde_regions WHERE region_id = ?",
+        "SELECT region_id, name_en AS region_name, faction_id FROM sde_mapRegions WHERE region_id = ?",
         [region_id],
     )
     constellations = []
@@ -176,18 +179,18 @@ def region_detail(region_id: int):
     if row:
         constellations = db.query(
             """
-            SELECT cn.constellation_id, cn.constellation_name,
+            SELECT cn.constellation_id, cn.name_en AS constellation_name,
                    COUNT(s.system_id) AS system_count
-            FROM sde_constellations cn
-            LEFT JOIN sde_systems s ON s.constellation_id = cn.constellation_id
+            FROM sde_mapConstellations cn
+            LEFT JOIN sde_mapSolarSystems s ON s.constellation_id = cn.constellation_id
             WHERE cn.region_id = ?
-            GROUP BY cn.constellation_id, cn.constellation_name
-            ORDER BY cn.constellation_name
+            GROUP BY cn.constellation_id, cn.name_en
+            ORDER BY cn.name_en
             """,
             [region_id],
         )
         sc = db.scalar(
-            "SELECT COUNT(*) FROM sde_staStations WHERE region_id = ?",
+            "SELECT COUNT(*) FROM sde_npcStations WHERE solar_system_id IN (SELECT system_id FROM sde_mapSolarSystems WHERE region_id = ?)",
             [region_id],
         )
         station_count = sc or 0

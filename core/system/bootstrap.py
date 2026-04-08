@@ -96,14 +96,13 @@ def prepare_sde_sources() -> None:
     """
     import os
     sde_root = Path(os.getenv("SDE_PATH", "_sde"))
-    if (sde_root / "fsd").exists():
+    if any(sde_root.glob("*.jsonl")):
         return  # Already available
 
     logger.info("SDE sources not found — downloading and preparing...")
-    from core.db.sde_loader import download_sde, unzip_sde, migrate_sde_inplace
+    from core.db.sde_loader import download_sde, unzip_sde
     download_sde()
     unzip_sde()
-    migrate_sde_inplace()
     logger.info("SDE sources ready.")
 
 
@@ -118,7 +117,7 @@ def update_sde_full() -> dict:
     Returns the warehouse status dict from ``core.db.sde_loader.rebuild_sde_warehouse()``.
     """
     from core.db.sde_loader import (
-        download_sde, unzip_sde, migrate_sde_inplace,
+        download_sde, unzip_sde,
         rebuild_sde_warehouse, cleanup,
     )
     from utils.build.sde_codegen import generate_sde_schema
@@ -127,8 +126,7 @@ def update_sde_full() -> dict:
     source_meta = download_sde()
     try:
         unzip_sde()
-        migrate_sde_inplace()
-        logger.info("Regenerating SDE schema from extracted YAML files...")
+        logger.info("Regenerating SDE schema from extracted JSONL files...")
         sde_result = generate_sde_schema()
         logger.info("SDE schema done — %d tables", sde_result["table_count"])
         status = rebuild_sde_warehouse(source_meta)

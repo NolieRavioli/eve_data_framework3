@@ -31,9 +31,9 @@ _KEY_TABLES: list[str] = [
     "esi_schemas",
     "esi_scopes",
     "sde_types",
-    "sde_regions",
-    "sde_systems",
-    "sde_staStations",
+    "sde_mapRegions",
+    "sde_mapSolarSystems",
+    "sde_npcStations",
     "sde_groups",
     "sde_categories",
 ]

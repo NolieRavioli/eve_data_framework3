@@ -227,39 +227,18 @@
       border-color: var(--border);
       color: var(--text);
     }
-    .eve-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.6rem;
-      padding: 0.8rem 1.6rem;
-      border: 1px solid rgba(117,157,195,0.2);
-      border-radius: 999px;
-      background: linear-gradient(135deg, #1a2a3a, #0e1c2c);
-      color: var(--text-strong);
-      font-family: inherit;
-      font-size: 0.9rem;
-      font-weight: 800;
-      text-decoration: none;
-      cursor: pointer;
-      transition: opacity 0.14s ease, transform 0.14s ease, border-color 0.14s ease;
-      letter-spacing: 0.01em;
+    .eve-sso-link {
+      display: inline-block;
+      transition: opacity 0.14s ease, transform 0.14s ease;
     }
-    .eve-btn:hover {
-      opacity: 0.92;
+    .eve-sso-link:hover {
+      opacity: 0.9;
       transform: translateY(-2px);
-      border-color: rgba(117,157,195,0.4);
     }
-    .eve-btn .eve-logo {
-      width: 1.5rem;
-      height: 1.5rem;
-      border-radius: 50%;
-      background: linear-gradient(135deg, rgba(105,210,255,0.2), rgba(244,181,76,0.2));
-      border: 1px solid var(--border-strong);
-      display: grid;
-      place-items: center;
-      font-size: 0.65rem;
-      font-weight: 900;
-      color: var(--accent);
+    .eve-sso-btn {
+      display: block;
+      height: auto;
+      max-height: 2.6rem;
     }
     .success-icon {
       font-size: 3rem;

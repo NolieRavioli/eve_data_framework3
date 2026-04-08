@@ -60,9 +60,8 @@ def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
         sql = f"""
             SELECT mo.order_id, mo.is_buy_order, mo.price, mo.volume_remain, mo.volume_total,
                    mo.order_range AS range, mo.location_id, mo.issued, mo.duration, mo.min_volume,
-                   COALESCE(ds.station_name, CAST(mo.location_id AS VARCHAR)) AS location_name
+                   CAST(mo.location_id AS VARCHAR) AS location_name
             FROM market_orders mo
-            LEFT JOIN sde_staStations ds ON ds.station_id = mo.location_id
             WHERE mo.type_id = ? {exclude_clause}
         """
         try:

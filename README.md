@@ -192,7 +192,7 @@ Controls the in-browser live log in the admin panel.
 | `SUPPORTED_LANGUAGES` | `"en"` | Comma-separated languages; SDE pruner keeps only these. |
 | `PUBLIC_DATA_FOLDER` | `"_publicData"` | Directory for DuckDB file and OAuth credentials. |
 | `EVE_PRIVATE_DATABASE_FOLDER` | `"_privateData/"` | Root directory for per-owner SQLite files. |
-| `SDE_PATH` | `"_sde/"` | Local SDE YAML file directory. |
+| `SDE_PATH` | `"_sde/"` | Local SDE JSONL file directory. |
 
 ### `Auth`
 

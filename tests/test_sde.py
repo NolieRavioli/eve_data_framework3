@@ -1,10 +1,10 @@
 """Integration tests for SDE warehouse population.
 
-Builds a real DuckDB warehouse from the local ``_sde/`` YAML files and asserts
+Builds a real DuckDB warehouse from the local ``_sde/`` JSONL files and asserts
 that all key tables are populated — including the blueprint tables that
 exercise the most complex parts of the SDELoader.
 
-These tests are skipped automatically when ``_sde/fsd/types.yaml`` is absent.
+These tests are skipped automatically when ``_sde/types.jsonl`` is absent.
 """
 
 import os
@@ -19,8 +19,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 SDE_ROOT = ROOT / "_sde"
-_HAVE_SDE = (SDE_ROOT / "fsd" / "types.yaml").exists()
-_SKIP_REASON = "SDE YAML files not present at _sde/"
+_HAVE_SDE = (SDE_ROOT / "types.jsonl").exists()
+_SKIP_REASON = "SDE JSONL files not present at _sde/"
 
 
 @unittest.skipUnless(_HAVE_SDE, _SKIP_REASON)
@@ -101,102 +101,74 @@ class TestSDEWarehousePopulation(unittest.TestCase):
         self.assertGreater(count, 500, f"sde_marketGroups has only {count} rows")
 
     # ------------------------------------------------------------------
-    # Blueprints — the most complex loader section
+    # Blueprints — stored as JSON columns in JSONL format
     # ------------------------------------------------------------------
 
     def test_sde_blueprints_populated(self):
         count = self._count("sde_blueprints")
         self.assertGreater(count, 5_000, f"sde_blueprints has only {count} rows")
 
-    def test_sde_blueprintMaterials_populated(self):
-        count = self._count("sde_blueprintMaterials")
-        self.assertGreater(count, 30_000, f"sde_blueprintMaterials has only {count} rows")
-
-    def test_sde_blueprintProducts_populated(self):
-        count = self._count("sde_blueprintProducts")
-        self.assertGreater(count, 5_000, f"sde_blueprintProducts has only {count} rows")
-
-    def test_blueprints_have_manufacturing_activity(self):
+    def test_blueprints_have_activities_json(self):
+        """Blueprints should have non-null activities_json with manufacturing data."""
         rows = self._query(
-            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE activity = 'manufacturing'"
+            "SELECT COUNT(*) FROM sde_blueprints WHERE activities_json IS NOT NULL AND activities_json != ''"
         )
         count = rows[0][0]
-        self.assertGreater(count, 10_000,
-            f"manufacturing materials: only {count} rows; blueprints.yaml may not have loaded correctly")
-
-    def test_blueprints_have_research_activity(self):
-        rows = self._query(
-            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE activity IN ('research_time', 'research_material')"
-        )
-        count = rows[0][0]
-        self.assertGreater(count, 0, "No research activity materials found")
-
-    def test_specific_blueprint_tritanium(self):
-        """Tritanium (type_id=34) should appear as a manufacturing material in many blueprints."""
-        rows = self._query(
-            "SELECT COUNT(*) FROM sde_blueprintMaterials WHERE material_type_id = 34 AND activity = 'manufacturing'"
-        )
-        count = rows[0][0]
-        self.assertGreater(count, 500,
-            f"Tritanium appears in only {count} manufacturing blueprints; seems wrong")
+        self.assertGreater(count, 1_000,
+            f"Only {count} blueprints have activities_json populated")
 
     # ------------------------------------------------------------------
-    # Type materials & dogma
+    # Type materials & dogma — stored as JSON columns
     # ------------------------------------------------------------------
 
     def test_sde_typeMaterials_populated(self):
         count = self._count("sde_typeMaterials")
         self.assertGreater(count, 5_000, f"sde_typeMaterials has only {count} rows")
 
-    def test_sde_typeDogmaAttributes_populated(self):
-        count = self._count("sde_typeDogmaAttributes")
-        self.assertGreater(count, 100_000, f"sde_typeDogmaAttributes has only {count} rows")
+    def test_sde_typeDogma_populated(self):
+        count = self._count("sde_typeDogma")
+        self.assertGreater(count, 10_000, f"sde_typeDogma has only {count} rows")
 
     # ------------------------------------------------------------------
     # Universe
     # ------------------------------------------------------------------
 
-    def test_sde_regions_populated(self):
-        count = self._count("sde_regions")
-        self.assertGreater(count, 100, f"sde_regions has only {count} rows")
+    def test_sde_mapRegions_populated(self):
+        count = self._count("sde_mapRegions")
+        self.assertGreater(count, 100, f"sde_mapRegions has only {count} rows")
 
-    def test_sde_constellations_populated(self):
-        count = self._count("sde_constellations")
-        self.assertGreater(count, 1_000, f"sde_constellations has only {count} rows")
+    def test_sde_mapConstellations_populated(self):
+        count = self._count("sde_mapConstellations")
+        self.assertGreater(count, 1_000, f"sde_mapConstellations has only {count} rows")
 
-    def test_sde_systems_populated(self):
-        count = self._count("sde_systems")
-        self.assertGreater(count, 5_000, f"sde_systems has only {count} rows")
+    def test_sde_mapSolarSystems_populated(self):
+        count = self._count("sde_mapSolarSystems")
+        self.assertGreater(count, 5_000, f"sde_mapSolarSystems has only {count} rows")
 
     # ------------------------------------------------------------------
-    # Stations (bsd)
+    # Stations
     # ------------------------------------------------------------------
 
-    def test_sde_staStations_populated(self):
-        count = self._count("sde_staStations")
-        self.assertGreater(count, 500, f"sde_staStations has only {count} rows")
+    def test_sde_npcStations_populated(self):
+        count = self._count("sde_npcStations")
+        self.assertGreater(count, 500, f"sde_npcStations has only {count} rows")
 
     # ------------------------------------------------------------------
     # Manifest integrity
     # ------------------------------------------------------------------
 
     def test_sde_manifest_populated(self):
-        rows = self._query("SELECT fsd_file_count, bsd_file_count FROM sde_manifest")
+        rows = self._query("SELECT fsd_file_count FROM sde_manifest")
         self.assertEqual(len(rows), 1, "sde_manifest should have exactly 1 row")
-        fsd_count, bsd_count = rows[0]
-        self.assertGreater(fsd_count, 10, f"Only {fsd_count} FSD files recorded")
-        self.assertGreater(bsd_count, 0, f"No BSD files recorded")
+        file_count = rows[0][0]
+        self.assertGreater(file_count, 10, f"Only {file_count} JSONL files recorded")
 
     def test_dataset_manifest_covers_blueprints(self):
         rows = self._query(
-            "SELECT table_name, row_count FROM sde_dataset_manifest WHERE table_name LIKE 'sde_blueprint%'"
+            "SELECT table_name, row_count FROM sde_dataset_manifest WHERE table_name = 'sde_blueprints'"
         )
-        tables = {r[0] for r in rows}
-        self.assertIn("sde_blueprints", tables)
-        self.assertIn("sde_blueprintMaterials", tables)
-        self.assertIn("sde_blueprintProducts", tables)
-        for table, count in rows:
-            self.assertGreater(count, 0, f"{table} recorded 0 rows in dataset manifest")
+        self.assertEqual(len(rows), 1, "sde_blueprints should appear in dataset manifest")
+        self.assertGreater(rows[0][1], 0, "sde_blueprints recorded 0 rows in dataset manifest")
 
 
 @unittest.skipUnless(_HAVE_SDE, _SKIP_REASON)

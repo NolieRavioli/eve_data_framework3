@@ -1,8 +1,8 @@
-"""SDE schema codegen — introspect ``_sde/`` YAML files and emit a JSON schema.
+"""SDE schema codegen — introspect ``_sde/`` JSONL files and emit a JSON schema.
 
 The generated schema (``core/db/generated/sde_schema.json``) drives the SDE
 warehouse builder in ``core/db/sde_loader.py``.  All SDE tables use the
-``sde_{yaml_stem}`` naming convention.
+``sde_{stem}`` naming convention.
 
 Entry point
 -----------
@@ -21,8 +21,6 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -64,29 +62,42 @@ _PK_NAME_OVERRIDES: dict[str, str] = {
     "sde_groups": "group_id",
     "sde_categories": "category_id",
     "sde_marketGroups": "market_group_id",
-    "sde_staStations": "station_id",
-    "sde_invItems": "item_id",
-    "sde_invNames": "item_id",
-    "sde_invPositions": "item_id",
-    "sde_invFlags": "flag_id",
-    "sde_invUniqueNames": "item_id",
+    "sde_npcStations": "station_id",
     "sde_blueprints": "blueprint_type_id",
     "sde_typeMaterials": "type_id",
     "sde_typeDogma": "type_id",
+    "sde_mapRegions": "region_id",
+    "sde_mapConstellations": "constellation_id",
+    "sde_mapSolarSystems": "system_id",
+    "sde_mapPlanets": "planet_id",
+    "sde_mapMoons": "moon_id",
+    "sde_mapAsteroidBelts": "belt_id",
+    "sde_mapStargates": "stargate_id",
+    "sde_mapStars": "star_id",
+    "sde_mapSecondarySuns": "secondary_sun_id",
 }
 
 
 # ---------------------------------------------------------------------------
-# YAML helpers
+# JSONL helpers
 # ---------------------------------------------------------------------------
 
-def _yaml_loader():
-    return getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
+def _load_jsonl(path: Path, max_lines: int = 0) -> list[dict]:
+    """Load a JSONL file, returning a list of parsed dicts.
 
-def _load_yaml(path: Path) -> Any:
+    If *max_lines* > 0, stop after that many lines (for schema introspection).
+    """
+    entries: list[dict] = []
     with path.open("r", encoding="utf-8") as fh:
-        return yaml.load(fh, Loader=_yaml_loader())
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            entries.append(json.loads(line))
+            if max_lines and len(entries) >= max_lines:
+                break
+    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -239,21 +250,28 @@ def _build_table_def(
     source_file: str,
     data: Any,
 ) -> dict:
-    """Build a single table schema definition from YAML data."""
+    """Build a single table schema definition from JSONL data.
+
+    JSONL files use ``_key`` for dict-of-dicts keying.  Each line is a dict;
+    if every entry has a ``_key`` field the structure is treated as
+    ``dict_of_dicts`` (where ``_key`` is the primary key).  Otherwise it's
+    ``list_of_dicts``.
+    """
     table_name = f"sde_{stem}"
 
-    structure = "dict_of_dicts" if isinstance(data, dict) else "list_of_dicts"
+    # Determine structure: if entries have _key, it's dict-of-dicts style
+    entries = data if isinstance(data, list) else []
+    has_key = all("_key" in e for e in entries[:100]) if entries else False
+    structure = "dict_of_dicts" if has_key else "list_of_dicts"
     custom_handler = False
 
-    # Collect entries for introspection
-    if isinstance(data, dict):
-        entries = list(data.values())
-    elif isinstance(data, list):
-        entries = data
+    # For introspection, strip _key from values (it becomes the PK)
+    if has_key:
+        introspect_entries = [{k: v for k, v in e.items() if k != "_key"} for e in entries]
     else:
-        entries = []
+        introspect_entries = entries
 
-    if not entries:
+    if not introspect_entries:
         return {
             "table_name": table_name,
             "source_file": source_file,
@@ -264,7 +282,7 @@ def _build_table_def(
             "columns": [{"name": "payload_json", "dtype": "VARCHAR", "source": "_payload"}],
         }
 
-    columns = _introspect_entries(entries)
+    columns = _introspect_entries(introspect_entries)
 
     # Determine PK
     pk_name = _PK_NAME_OVERRIDES.get(table_name)
@@ -286,10 +304,10 @@ def _build_table_def(
     # Build final column list
     final_columns: list[dict] = []
 
-    # Add PK column for dict-of-dicts (the dict key)
+    # Add PK column for dict-of-dicts (the _key field)
     if structure == "dict_of_dicts" and pk_name:
-        # Detect key type: sample first few keys
-        sample_keys = list(data.keys())[:20] if isinstance(data, dict) else []
+        # Detect key type from _key values
+        sample_keys = [e.get("_key") for e in entries[:20] if "_key" in e]
         all_int = all(isinstance(k, int) or (isinstance(k, str) and k.isdigit()) for k in sample_keys) if sample_keys else True
         pk_dtype = "BIGINT" if all_int else "VARCHAR"
         final_columns.append({
@@ -330,102 +348,6 @@ def _build_table_def(
     }
 
 
-
-
-
-# ---------------------------------------------------------------------------
-# Universe tables (schema-only — insertion stays custom)
-# ---------------------------------------------------------------------------
-
-def _universe_tables() -> list[dict]:
-    """Return schema defs for universe dimension tables (DDL only)."""
-    return [
-        {
-            "table_name": "sde_regions",
-            "source_file": "universe/",
-            "layer": "universe",
-            "structure": "custom",
-            "custom_handler": True,
-            "pk_column": "region_id",
-            "columns": [
-                {"name": "region_id", "dtype": "BIGINT", "source": "regionID", "pk": True, "nullable": False},
-                {"name": "region_name", "dtype": "VARCHAR", "source": "_inv_name", "nullable": True},
-                {"name": "space_type", "dtype": "VARCHAR", "source": "_space_type", "nullable": False},
-                {"name": "faction_id", "dtype": "BIGINT", "source": "factionID", "nullable": True},
-                {"name": "x", "dtype": "DOUBLE", "source": "center.x", "nullable": True},
-                {"name": "y", "dtype": "DOUBLE", "source": "center.y", "nullable": True},
-                {"name": "z", "dtype": "DOUBLE", "source": "center.z", "nullable": True},
-                {"name": "x_min", "dtype": "DOUBLE", "source": "min.x", "nullable": True},
-                {"name": "y_min", "dtype": "DOUBLE", "source": "min.y", "nullable": True},
-                {"name": "z_min", "dtype": "DOUBLE", "source": "min.z", "nullable": True},
-                {"name": "x_max", "dtype": "DOUBLE", "source": "max.x", "nullable": True},
-                {"name": "y_max", "dtype": "DOUBLE", "source": "max.y", "nullable": True},
-                {"name": "z_max", "dtype": "DOUBLE", "source": "max.z", "nullable": True},
-                {"name": "payload_json", "dtype": "VARCHAR", "source": "_payload", "nullable": True},
-            ],
-        },
-        {
-            "table_name": "sde_constellations",
-            "source_file": "universe/",
-            "layer": "universe",
-            "structure": "custom",
-            "custom_handler": True,
-            "pk_column": "constellation_id",
-            "columns": [
-                {"name": "constellation_id", "dtype": "BIGINT", "source": "constellationID", "pk": True, "nullable": False},
-                {"name": "constellation_name", "dtype": "VARCHAR", "source": "_inv_name", "nullable": True},
-                {"name": "space_type", "dtype": "VARCHAR", "source": "_space_type", "nullable": False},
-                {"name": "region_id", "dtype": "BIGINT", "source": "_parent_region", "nullable": True},
-                {"name": "x", "dtype": "DOUBLE", "source": "center.x", "nullable": True},
-                {"name": "y", "dtype": "DOUBLE", "source": "center.y", "nullable": True},
-                {"name": "z", "dtype": "DOUBLE", "source": "center.z", "nullable": True},
-                {"name": "x_min", "dtype": "DOUBLE", "source": "min.x", "nullable": True},
-                {"name": "y_min", "dtype": "DOUBLE", "source": "min.y", "nullable": True},
-                {"name": "z_min", "dtype": "DOUBLE", "source": "min.z", "nullable": True},
-                {"name": "x_max", "dtype": "DOUBLE", "source": "max.x", "nullable": True},
-                {"name": "y_max", "dtype": "DOUBLE", "source": "max.y", "nullable": True},
-                {"name": "z_max", "dtype": "DOUBLE", "source": "max.z", "nullable": True},
-                {"name": "payload_json", "dtype": "VARCHAR", "source": "_payload", "nullable": True},
-            ],
-        },
-        {
-            "table_name": "sde_systems",
-            "source_file": "universe/",
-            "layer": "universe",
-            "structure": "custom",
-            "custom_handler": True,
-            "pk_column": "system_id",
-            "columns": [
-                {"name": "system_id", "dtype": "BIGINT", "source": "solarSystemID", "pk": True, "nullable": False},
-                {"name": "system_name", "dtype": "VARCHAR", "source": "_inv_name", "nullable": True},
-                {"name": "space_type", "dtype": "VARCHAR", "source": "_space_type", "nullable": False},
-                {"name": "constellation_id", "dtype": "BIGINT", "source": "_parent_constellation", "nullable": True},
-                {"name": "region_id", "dtype": "BIGINT", "source": "_parent_region", "nullable": True},
-                {"name": "security", "dtype": "DOUBLE", "source": "security", "nullable": True},
-                {"name": "sun_type_id", "dtype": "BIGINT", "source": "sunTypeID", "nullable": True},
-                {"name": "border", "dtype": "BOOLEAN", "source": "border", "nullable": True},
-                {"name": "corridor", "dtype": "BOOLEAN", "source": "corridor", "nullable": True},
-                {"name": "fringe", "dtype": "BOOLEAN", "source": "fringe", "nullable": True},
-                {"name": "hub", "dtype": "BOOLEAN", "source": "hub", "nullable": True},
-                {"name": "international", "dtype": "BOOLEAN", "source": "international", "nullable": True},
-                {"name": "regional", "dtype": "BOOLEAN", "source": "regional", "nullable": True},
-                {"name": "planet_count", "dtype": "BIGINT", "source": "_computed", "nullable": True},
-                {"name": "stargate_count", "dtype": "BIGINT", "source": "_computed", "nullable": True},
-                {"name": "x", "dtype": "DOUBLE", "source": "center.x", "nullable": True},
-                {"name": "y", "dtype": "DOUBLE", "source": "center.y", "nullable": True},
-                {"name": "z", "dtype": "DOUBLE", "source": "center.z", "nullable": True},
-                {"name": "x_min", "dtype": "DOUBLE", "source": "min.x", "nullable": True},
-                {"name": "y_min", "dtype": "DOUBLE", "source": "min.y", "nullable": True},
-                {"name": "z_min", "dtype": "DOUBLE", "source": "min.z", "nullable": True},
-                {"name": "x_max", "dtype": "DOUBLE", "source": "max.x", "nullable": True},
-                {"name": "y_max", "dtype": "DOUBLE", "source": "max.y", "nullable": True},
-                {"name": "z_max", "dtype": "DOUBLE", "source": "max.z", "nullable": True},
-                {"name": "payload_json", "dtype": "VARCHAR", "source": "_payload", "nullable": True},
-            ],
-        },
-    ]
-
-
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -434,52 +356,32 @@ def generate_sde_schema(
     source_root: str | Path | None = None,
     output_path: str | Path | None = None,
 ) -> dict:
-    """Introspect SDE YAML files and write ``sde_schema.json``.
+    """Introspect SDE JSONL files and write ``sde_schema.json``.
 
     Returns a summary dict with ``table_count``, ``output_path``, etc.
     """
     root = Path(source_root) if source_root else _DEFAULT_SDE_ROOT
     out = Path(output_path) if output_path else _DEFAULT_OUTPUT
 
-    fsd_dir = root / "fsd"
-    bsd_dir = root / "bsd"
-
-    if not fsd_dir.exists():
-        raise FileNotFoundError(f"SDE fsd directory not found: {fsd_dir}")
+    jsonl_files = sorted(root.glob("*.jsonl"))
+    if not jsonl_files:
+        raise FileNotFoundError(f"No .jsonl files found in {root}")
 
     tables: list[dict] = []
 
-    # ── FSD files ──────────────────────────────────────────────────────────
-    fsd_files = sorted(fsd_dir.glob("*.yaml"))
-    for path in fsd_files:
+    for path in jsonl_files:
         stem = path.stem
-        logger.info("Introspecting fsd/%s.yaml", stem)
-        data = _load_yaml(path)
-        if data is None:
+        logger.info("Introspecting %s.jsonl", stem)
+        # Load a sample for schema introspection (first 200 lines)
+        data = _load_jsonl(path, max_lines=200)
+        if not data:
             continue
-        table_def = _build_table_def("fsd", stem, f"fsd/{path.name}", data)
+        table_def = _build_table_def("jsonl", stem, path.name, data)
         tables.append(table_def)
-
-    # ── BSD files ──────────────────────────────────────────────────────────
-    if bsd_dir.exists():
-        bsd_files = sorted(bsd_dir.glob("*.yaml"))
-        for path in bsd_files:
-            stem = path.stem
-            logger.info("Introspecting bsd/%s.yaml", stem)
-            data = _load_yaml(path)
-            if data is None:
-                continue
-            table_def = _build_table_def("bsd", stem, f"bsd/{path.name}", data)
-            tables.append(table_def)
-
-    # ── Universe tables (static schema, custom handler) ────────────────────
-    universe_dir = root / "universe"
-    if universe_dir.exists():
-        tables.extend(_universe_tables())
 
     # ── Write schema JSON ──────────────────────────────────────────────────
     schema = {
-        "version": "1.0",
+        "version": "2.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_root": str(root),
         "table_count": len(tables),
@@ -494,9 +396,7 @@ def generate_sde_schema(
 
     return {
         "table_count": len(tables),
-        "fsd_tables": sum(1 for t in tables if t["layer"] == "fsd"),
-        "bsd_tables": sum(1 for t in tables if t["layer"] == "bsd"),
-        "universe_tables": sum(1 for t in tables if t["layer"] == "universe"),
+        "jsonl_tables": len(tables),
         "output_path": str(out),
     }
 
