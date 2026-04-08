@@ -1,0 +1,198 @@
+name: Label Sync
+
+# Syncs labels between a GitHub issue and any PRs formally linked to it
+# (via "Closes / Fixes / Resolves #N" body keywords).
+#
+# Rules:
+#   - PR opened/edited with a closing reference  → copy all issue labels onto the PR (issue → PR)
+#   - Label added to PR with a linked issue       → add that label to the linked issue
+#   - Label removed from PR with a linked issue   → remove that label from the linked issue
+#   - Label added to issue with a linked open PR  → add that label to every linked open PR
+#   - Label removed from issue with linked PR     → remove that label from every linked open PR
+#
+# Loop safety: GitHub does not fire a new webhook event when addLabels is called
+# with a label that is already present, so cascades self-terminate after one pass.
+#
+# Out of scope: closed/merged PRs, parent/child issues, manual sidebar-only links.
+
+on:
+  pull_request:
+    types: [opened, edited, labeled, unlabeled]
+  issues:
+    types: [labeled, unlabeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync labels
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Sync labels between issue and PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // ── GraphQL helpers ────────────────────────────────────────────
+
+            /** Returns issue numbers that a PR formally closes (Closes / Fixes / Resolves #N). */
+            async function getLinkedIssues(prNumber) {
+              const query = `
+                query($owner: String!, $repo: String!, $pr: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr) {
+                      closingIssuesReferences(first: 25) {
+                        nodes { number }
+                      }
+                    }
+                  }
+                }
+              `;
+              const data = await github.graphql(query, { owner, repo, pr: prNumber });
+              return (data.repository.pullRequest?.closingIssuesReferences?.nodes ?? [])
+                .map(n => n.number);
+            }
+
+            /**
+             * Returns numbers of open PRs that formally close the given issue
+             * (detected via CrossReferencedEvent with willCloseTarget: true).
+             */
+            async function getLinkedOpenPRs(issueNumber) {
+              const query = `
+                query($owner: String!, $repo: String!, $issue: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    issue(number: $issue) {
+                      timelineItems(first: 50, itemTypes: [CROSS_REFERENCED_EVENT]) {
+                        nodes {
+                          ... on CrossReferencedEvent {
+                            willCloseTarget
+                            source {
+                              ... on PullRequest { number state }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              const data = await github.graphql(query, { owner, repo, issue: issueNumber });
+              const nodes = data.repository.issue?.timelineItems?.nodes ?? [];
+              return nodes
+                .filter(n => n.willCloseTarget && n.source?.state === 'OPEN')
+                .map(n => n.source.number);
+            }
+
+            // ── REST helpers ───────────────────────────────────────────────
+
+            async function addLabel(issueOrPrNumber, labelName) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner, repo,
+                  issue_number: issueOrPrNumber,
+                  labels: [labelName],
+                });
+                core.info(`Added label "${labelName}" to #${issueOrPrNumber}`);
+              } catch (err) {
+                // 422 = label doesn't exist in the repo; 404 = issue/PR not found – skip silently
+                if (err.status === 422 || err.status === 404) {
+                  core.warning(`Could not add label "${labelName}" to #${issueOrPrNumber}: ${err.message}`);
+                } else {
+                  throw err;
+                }
+              }
+            }
+
+            async function removeLabel(issueOrPrNumber, labelName) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo,
+                  issue_number: issueOrPrNumber,
+                  name: labelName,
+                });
+                core.info(`Removed label "${labelName}" from #${issueOrPrNumber}`);
+              } catch (err) {
+                // 404 = label was already absent – safe to ignore
+                if (err.status === 404) {
+                  core.info(`Label "${labelName}" was already absent on #${issueOrPrNumber}`);
+                } else {
+                  throw err;
+                }
+              }
+            }
+
+            async function getAllLabels(issueOrPrNumber) {
+              const resp = await github.rest.issues.get({
+                owner, repo,
+                issue_number: issueOrPrNumber,
+              });
+              return resp.data.labels.map(l => l.name);
+            }
+
+            // ── Event dispatch ─────────────────────────────────────────────
+
+            const eventName = context.eventName;   // "pull_request" | "issues"
+            const action    = context.payload.action; // opened | edited | labeled | unlabeled
+
+            if (eventName === 'pull_request') {
+              const prNumber = context.payload.pull_request.number;
+
+              if (action === 'opened' || action === 'edited') {
+                // Initial sync: copy all labels from linked issues onto this PR
+                const linkedIssues = await getLinkedIssues(prNumber);
+                core.info(`PR #${prNumber} (${action}) — linked issues: ${linkedIssues.join(', ') || 'none'}`);
+                for (const issueNum of linkedIssues) {
+                  const labels = await getAllLabels(issueNum);
+                  core.info(`  Copying labels from issue #${issueNum}: ${labels.join(', ') || 'none'}`);
+                  for (const label of labels) {
+                    await addLabel(prNumber, label);
+                  }
+                }
+
+              } else if (action === 'labeled') {
+                // Propagate newly added PR label → linked issues
+                const labelName = context.payload.label.name;
+                const linkedIssues = await getLinkedIssues(prNumber);
+                core.info(`PR #${prNumber} labeled "${labelName}" — propagating to issues: ${linkedIssues.join(', ') || 'none'}`);
+                for (const issueNum of linkedIssues) {
+                  await addLabel(issueNum, labelName);
+                }
+
+              } else if (action === 'unlabeled') {
+                // Propagate label removal from PR → linked issues
+                const labelName = context.payload.label.name;
+                const linkedIssues = await getLinkedIssues(prNumber);
+                core.info(`PR #${prNumber} unlabeled "${labelName}" — propagating to issues: ${linkedIssues.join(', ') || 'none'}`);
+                for (const issueNum of linkedIssues) {
+                  await removeLabel(issueNum, labelName);
+                }
+              }
+
+            } else if (eventName === 'issues') {
+              const issueNumber = context.payload.issue.number;
+
+              if (action === 'labeled') {
+                // Propagate newly added issue label → linked open PRs
+                const labelName = context.payload.label.name;
+                const linkedPRs = await getLinkedOpenPRs(issueNumber);
+                core.info(`Issue #${issueNumber} labeled "${labelName}" — propagating to PRs: ${linkedPRs.join(', ') || 'none'}`);
+                for (const prNum of linkedPRs) {
+                  await addLabel(prNum, labelName);
+                }
+
+              } else if (action === 'unlabeled') {
+                // Propagate label removal from issue → linked open PRs
+                const labelName = context.payload.label.name;
+                const linkedPRs = await getLinkedOpenPRs(issueNumber);
+                core.info(`Issue #${issueNumber} unlabeled "${labelName}" — propagating to PRs: ${linkedPRs.join(', ') || 'none'}`);
+                for (const prNum of linkedPRs) {
+                  await removeLabel(prNum, labelName);
+                }
+              }
+            }

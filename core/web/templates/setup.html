@@ -95,9 +95,12 @@
     </div>
 
     <div style="display:flex;justify-content:center">
-      <a href="/login" class="eve-btn">
-        <span class="eve-logo">E</span>
-        Sign in with EVE Online
+      <a href="/login" class="eve-sso-link">
+        <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png"
+             data-fallback="{{ url_for('static', filename='img/eve-sso-login-black-large.png') }}"
+             alt="Log in with EVE Online"
+             class="eve-sso-btn"
+             onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback}">
       </a>
     </div>
     {% endif %}

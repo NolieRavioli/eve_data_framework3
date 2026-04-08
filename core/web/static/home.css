@@ -78,6 +78,20 @@
   transform: translateY(-2px);
 }
 
+.eve-sso-link {
+  display: inline-block;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.eve-sso-link:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+}
+.eve-sso-btn {
+  display: block;
+  height: auto;
+  max-height: 2.6rem;
+}
+
 .features {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

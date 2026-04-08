@@ -792,20 +792,20 @@ def list_market_region_ids(
     try:
         _ensure_public_schema(con)
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-        if "sde_regions" not in tables:
+        if "sde_mapRegions" not in tables:
             return []
         if skip_recently_refreshed:
             rows = con.execute(
                 """
                 SELECT r.region_id
-                FROM sde_regions AS r
+                FROM sde_mapRegions AS r
                 LEFT JOIN market_region_cooldowns AS c ON c.region_id = r.region_id
                 WHERE c.region_id IS NULL OR c.refreshed_until < now()
                 ORDER BY r.region_id
                 """
             ).fetchall()
         else:
-            rows = con.execute("SELECT region_id FROM sde_regions ORDER BY region_id").fetchall()
+            rows = con.execute("SELECT region_id FROM sde_mapRegions ORDER BY region_id").fetchall()
         return [row[0] for row in rows]
     finally:
         con.close()

@@ -12,6 +12,7 @@ from threading import Lock
 from typing import Dict, Optional
 
 import jwt
+import requests as _requests
 from jwt import PyJWKClient
 from flask import Blueprint, abort, redirect, request, session, url_for
 from requests.auth import HTTPBasicAuth
@@ -27,8 +28,87 @@ from core.config import RuntimeSettings, get_runtime_settings
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
-TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
-AUTH_URL  = "https://login.eveonline.com/v2/oauth/authorize"
+# ── SSO endpoint discovery via well-known metadata ────────────────────────────
+
+_WELL_KNOWN_URL = "https://login.eveonline.com/.well-known/oauth-authorization-server"
+
+# Hardcoded fallback values (used if well-known endpoint is unreachable)
+_FALLBACK_AUTH_URL  = "https://login.eveonline.com/v2/oauth/authorize"
+_FALLBACK_TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
+_FALLBACK_JWKS_URI  = "https://login.eveonline.com/oauth/jwks"
+_FALLBACK_ISSUER    = "https://login.eveonline.com"
+
+_sso_endpoints: dict | None = None
+_sso_endpoints_ts: float = 0.0
+_SSO_CACHE_TTL = 86400  # 24 hours
+_sso_lock = Lock()
+
+
+def _discover_sso_endpoints() -> dict:
+    """Fetch SSO metadata from the well-known endpoint, cached for 24h."""
+    global _sso_endpoints, _sso_endpoints_ts
+    now = time.time()
+
+    with _sso_lock:
+        if _sso_endpoints and (now - _sso_endpoints_ts) < _SSO_CACHE_TTL:
+            return _sso_endpoints
+
+    try:
+        resp = _requests.get(_WELL_KNOWN_URL, timeout=10)
+        resp.raise_for_status()
+        meta = resp.json()
+        endpoints = {
+            "authorization_endpoint": meta.get("authorization_endpoint", _FALLBACK_AUTH_URL),
+            "token_endpoint": meta.get("token_endpoint", _FALLBACK_TOKEN_URL),
+            "jwks_uri": meta.get("jwks_uri", _FALLBACK_JWKS_URI),
+            "issuer": meta.get("issuer", _FALLBACK_ISSUER),
+        }
+        with _sso_lock:
+            _sso_endpoints = endpoints
+            _sso_endpoints_ts = now
+        logger.info("[Auth] SSO endpoints refreshed from well-known metadata")
+        return endpoints
+    except Exception as exc:
+        logger.warning("[Auth] Failed to fetch well-known metadata: %s — using fallback", exc)
+        fallback = {
+            "authorization_endpoint": _FALLBACK_AUTH_URL,
+            "token_endpoint": _FALLBACK_TOKEN_URL,
+            "jwks_uri": _FALLBACK_JWKS_URI,
+            "issuer": _FALLBACK_ISSUER,
+        }
+        with _sso_lock:
+            _sso_endpoints = fallback
+            _sso_endpoints_ts = now
+        return fallback
+
+
+def _get_auth_url() -> str:
+    return _discover_sso_endpoints()["authorization_endpoint"]
+
+
+def _get_token_url() -> str:
+    return _discover_sso_endpoints()["token_endpoint"]
+
+
+def _get_jwks_uri() -> str:
+    return _discover_sso_endpoints()["jwks_uri"]
+
+
+def _get_issuer() -> str:
+    return _discover_sso_endpoints()["issuer"]
+
+
+_jwks_client: PyJWKClient | None = None
+_jwks_lock = Lock()
+
+
+def _get_jwks_client() -> PyJWKClient:
+    """Lazily initialise the JWKS client with the discovered URI."""
+    global _jwks_client
+    with _jwks_lock:
+        if _jwks_client is None:
+            _jwks_client = PyJWKClient(_get_jwks_uri(), cache_keys=True)
+    return _jwks_client
 
 
 # ── Default-role helper ───────────────────────────────────────────────────────
@@ -99,16 +179,13 @@ def _build_state_cache(settings: RuntimeSettings) -> OAuthStateCache:
 
 _settings     = get_runtime_settings()
 _state_cache  = _build_state_cache(_settings)
-_jwks_client  = PyJWKClient("https://login.eveonline.com/oauth/jwks", cache_keys=True)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
 
 def _issue_state(eve_session: OAuth2Session, *, is_add_toon: bool) -> str:
     manual_state = secrets.token_urlsafe(32)
-    auth_url, _ = eve_session.authorization_url(AUTH_URL, state=manual_state)
-    session["oauth_state"] = manual_state
-    session["add_toon"]    = is_add_toon
+    auth_url, _ = eve_session.authorization_url(_get_auth_url(), state=manual_state)
 
     owner_id = session.get("owner_id") if is_add_toon else None
     _state_cache.remember(OAuthStateRecord(manual_state, is_add_toon, owner_id))
@@ -132,30 +209,22 @@ def _validate_state(returned_state: Optional[str]):
     if not returned_state:
         return None, None, ("Missing OAuth state.", 400)
 
-    session_state = session.pop("oauth_state", None)
-    cached        = _state_cache.consume(returned_state)
-
-    # Session state MUST be present — it proves this browser initiated the flow
-    if not session_state:
-        return None, None, ("Session expired or missing state. Please try logging in again.", 400)
-
-    if session_state != returned_state:
-        return None, None, ("State mismatch detected.", 400)
-
-    # Cache adds temporal expiry — if it exists it must match, but expiry is OK
-    is_add_toon = session.pop("add_toon", False)
-    owner_hint  = None
-    if cached is not None:
-        is_add_toon = cached.is_add_toon
-        owner_hint  = cached.owner_id
+    # OAuthStateCache is the sole authority: 32-byte random token, single-use,
+    # 5-minute TTL, server-side only.  This avoids breakage when the login page
+    # is accessed via 127.0.0.1 but the EVE redirect_uri uses localhost (or vice
+    # versa) — different cookie domains would cause the Flask session lookup to
+    # fail even though the request is legitimate.
+    cached = _state_cache.consume(returned_state)
+    if cached is None:
+        return None, None, ("State expired or invalid. Please try logging in again.", 400)
 
     if _settings.debug_mode:
         print(
-            f"[Auth] State validated. add_toon={is_add_toon} "
-            f"owner_hint={owner_hint} session_state={session_state}"
+            f"[Auth] State validated. add_toon={cached.is_add_toon} "
+            f"owner_hint={cached.owner_id}"
         )
 
-    return is_add_toon, owner_hint, None
+    return cached.is_add_toon, cached.owner_id, None
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -210,23 +279,27 @@ def callback():
         client_id, client_secret, redirect_uri, _ = CredentialManager.load_credentials()
         eve   = OAuth2Session(client_id, redirect_uri=redirect_uri, state=returned_state)
         token = eve.fetch_token(
-            TOKEN_URL,
+            _get_token_url(),
             authorization_response=request.url,
             auth=HTTPBasicAuth(client_id, client_secret),
         )
 
         try:
-            signing_key = _jwks_client.get_signing_key_from_jwt(token["access_token"])
+            signing_key = _get_jwks_client().get_signing_key_from_jwt(token["access_token"])
             decoded = jwt.decode(
                 token["access_token"],
                 signing_key.key,
                 algorithms=["RS256"],
-                issuer="https://login.eveonline.com",
-                options={"verify_aud": False},
+                issuer=_get_issuer(),
+                audience=[client_id, "EVE Online"],
             )
         except jwt.exceptions.PyJWKClientError:
-            logger.warning("[Auth] JWKS fetch failed — falling back to unverified JWT decode")
-            decoded = jwt.decode(token["access_token"], options={"verify_signature": False})
+            if _settings.debug_mode:
+                logger.warning("[Auth] JWKS fetch failed — falling back to unverified JWT decode (debug mode)")
+                decoded = jwt.decode(token["access_token"], options={"verify_signature": False})
+            else:
+                logger.error("[Auth] JWKS fetch failed — rejecting authentication")
+                return "Authentication failed: unable to verify token signature.", 500
         character_id = int(decoded["sub"].split(":")[-1])
 
         if _settings.debug_mode:

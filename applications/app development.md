@@ -88,10 +88,12 @@ Key public tables:
 |---|---|
 | `market_orders` | Live orders: `type_id`, `price`, `is_buy_order`, `region_id`, `location_id`, `volume_remain` |
 | `sde_types` | `type_id`, `name_en`, `group_id`, `market_group_id`, `volume`, `mass` |
-| `sde_staStations` | `station_id`, `station_name`, `region_id`, `system_id` |
-| `sde_regions` | `region_id`, `region_name` |
-| `sde_groups` | `group_id`, `group_name`, `category_id` |
-| `sde_categories` | `category_id`, `category_name` |
+| `sde_npcStations` | `station_id`, `solar_system_id`, `type_id`, `owner_id` |
+| `sde_mapRegions` | `region_id`, `name_en`, `description_en`, `faction_id` |
+| `sde_mapSolarSystems` | `system_id`, `name_en`, `security_status`, `region_id`, `constellation_id` |
+| `sde_mapConstellations` | `constellation_id`, `name_en`, `region_id` |
+| `sde_groups` | `group_id`, `name_en`, `category_id` |
+| `sde_categories` | `category_id`, `name_en` |
 | `structures` | Player structures: `structure_id`, `name`, `region_id`, `type_id` |
 
 ### Per-character private SQLite

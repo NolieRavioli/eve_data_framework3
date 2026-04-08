@@ -418,8 +418,8 @@ DEFAULT_REGION: int = 10000002  # The Forge (Jita)
 def get_regions() -> list[dict]:
     """Return all market regions sorted by name."""
     try:
-        rows = db.query("SELECT region_id, region_name FROM sde_regions ORDER BY region_name")
-        return [{"id": r["region_id"], "name": r["region_name"] or f"Region {r['region_id']}"} for r in rows]
+        rows = db.query("SELECT region_id, name_en FROM sde_mapRegions ORDER BY name_en")
+        return [{"id": r["region_id"], "name": r["name_en"] or f"Region {r['region_id']}"} for r in rows]
     except Exception:
         return []
 
