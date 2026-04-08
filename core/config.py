@@ -52,8 +52,6 @@ def _load_or_create_session_secret() -> str:
         pass
     secret = secrets.token_hex(32)
     os.makedirs(public_data, exist_ok=True)
-    with open(secret_path, "w") as f:
-        f.write(secret)
     from pathlib import Path
     from core.db.encryption import encrypt_file
     encrypt_file(Path(secret_path))
