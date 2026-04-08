@@ -17,7 +17,7 @@ from jwt import PyJWKClient
 from flask import Blueprint, abort, redirect, request, session, url_for
 from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2Session
-from werkzeug.urls import url_parse
+
 
 from core.db.private import get_private_session
 from core.db.models import Character
@@ -263,11 +263,12 @@ def switch_character(character_id: int):
         db.close()
 
     session["character_id"] = character_id
-    next_url = request.args.get("next") or url_for("dashboard.home")
-    # Prevent open redirect: allow only local absolute-path targets.
-    parsed = url_parse(next_url)
-    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
-        next_url = url_for("dashboard.home")
+    next_key = request.args.get("next", "")
+    allowed_next = {
+        "dashboard": url_for("dashboard.home"),
+        "home": url_for("home.index"),
+    }
+    next_url = allowed_next.get(next_key, url_for("dashboard.home"))
     return redirect(next_url)
 
 
