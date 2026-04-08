@@ -1,5 +1,7 @@
 # EVE Data Framework
 
+[![Latest Release](https://img.shields.io/github/v/release/NolieRavioli/eve_data_framework3?style=flat-square)](https://github.com/NolieRavioli/eve_data_framework3/releases/latest)
+
 A self-hosted web application and data platform for EVE Online. The framework provides:
 
 - **EVE SSO authentication** — multi-character OAuth 2.0 with Fernet-encrypted token storage

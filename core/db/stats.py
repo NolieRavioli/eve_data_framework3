@@ -403,6 +403,6 @@ def start_db_stats_publisher() -> None:
     # Register with the central lifecycle coordinator.
     try:
         from core.system import get_lifecycle
-        get_lifecycle().register("db-stats-pub", _publisher_thread)
+        get_lifecycle().register("db-stats-pub", _publisher_thread, stop_fn=stop_evt.set)
     except Exception:
         pass

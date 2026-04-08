@@ -1,0 +1,80 @@
+name: Auto Release
+
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │  BASE_VERSION — bump this on every breaking / milestone release.   │
+# │  The workflow appends an auto-incrementing patch number:           │
+# │    v0.2  →  v0.2.0, v0.2.1, v0.2.2, …                            │
+# │  When you change this to v0.3, the first release becomes v0.3.0.  │
+# └─────────────────────────────────────────────────────────────────────┘
+env:
+  BASE_VERSION: "v0.2"
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip release if the commit message contains [skip release]
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need full history for tags
+
+      - name: Determine next version
+        id: version
+        run: |
+          base="${{ env.BASE_VERSION }}"
+
+          # Fetch all tags matching this base version (e.g. v0.2.*)
+          # Use sort -t. -k3 -n to numerically sort by the patch segment
+          latest=$(git tag --list "${base}.*" | sort -t. -k3 -n | tail -1)
+
+          if [ -z "$latest" ]; then
+            next="${base}.0"
+            echo "No prior tags for ${base} — starting at ${next}"
+          else
+            # Extract the patch number (last segment after the final dot)
+            patch="${latest##*.}"
+            next_patch=$((patch + 1))
+            next="${base}.${next_patch}"
+            echo "Latest tag: ${latest} → next: ${next}"
+          fi
+
+          echo "tag=${next}" >> "$GITHUB_OUTPUT"
+          echo "prev=${latest}" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          prev="${{ steps.version.outputs.prev }}"
+
+          release_args=(
+            "$tag"
+            --title "$tag"
+            --generate-notes
+          )
+
+          # If there is a previous tag, scope the auto-generated notes to
+          # the diff between previous and current tag
+          if [ -n "$prev" ]; then
+            release_args+=(--notes-start-tag "$prev")
+          fi
+
+          gh release create "${release_args[@]}"
