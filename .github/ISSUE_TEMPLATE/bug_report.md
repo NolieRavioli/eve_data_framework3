@@ -1,7 +1,7 @@
 ---
 name: Bug Report
 about: Report a reproducible bug in the EVE Data Framework
-title: ''
+title: '[Bug] '
 labels: bug
 assignees: ''
 

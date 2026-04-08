@@ -12,6 +12,16 @@ env:
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "LICENCE.md"
+      - "README.md"
+      - "addAutorun.sh"
+      - "rmAutorun.sh"
+      - "example.config.yaml"
+      - "AGENTS.md"
+      - ".github/**"
+      - "development_active/**"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0          # need full history for tags
 

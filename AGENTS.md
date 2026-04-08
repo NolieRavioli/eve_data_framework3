@@ -1022,12 +1022,9 @@ Use this when you need to file a bug report, feature request, or development tas
 | `bug_report.md` | Something is broken — includes steps to reproduce, expected vs actual behaviour, environment |
 | `feature_request.md` | New feature or enhancement — includes problem statement, proposed solution, acceptance criteria |
 
-**Every issue must have both of the following:**
+**Every issue must have a label** (choose one): `bug`, `enhancement`, or `development`.
 
-1. **A category label** (choose one): `Bug`, `Feature`, or `Task`
-2. **A topic tag** (choose one): `bug`, `enhancement`, or `development`
-
-Labels are pre-attached automatically when using the GitHub web UI (the template frontmatter sets them). When using the `gh` CLI, pass both labels explicitly:
+Labels are pre-attached automatically when using the GitHub web UI (the template frontmatter sets them). When using the `gh` CLI, pass the label explicitly:
 
 ```powershell
 # Write the body to a temp file to avoid shell quoting issues
@@ -1035,25 +1032,18 @@ $bodyContent | Set-Content .\.github\issue_body_tmp.md
 
 gh issue create `
   --repo NolieRavioli/eve_data_framework3 `
-  --title "[Feature] My new feature" `
+  --title "My new feature" `
   --body-file .\.github\issue_body_tmp.md `
-  --label "Feature" `
   --label "enhancement"
 
 Remove-Item .\.github\issue_body_tmp.md
 ```
 
 **Formatting rules:**
-- Title format: `[Bug] short description`, `[Feature] short description`, or `[Task] short description`
+- Title prefix: `[Bug] short description` for bug reports, `[Feat] short description` for feature requests
 - Use the template sections exactly — do not remove headings, even if a section is N/A
 - Cross-reference related issues with `#<number>` and affected files with inline code paths
 - Never include secrets, tokens, or user-identifiable data in issue bodies
-
-**Labels must exist in the repo before they can be attached.** If a label is missing, create it first:
-
-```powershell
-gh label create "Task" --color "e4e669" --description "Development task or chore" --repo NolieRavioli/eve_data_framework3
-```
 
 ---
 
