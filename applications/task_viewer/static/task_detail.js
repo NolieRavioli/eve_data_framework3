@@ -106,24 +106,64 @@
       var path = e.url.replace(/^https?:\/\/[^\/]+/, '');
       var hdrs = e.hdrs || {};
       var hdrKeys = Object.keys(hdrs).sort();
-      var hdrHtml = hdrKeys.length ? hdrKeys.map(function (k) {
-        return '<div class="esi-req-hdr-kv"><span class="esi-req-hdr-k">' + escHtml(k) + '</span><span class="esi-req-hdr-v">' + escHtml(hdrs[k]) + '</span></div>';
-      }).join('') : '';
       var entry = document.createElement('div');
-      entry.innerHTML =
-        '<div class="esi-req-row">' +
-          '<span class="esi-req-toggle">\u25b6</span>' +
-          '<span class="esi-req-ts">' + escHtml(e.ts) + '</span>' +
-          '<span class="esi-req-method">' + escHtml(e.method) + '</span>' +
-          '<span class="esi-req-status ' + sCls + '">' + e.status + '</span>' +
-          '<span class="esi-req-ms">' + e.ms.toLocaleString() + 'ms</span>' +
-          '<span class="esi-req-url" title="' + escHtml(e.url) + '">' + escHtml(path) + '</span>' +
-        '</div>' +
-        (hdrHtml ? '<div class="esi-req-hdrs">' + hdrHtml + '</div>' : '');
-      if (hdrHtml) {
-        var row = entry.querySelector('.esi-req-row');
-        var hdrsEl = entry.querySelector('.esi-req-hdrs');
-        var toggle = entry.querySelector('.esi-req-toggle');
+      var row = document.createElement('div');
+      row.className = 'esi-req-row';
+
+      var toggle = document.createElement('span');
+      toggle.className = 'esi-req-toggle';
+      toggle.textContent = '\u25b6';
+      row.appendChild(toggle);
+
+      var ts = document.createElement('span');
+      ts.className = 'esi-req-ts';
+      ts.textContent = String(e.ts || '');
+      row.appendChild(ts);
+
+      var method = document.createElement('span');
+      method.className = 'esi-req-method';
+      method.textContent = String(e.method || '');
+      row.appendChild(method);
+
+      var status = document.createElement('span');
+      status.className = 'esi-req-status ' + sCls;
+      status.textContent = String(e.status);
+      row.appendChild(status);
+
+      var ms = document.createElement('span');
+      ms.className = 'esi-req-ms';
+      ms.textContent = String(e.ms.toLocaleString()) + 'ms';
+      row.appendChild(ms);
+
+      var url = document.createElement('span');
+      url.className = 'esi-req-url';
+      url.setAttribute('title', String(e.url || ''));
+      url.textContent = String(path || '');
+      row.appendChild(url);
+
+      entry.appendChild(row);
+
+      if (hdrKeys.length) {
+        var hdrsEl = document.createElement('div');
+        hdrsEl.className = 'esi-req-hdrs';
+        hdrKeys.forEach(function (k) {
+          var kv = document.createElement('div');
+          kv.className = 'esi-req-hdr-kv';
+
+          var kEl = document.createElement('span');
+          kEl.className = 'esi-req-hdr-k';
+          kEl.textContent = String(k);
+          kv.appendChild(kEl);
+
+          var vEl = document.createElement('span');
+          vEl.className = 'esi-req-hdr-v';
+          vEl.textContent = String(hdrs[k]);
+          kv.appendChild(vEl);
+
+          hdrsEl.appendChild(kv);
+        });
+        entry.appendChild(hdrsEl);
+
         row.addEventListener('click', function () {
           var open = hdrsEl.style.display === 'block';
           hdrsEl.style.display = open ? 'none' : 'block';
