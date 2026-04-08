@@ -20,6 +20,15 @@ from applications._api import db_admin, queue_info
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_sql_error(exc: Exception) -> str:
+    """Return a sanitised SQL error message — strips file paths and stack traces."""
+    import re
+    msg = str(exc).split("\n")[0][:300]
+    msg = re.sub(r'[A-Za-z]:\\[^\s"]+', '<path>', msg)
+    msg = re.sub(r'/[^\s"]*\.[a-z]{1,4}', '<path>', msg)
+    return msg
+
 db_bp = Blueprint("db_viewer", __name__,
                   template_folder="templates",
                   static_folder="static")
@@ -113,7 +122,8 @@ def private_query_self():
     try:
         return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.debug("Private query error for owner %s: %s", owner_id, exc)
+        return jsonify({"error": _safe_sql_error(exc)}), 400
 
 
 # ── Admin tier — stats ────────────────────────────────────────────────────────
@@ -178,7 +188,8 @@ def public_query():
     try:
         return jsonify(db_admin.query_sql(raw_sql, row_limit=500))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.debug("Public query error: %s", exc)
+        return jsonify({"error": _safe_sql_error(exc)}), 400
 
 
 # ── Admin tier — specific owner private browser ──────────────────────────────
@@ -210,7 +221,8 @@ def private_query(owner_id: int):
     try:
         return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.debug("Private query error for owner %s: %s", owner_id, exc)
+        return jsonify({"error": _safe_sql_error(exc)}), 400
 
 
 # ── Admin SQL console ─────────────────────────────────────────────────────────
@@ -225,7 +237,8 @@ def query():
     try:
         return jsonify(db_admin.query_sql(raw_sql, row_limit=500))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        logger.debug("Admin query error: %s", exc)
+        return jsonify({"error": _safe_sql_error(exc)}), 400
 
 
 # ── Stats JSON ────────────────────────────────────────────────────────────────

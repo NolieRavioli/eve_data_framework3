@@ -43,8 +43,12 @@ def _load_or_create_session_secret() -> str:
         pass
     secret = secrets.token_hex(32)
     os.makedirs(public_data, exist_ok=True)
-    with open(secret_path, "w") as f:
-        f.write(secret)
+    # Write with restrictive permissions (owner-only read/write)
+    fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, secret.encode())
+    finally:
+        os.close(fd)
     logger.info("[Config] Generated new session secret at %s", secret_path)
     return secret
 

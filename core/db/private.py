@@ -28,9 +28,18 @@ def _configure_private_sqlite(dbapi_connection, _connection_record):
 
 
 def initialize_private_database(owner_id: int):
-    toon_folder = os.path.join(PRIVATE_DATA_FOLDER, str(owner_id))
+    # Validate owner_id to prevent path traversal
+    if not isinstance(owner_id, int) or owner_id <= 0:
+        raise ValueError("owner_id must be a positive integer")
+    safe_id = str(int(owner_id))  # re-cast to ensure no injection
+    toon_folder = os.path.join(PRIVATE_DATA_FOLDER, safe_id)
+    # Verify the resolved path stays inside the private data folder
+    abs_base = os.path.abspath(PRIVATE_DATA_FOLDER)
+    abs_folder = os.path.abspath(toon_folder)
+    if not abs_folder.startswith(abs_base):
+        raise ValueError("Invalid owner_id: path traversal detected")
     os.makedirs(toon_folder, exist_ok=True)
-    db_path = os.path.join(toon_folder, f"{owner_id}.db")
+    db_path = os.path.join(toon_folder, f"{safe_id}.db")
     abs_path = os.path.abspath(db_path).replace("\\", "/")
     db_url = f"sqlite:///{abs_path}"
     if owner_id not in _private_engines:

@@ -263,7 +263,13 @@ def switch_character(character_id: int):
 
     session["character_id"] = character_id
     next_url = request.args.get("next") or url_for("dashboard.home")
-    if not next_url.startswith("/") or next_url.startswith("//"):
+    # Prevent open-redirect: allow only safe relative paths
+    if not next_url.startswith("/") or next_url.startswith("//") or next_url.startswith("/\\"):
+        next_url = url_for("dashboard.home")
+    # Strip scheme-smuggling characters
+    from urllib.parse import urlparse
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc:
         next_url = url_for("dashboard.home")
     return redirect(next_url)
 
@@ -369,9 +375,9 @@ def callback():
 
         return redirect(url_for("dashboard.home"))
 
-    except Exception as exc:  # pragma: no cover - diagnostic path
+    except Exception:  # pragma: no cover - diagnostic path
         logger.exception("[Auth] Error during authentication callback")
-        return f"Authentication failed: {exc}", 500
+        return "Authentication failed. Please try again.", 500
 
 
 @auth_bp.route("/logout")

@@ -7,6 +7,11 @@
   var badge = document.getElementById('status-badge');
   var cancelButton = document.getElementById('cancel-btn');
 
+  function escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
   function appendLine(text) {
     var span = document.createElement('span');
     span.className = 'ln';
@@ -52,7 +57,7 @@
         list.appendChild(row);
       }
       row.innerHTML =
-        '<span class="bucket-name" title="' + name + '">' + name + '</span>' +
+        '<span class="bucket-name" title="' + escHtml(name) + '">' + escHtml(name) + '</span>' +
         '<div class="bucket-bar-wrap"><div class="' + barCls + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
         '<span class="bucket-tokens">' + remaining.toLocaleString() + '\u202f/\u202f' + limit.toLocaleString() + '</span>';
     });
@@ -100,17 +105,17 @@
       var hdrs = e.hdrs || {};
       var hdrKeys = Object.keys(hdrs).sort();
       var hdrHtml = hdrKeys.length ? hdrKeys.map(function (k) {
-        return '<div class="esi-req-hdr-kv"><span class="esi-req-hdr-k">' + k + '</span><span class="esi-req-hdr-v">' + hdrs[k] + '</span></div>';
+        return '<div class="esi-req-hdr-kv"><span class="esi-req-hdr-k">' + escHtml(k) + '</span><span class="esi-req-hdr-v">' + escHtml(hdrs[k]) + '</span></div>';
       }).join('') : '';
       var entry = document.createElement('div');
       entry.innerHTML =
         '<div class="esi-req-row">' +
           '<span class="esi-req-toggle">\u25b6</span>' +
-          '<span class="esi-req-ts">' + e.ts + '</span>' +
-          '<span class="esi-req-method">' + e.method + '</span>' +
+          '<span class="esi-req-ts">' + escHtml(e.ts) + '</span>' +
+          '<span class="esi-req-method">' + escHtml(e.method) + '</span>' +
           '<span class="esi-req-status ' + sCls + '">' + e.status + '</span>' +
           '<span class="esi-req-ms">' + e.ms.toLocaleString() + 'ms</span>' +
-          '<span class="esi-req-url" title="' + e.url + '">' + path + '</span>' +
+          '<span class="esi-req-url" title="' + escHtml(e.url) + '">' + escHtml(path) + '</span>' +
         '</div>' +
         (hdrHtml ? '<div class="esi-req-hdrs">' + hdrHtml + '</div>' : '');
       if (hdrHtml) {
