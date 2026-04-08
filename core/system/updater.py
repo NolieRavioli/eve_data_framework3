@@ -73,13 +73,23 @@ def apply_update() -> None:
 
 
 def restart_process() -> None:
-    """Replace the current process with a fresh invocation of the same command.
+    """Restart the current process with a fresh invocation of the same command.
 
-    Uses ``os.execv()`` so the PID stays the same and the calling shell
-    sees a seamless restart.
+    On Windows, spawns a detached child process then force-exits so the old
+    process fully releases its port before the new one tries to bind it.
+    On Linux/macOS, uses ``os.execv`` to atomically replace the process.
     """
     logger.info("[updater] Restarting: %s %s", sys.executable, " ".join(sys.argv))
-    os.execv(sys.executable, [sys.executable, *sys.argv])
+    if os.name == "nt":
+        import subprocess as _sp
+        _sp.Popen(
+            [sys.executable, *sys.argv],
+            creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+        os._exit(0)
+    else:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def get_latest_github_release() -> str | None:
