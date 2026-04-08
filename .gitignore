@@ -9,6 +9,8 @@ config.yaml
 
 **/__pycache__
 **/.env
+**/.pytest_cache
+**/.mypy_cache
 
 # Virtual environments
 .venv/

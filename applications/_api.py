@@ -430,6 +430,11 @@ from core.bus import get_bus_log, get_all_topics, get_recent, publish as bus_pub
 
 # ── System bootstrap ──────────────────────────────────────────────────────────
 from core.system.bootstrap import get_subsystem_status as _get_subsystem_status
+from core.system.updater import (
+    apply_release_update as _apply_release_update,
+    get_latest_github_release as _get_latest_github_release,
+    restart_process as _restart_process,
+)
 
 
 def _bootstrap_update_sde() -> str:
@@ -452,6 +457,12 @@ system_bootstrap = types.SimpleNamespace(
     update_sde=_bootstrap_update_sde,
     update_esi=_bootstrap_update_esi,
     update_config=_bootstrap_update_config,
+)
+
+system_update = types.SimpleNamespace(
+    apply_release_update=_apply_release_update,
+    get_latest_release=_get_latest_github_release,
+    restart=_restart_process,
 )
 
 __all__ = [
@@ -490,4 +501,5 @@ __all__ = [
     "get_recent",
     "bus_publish",
     "system_bootstrap",
+    "system_update",
 ]

@@ -8,7 +8,24 @@ This document is the authoritative reference for **human contributors** and **AI
 > Current documentation located at: https://developers.eveonline.com/docs/
 > ESI api: https://developers.eveonline.com/api-explorer#/
 
-> **⚠ BREAKING RELEASES:** Any breaking or milestone release **MUST** bump `BASE_VERSION` in `.github/workflows/release.yml`. The workflow auto-increments the patch number from this base — changing `v0.2` to `v0.3` resets the patch counter to `v0.3.0`.
+> **⚠ BREAKING RELEASES:** Any breaking or milestone release **MUST** bump `BASE_VERSION` in [`.github/workflows/release.yml`](.github\workflows\release.yml). The workflow auto-increments the patch number from this base — changing `v0.2` to `v0.3` resets the patch counter to `v0.3.0`.
+>
+> **When to bump `BASE_VERSION` — mandatory triggers for AI agents and contributors:**
+>
+> | Change type | Example | Bump? |
+> |---|---|---|
+> | SDE format change (schema, file layout, source format) | YAML → JSONL migration; table rename `sde_regions` → `sde_mapRegions` | **YES** |
+> | DuckDB warehouse schema change requiring a rebuild | New column added to `sde_types`; DDL incompatible with existing DB | **YES** |
+> | Removal or rename of a public API / route | Deleting an endpoint, renaming a URL prefix | **YES** |
+> | Core infrastructure replacement | Swap auth library, change token storage format | **YES** |
+> | Any change that requires the operator to re-run setup or wipe data | New mandatory config key, re-encrypt credentials | **YES** |
+> | New feature, new application, new collector | Adding `market_browser`, new scheduler job | no |
+> | Bug fix, performance improvement, refactor | Fixing a query, improving caching | no |
+> | Documentation, test, CI-only change | Updating README, adding tests | no |
+>
+> **Rule of thumb:** if a user upgrading from the previous version would need to take manual action (rebuild the warehouse, update config, re-authenticate, or lose data), it is a breaking change — bump `BASE_VERSION`.
+>
+> **AI agents:** if you complete a task that matches any "YES" row above, explicitly note in your response that `BASE_VERSION` should be bumped and show the user the one-line change needed in `.github/workflows/release.yml` before finalising the work.
 
 ---
 
