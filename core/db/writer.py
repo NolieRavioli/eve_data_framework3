@@ -336,6 +336,12 @@ def _writer_loop(db_path: Path) -> None:
                             entry["rows"] += len(b.df)
                         else:
                             entry["rows"] += 1
+            # Notify the DB stats publisher that a write occurred.
+            try:
+                from core.db.stats import notify_write_activity
+                notify_write_activity()
+            except Exception:
+                pass
         except Exception as exc:
             logger.warning("Write failed (%s): %s", type(exc).__name__, exc)
             for b in batch:

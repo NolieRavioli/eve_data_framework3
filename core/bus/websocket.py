@@ -33,8 +33,6 @@ from flask import session
 
 logger = logging.getLogger(__name__)
 
-_RECV_TIMEOUT = 30.0
-
 
 def _check_topic_access(topic_or_pattern: str) -> bool:
     """Return True if the current session may subscribe to *topic_or_pattern*.
@@ -109,6 +107,40 @@ def _check_single_topic_access(
     return required_role in roles
 
 
+def _start_sender(
+    ws,
+    stop_evt: threading.Event,
+) -> tuple:
+    """Create an outbound queue + sender thread for a WebSocket connection.
+
+    Returns ``(send_q, push_fn, sender_thread)``.  The sender thread is already
+    started.  Call ``stop_evt.set()`` and ``sender_thread.join()`` to shut down.
+    """
+    send_q: _queue_module.Queue = _queue_module.Queue(maxsize=500)
+
+    def _push(entry: dict) -> None:
+        msg_type = "publish" if "data" in entry else "entry"
+        try:
+            send_q.put_nowait({"type": msg_type, **entry})
+        except _queue_module.Full:
+            pass
+
+    def _sender() -> None:
+        while not stop_evt.is_set():
+            try:
+                msg = send_q.get(timeout=1.0)
+                ws.send(json.dumps(msg, default=str))
+            except _queue_module.Empty:
+                continue
+            except Exception:
+                stop_evt.set()
+                break
+
+    sender = threading.Thread(target=_sender, daemon=True, name="bus-ws-sender")
+    sender.start()
+    return send_q, _push, sender
+
+
 def bus_ws(ws) -> None:
     """flask-sock handler — one call per WebSocket connection."""
 
@@ -124,32 +156,8 @@ def bus_ws(ws) -> None:
             pass
         return
 
-    # ── Per-connection outbound queue ─────────────────────────────────────────
-    send_q: _queue_module.Queue = _queue_module.Queue(maxsize=500)
     stop_evt = threading.Event()
-
-    def _push(entry: dict) -> None:
-        """Subscriber callback — enqueue an entry for sending (drop if full)."""
-        msg_type = "publish" if "data" in entry else "entry"
-        try:
-            send_q.put_nowait({"type": msg_type, **entry})
-        except _queue_module.Full:
-            pass
-
-    # ── Sender thread ─────────────────────────────────────────────────────────
-    def _sender() -> None:
-        while not stop_evt.is_set():
-            try:
-                msg = send_q.get(timeout=1.0)
-                ws.send(json.dumps(msg, default=str))
-            except _queue_module.Empty:
-                continue
-            except Exception:
-                stop_evt.set()
-                break
-
-    sender = threading.Thread(target=_sender, daemon=True, name="bus-ws-sender")
-    sender.start()
+    send_q, _push, sender = _start_sender(ws, stop_evt)
 
     from core.bus.handler import bus_handler
 
@@ -159,7 +167,7 @@ def bus_ws(ws) -> None:
     try:
         while not stop_evt.is_set():
             try:
-                raw = ws.receive(timeout=_RECV_TIMEOUT)
+                raw = ws.receive(timeout=None)
             except Exception:
                 break
 
@@ -345,29 +353,8 @@ def _make_ws_handler(
             resolved_topics = list(topics_spec)
 
         # ── Outbound queue + sender thread ─────────────────────────────────
-        send_q: _queue_module.Queue = _queue_module.Queue(maxsize=500)
         stop_evt = threading.Event()
-
-        def _push(entry: dict) -> None:
-            msg_type = "publish" if "data" in entry else "entry"
-            try:
-                send_q.put_nowait({"type": msg_type, **entry})
-            except _queue_module.Full:
-                pass
-
-        def _sender() -> None:
-            while not stop_evt.is_set():
-                try:
-                    msg = send_q.get(timeout=1.0)
-                    ws.send(json.dumps(msg, default=str))
-                except _queue_module.Empty:
-                    continue
-                except Exception:
-                    stop_evt.set()
-                    break
-
-        sender = threading.Thread(target=_sender, daemon=True, name="bus-ws-push-sender")
-        sender.start()
+        send_q, _push, sender = _start_sender(ws, stop_evt)
 
         # ── Subscribe & push historical snapshots ─────────────────────────────
         from core.bus.handler import bus_handler
@@ -381,16 +368,15 @@ def _make_ws_handler(
                 except _queue_module.Full:
                     pass
 
-        # ── Keep-alive receive loop (drain client frames, watch for close) ──
+        # ── Drain loop: detect connection close (ping/pong handles keepalive) ──
         try:
             while not stop_evt.is_set():
                 try:
-                    raw = ws.receive(timeout=_RECV_TIMEOUT)
+                    raw = ws.receive(timeout=None)
                 except Exception:
                     break
                 if raw is None:
                     break
-                # Acknowledge pings / ignore unsupported frames silently.
         finally:
             stop_evt.set()
             bus_handler.unsubscribe_all(_push)

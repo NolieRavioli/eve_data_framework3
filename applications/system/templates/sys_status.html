@@ -9,8 +9,7 @@
   </div>
 </div>
 
-<div class="pg-body" id="sys-root"
-     data-url-ws-process="/system/ws/process">
+<div class="pg-body" id="sys-root">
 
   {# -- Process ------------------------------------------------------------ #}
   <div class="card stack" style="margin-bottom:1rem">
@@ -36,6 +35,26 @@
         <span class="l">CPU</span>
       </div>
       {% endif %}
+    </div>
+  </div>
+
+  {# -- Thread Breakdown --------------------------------------------------- #}
+  <div class="card stack" style="margin-bottom:1rem" id="thread-breakdown-card" style="display:none">
+    <div class="ct" style="margin:0 0 0.75rem">Active Threads</div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.8rem" id="thread-table">
+        <thead>
+          <tr style="opacity:.55;font-size:0.72rem;text-transform:uppercase;letter-spacing:.05em">
+            <th style="text-align:left;padding:0.2rem 0.5rem">Name</th>
+            <th style="text-align:center;padding:0.2rem 0.5rem">Daemon</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">User CPU (s)</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Sys CPU (s)</th>
+          </tr>
+        </thead>
+        <tbody id="thread-tbody">
+          <tr><td colspan="4" class="muted" style="padding:0.5rem;text-align:center">Waiting for data…</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 

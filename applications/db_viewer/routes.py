@@ -17,7 +17,6 @@ from flask import (
 
 from applications._api import require_admin, require_role, base_ctx
 from applications._api import db_admin, queue_info
-from core.bus.websocket import register_websock
 
 logger = logging.getLogger(__name__)
 
@@ -25,22 +24,8 @@ db_bp = Blueprint("db_viewer", __name__,
                   template_folder="templates",
                   static_folder="static")
 
-# ── Focused WebSocket endpoints ──────────────────────────────────────────────────
-
-# Personal tier: owner-filtered (client-side) db/stats push
-register_websock(
-    "/db/ws",
-    ["db/stats"],
-    access_level="user",
-    required_role="database",
-)
-
-# Admin tier: global db/stats push (all owners)
-register_websock(
-    "/db/admin/ws",
-    ["db/stats"],
-    access_level="admin",
-)
+# db/stats WebSocket access is handled by the shared /bus endpoint.
+# Clients subscribe to ["db/stats"] after connecting to /bus.
 
 
 # ── Landing ───────────────────────────────────────────────────────────────────────────────────────────────
