@@ -394,6 +394,11 @@ def start_db_stats_publisher() -> None:
     if _publisher_thread is not None and _publisher_thread.is_alive():
         return
     stop_evt = threading.Event()
+
+    def _stop() -> None:
+        stop_evt.set()
+        _write_activity_evt.set()  # wake the thread so it sees stop_evt immediately
+
     _publisher_thread = threading.Thread(
         target=_publish_loop, args=(stop_evt,), daemon=True, name="db-stats-pub"
     )
@@ -403,6 +408,6 @@ def start_db_stats_publisher() -> None:
     # Register with the central lifecycle coordinator.
     try:
         from core.system import get_lifecycle
-        get_lifecycle().register("db-stats-pub", _publisher_thread, stop_fn=stop_evt.set)
+        get_lifecycle().register("db-stats-pub", _publisher_thread, stop_fn=_stop)
     except Exception:
         pass
