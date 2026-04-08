@@ -75,17 +75,29 @@ def apply_update() -> None:
 def restart_process() -> None:
     """Restart the current process with a fresh invocation of the same command.
 
-    On Windows, spawns a detached child process then force-exits so the old
-    process fully releases its port before the new one tries to bind it.
+    On Windows, spawns a child process in the same console (so Ctrl+C works)
+    then force-exits.  Lifecycle shutdown is called first so DuckDB and all
+    managed threads are released cleanly before the new process starts.
     On Linux/macOS, uses ``os.execv`` to atomically replace the process.
     """
+    # Gracefully stop all managed threads (db-writer, scheduler, stats, etc.)
+    # *before* spawning the replacement process so DuckDB file locks and the
+    # listening port are fully released.
+    try:
+        from core.system import get_lifecycle
+        get_lifecycle().shutdown()
+    except Exception:
+        logger.warning("[updater] Lifecycle shutdown failed — continuing restart")
+
     logger.info("[updater] Restarting: %s %s", sys.executable, " ".join(sys.argv))
     if os.name == "nt":
         import subprocess as _sp
+        env = os.environ.copy()
+        env["_EVE_RESTART_DELAY"] = "1"  # new process waits for port release
         _sp.Popen(
             [sys.executable, *sys.argv],
-            creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
+            env=env,
+            creationflags=_sp.CREATE_NEW_PROCESS_GROUP,
         )
         os._exit(0)
     else:

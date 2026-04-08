@@ -1,4 +1,6 @@
 import logging
+import os
+import time
 
 from core.config import ensure_dependencies, get_sde_config, initialize_runtime_environment
 
@@ -6,6 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    # If we were spawned by restart_process(), give the old process a moment
+    # to fully exit and release the port / DuckDB file lock.
+    if os.environ.pop("_EVE_RESTART_DELAY", None):
+        time.sleep(1)
+
     # ── 1. Config → RAM (single load, cached forever) ─────────────────────
     settings = initialize_runtime_environment()
     ensure_dependencies(settings)
