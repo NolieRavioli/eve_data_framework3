@@ -13,6 +13,7 @@ from flask import jsonify
 
 from applications._api import base_ctx, require_admin, tasks, system_bootstrap
 from core.bus.process_pub import collect_process_snapshot
+from core.system.updater import get_latest_github_release
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +57,17 @@ def index():
     session["system_esi_token"] = esi_token
     session["system_config_token"] = config_token
 
+    git_version = _get_git_version()
+    latest_release = get_latest_github_release()
+    update_available = bool(latest_release and latest_release != git_version)
+
     return render_template(
         "sys_status.html",
         process=snapshot,
         bus_topics=_topics(),
-        git_version=_get_git_version(),
+        git_version=git_version,
+        latest_release=latest_release,
+        update_available=update_available,
         update_token=update_token,
         sde_token=sde_token,
         esi_token=esi_token,
@@ -82,6 +89,7 @@ def update_system():
         return redirect(url_for("system.index"))
 
     def _do_update():
+        from core.system.updater import restart_process
         subprocess.check_call(["git", "fetch", "--tags", "origin"], timeout=60)
         try:
             tag = subprocess.check_output(
@@ -92,15 +100,16 @@ def update_system():
             tag = ""
         if tag:
             subprocess.check_call(["git", "checkout", tag], timeout=30)
-            logger.info("System updated to tag %s — manual restart required.", tag)
+            logger.info("System updated to tag %s — restarting...", tag)
         else:
             logger.warning("[Update] No release tags found — falling back to origin/main")
             subprocess.check_call(["git", "pull", "origin", "main"], timeout=120)
-            logger.info("System updated to latest main — manual restart required.")
+            logger.info("System updated to latest main — restarting...")
         subprocess.check_call(
             [_sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
             timeout=300,
         )
+        restart_process()
 
     task_id = tasks.enqueue("System Update", _do_update, queue="public")
     return redirect(url_for("task_viewer.task_detail", task_id=task_id))

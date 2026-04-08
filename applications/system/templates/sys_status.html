@@ -64,14 +64,30 @@
     <div class="stat-row">
       <div class="stat">
         <span class="v mono">{{ git_version or 'unknown' }}</span>
-        <span class="l">Git Version</span>
+        <span class="l">Installed</span>
+      </div>
+      <div class="stat">
+        <span class="v mono">{{ latest_release or '—' }}</span>
+        <span class="l">Latest Release</span>
+      </div>
+      <div class="stat">
+        {% if latest_release is none %}
+          <span class="v" style="opacity:.5">&#8212;</span>
+          <span class="l">Update Check</span>
+        {% elif update_available %}
+          <span class="v" style="color:#f39c12">&#9650; Update available</span>
+          <span class="l">Update Check</span>
+        {% else %}
+          <span class="v" style="color:#27ae60">&#10003; Up to date</span>
+          <span class="l">Update Check</span>
+        {% endif %}
       </div>
     </div>
-    {% if is_site_owner %}
+    {% if is_site_owner and update_available %}
     <form method="post" action="{{ url_for('system.update_system') }}" style="margin-top:0.75rem"
-          onsubmit="return confirm('Pull latest changes and update dependencies?')">
+          onsubmit="return confirm('Upgrade to {{ latest_release }} and restart the server?')">
       <input type="hidden" name="confirm_token" value="{{ update_token }}">
-      <button class="btn btn-a" type="submit">Update System</button>
+      <button class="btn btn-a" type="submit">Upgrade to {{ latest_release }}</button>
     </form>
     {% endif %}
   </div>

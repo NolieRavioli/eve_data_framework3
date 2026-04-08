@@ -37,6 +37,7 @@ def base_ctx(active_page: str = "") -> dict:
             "base_char_name":  (char.name if char else str(char_id)),
             "base_wallet":     0.0,
             "base_is_admin":   is_admin,
+            "is_site_owner":   is_site_owner,
             "tool_nav":        tool_registry.nav_entries(),
             "tool_scope_ok":   tool_registry.check_scopes(granted),
             "tool_access_ok":  tool_registry.check_access(
