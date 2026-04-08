@@ -97,7 +97,6 @@ def users():
         "admin_users.html",
         **base_ctx("admin_panel"),
         users=user_rows,
-        is_site_owner=_is_site_owner(session.get("owner_id", 0)),
     )
 
 
@@ -126,7 +125,6 @@ def user_detail(owner_id: int):
         user=user,
         roles=roles,
         characters=characters,
-        is_site_owner=_is_site_owner(session.get("owner_id", 0)),
     )
 
 
