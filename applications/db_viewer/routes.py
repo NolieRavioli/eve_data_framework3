@@ -121,9 +121,9 @@ def private_query_self():
         return jsonify({"error": "No SQL provided"}), 400
     try:
         return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
-    except Exception as exc:
-        logger.debug("Private query error for owner %s: %s", owner_id, exc)
-        return jsonify({"error": _safe_sql_error(exc)}), 400
+    except Exception:
+        logger.exception("Private query error for owner %s", owner_id)
+        return jsonify({"error": "Query failed"}), 400
 
 
 # ── Admin tier — stats ────────────────────────────────────────────────────────
@@ -187,9 +187,9 @@ def public_query():
         return jsonify({"error": "No SQL provided"}), 400
     try:
         return jsonify(db_admin.query_sql(raw_sql, row_limit=500))
-    except Exception as exc:
-        logger.debug("Public query error: %s", exc)
-        return jsonify({"error": _safe_sql_error(exc)}), 400
+    except Exception:
+        logger.exception("Public query error")
+        return jsonify({"error": "Query failed"}), 400
 
 
 # ── Admin tier — specific owner private browser ──────────────────────────────
@@ -220,9 +220,9 @@ def private_query(owner_id: int):
         return jsonify({"error": "No SQL provided"}), 400
     try:
         return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
-    except Exception as exc:
-        logger.debug("Private query error for owner %s: %s", owner_id, exc)
-        return jsonify({"error": _safe_sql_error(exc)}), 400
+    except Exception:
+        logger.exception("Private query error for owner %s", owner_id)
+        return jsonify({"error": "Query failed"}), 400
 
 
 # ── Admin SQL console ─────────────────────────────────────────────────────────
@@ -236,9 +236,9 @@ def query():
         return jsonify({"error": "No SQL provided"}), 400
     try:
         return jsonify(db_admin.query_sql(raw_sql, row_limit=500))
-    except Exception as exc:
-        logger.debug("Admin query error: %s", exc)
-        return jsonify({"error": _safe_sql_error(exc)}), 400
+    except Exception:
+        logger.exception("Admin query error")
+        return jsonify({"error": "Query failed"}), 400
 
 
 # ── Stats JSON ────────────────────────────────────────────────────────────────
