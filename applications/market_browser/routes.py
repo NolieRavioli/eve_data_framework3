@@ -157,8 +157,9 @@ def tree():
             """
         )
         return jsonify([dict(r) for r in rows])
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("[MarketBrowser] Error loading market tree")
+        return jsonify({"error": "Failed to load market tree. This may indicate a temporary data access issue."}), 500
 
 
 @market_bp.route("/group/<int:group_id>/types")
@@ -175,8 +176,9 @@ def group_types(group_id: int):
             [group_id],
         )
         return jsonify([dict(r) for r in rows])
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("[MarketBrowser] Error loading group types for %s", group_id)
+        return jsonify({"error": "Failed to load group types"}), 500
 
 
 @market_bp.route("/search")
@@ -197,8 +199,9 @@ def search():
             [f"%{q}%"],
         )
         return jsonify([dict(r) for r in rows])
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("[MarketBrowser] Error searching types")
+        return jsonify({"error": "Search failed"}), 500
 
 
 # ── Type detail ───────────────────────────────────────────────────────────────

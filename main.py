@@ -13,6 +13,10 @@ def main() -> None:
     if os.environ.pop("_EVE_RESTART_DELAY", None):
         time.sleep(1)
 
+    # ── 0. At-rest decryption (before anything reads data files) ──────
+    from core.db.encryption import unseal_all, seal_all
+    unseal_all()
+
     # ── 1. Config → RAM (single load, cached forever) ─────────────────────
     settings = initialize_runtime_environment()
     ensure_dependencies(settings)
@@ -24,6 +28,7 @@ def main() -> None:
     # ── 3. System lifecycle coordinator ───────────────────────────────────
     from core.system import get_lifecycle
     lifecycle = get_lifecycle()
+    lifecycle.register_post_shutdown(seal_all)
 
     # ── 4. DB writer thread (registers with lifecycle) ────────────────────
     from core.db.writer import start_writer

@@ -17,6 +17,11 @@
         if (el) el.textContent = value;
     }
 
+    function escHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     /* ── Process stats handler (called from bus message) ─────────────────── */
 
     function applyProcessSnapshot(p) {
@@ -44,7 +49,7 @@
             html +=
                 "<tr style=\"border-top:1px solid rgba(255,255,255,.06)\">" +
                   "<td style=\"padding:0.2rem 0.5rem;font-family:monospace;font-size:0.78rem\">" +
-                    (t.name || "?") + "</td>" +
+                    escHtml(t.name || "?") + "</td>" +
                   "<td style=\"padding:0.2rem 0.5rem;text-align:center\">" + daemonMark + "</td>" +
                   "<td style=\"padding:0.2rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums\">" +
                     userTime + "</td>" +
@@ -120,10 +125,10 @@
                        : (entry.level === "ERROR" || entry.level === "CRITICAL") ? "#e74c3c"
                        : "#aaa";
         el.innerHTML =
-            '<span style="color:#666;font-size:0.7rem">' + ts + '</span>' +
-            ' <span style="color:' + levelColor + ';font-size:0.7rem">[' + (entry.level || '?') + ']</span>' +
-            ' <span style="color:' + getTopicColor(entry.topic) + ';font-size:0.7rem">' + (entry.topic || '') + '</span>' +
-            ' <span>' + (entry.message || '') + '</span>';
+            '<span style="color:#666;font-size:0.7rem">' + escHtml(ts) + '</span>' +
+            ' <span style="color:' + levelColor + ';font-size:0.7rem">[' + escHtml(entry.level || '?') + ']</span>' +
+            ' <span style="color:' + getTopicColor(entry.topic) + ';font-size:0.7rem">' + escHtml(entry.topic || '') + '</span>' +
+            ' <span>' + escHtml(entry.message || '') + '</span>';
 
         feed.appendChild(el);
 

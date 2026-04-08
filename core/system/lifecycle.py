@@ -42,6 +42,7 @@ class SystemLifecycle:
         self._threads: dict[str, _ManagedThread] = {}
         self._order_counter = 0
         self._shutdown_registered = False
+        self._post_shutdown_hooks: list[Callable[[], None]] = []
 
     # ------------------------------------------------------------------
     # Registration
@@ -78,6 +79,10 @@ class SystemLifecycle:
             atexit.register(self.shutdown)
             self._shutdown_registered = True
 
+    def register_post_shutdown(self, fn: Callable[[], None]) -> None:
+        """Register a callback that runs after all threads are stopped."""
+        self._post_shutdown_hooks.append(fn)
+
     # ------------------------------------------------------------------
     # Shutdown
     # ------------------------------------------------------------------
@@ -109,6 +114,12 @@ class SystemLifecycle:
                     logger.warning("Thread %r did not stop within %.1fs", entry.name, timeout)
                 else:
                     logger.info("Thread %r stopped.", entry.name)
+
+        for fn in self._post_shutdown_hooks:
+            try:
+                fn()
+            except Exception:
+                logger.exception("Error in post-shutdown hook %r", fn.__name__)
 
         logger.info("Shutdown complete.")
 

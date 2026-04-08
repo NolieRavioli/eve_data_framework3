@@ -306,9 +306,9 @@ def explore_run(operation_id: str):
                             if k.lower().startswith(("x-", "content-", "expires", "etag"))},
                 "data": r["body"],
             })
-    except Exception as exc:
+    except Exception:
         logger.exception("[ESI Explorer] Error running %s", operation_id)
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "ESI operation failed. Check server logs for details."}), 500
 
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
