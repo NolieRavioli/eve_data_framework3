@@ -37,6 +37,7 @@ class SchedulerEngine:
         # fn_registry maps job_id -> callable for use at runtime
         self._fn_registry: dict[str, Callable] = {}
         self._thread: threading.Thread | None = None
+        self._stop_evt = threading.Event()
         self._started = False
 
     # ------------------------------------------------------------------
@@ -88,7 +89,7 @@ class SchedulerEngine:
         # Register with the central lifecycle coordinator.
         try:
             from core.system import get_lifecycle
-            get_lifecycle().register("scheduler-engine", self._thread)
+            get_lifecycle().register("scheduler-engine", self._thread, stop_fn=self._stop_evt.set)
         except Exception:
             pass
 
@@ -139,12 +140,12 @@ class SchedulerEngine:
     # ------------------------------------------------------------------
 
     def _tick_loop(self) -> None:
-        while True:
+        while not self._stop_evt.is_set():
             try:
                 self._tick()
             except Exception:
                 logger.exception("[Scheduler] Unhandled error in tick loop")
-            time.sleep(_TICK_INTERVAL)
+            self._stop_evt.wait(timeout=_TICK_INTERVAL)
 
     def _tick(self) -> None:
         import core.db.public as db

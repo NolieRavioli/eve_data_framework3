@@ -8,6 +8,8 @@ This document is the authoritative reference for **human contributors** and **AI
 > Current documentation located at: https://developers.eveonline.com/docs/
 > ESI api: https://developers.eveonline.com/api-explorer#/
 
+> **⚠ BREAKING RELEASES:** Any breaking or milestone release **MUST** bump `BASE_VERSION` in `.github/workflows/release.yml`. The workflow auto-increments the patch number from this base — changing `v0.2` to `v0.3` resets the patch counter to `v0.3.0`.
+
 ---
 
 ## Table of Contents

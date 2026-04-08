@@ -98,6 +98,6 @@ def start_process_publisher() -> None:
     # Register with the central lifecycle coordinator.
     try:
         from core.system import get_lifecycle
-        get_lifecycle().register("bus-process-pub", thread)
+        get_lifecycle().register("bus-process-pub", thread, stop_fn=stop_evt.set)
     except Exception:
         pass
