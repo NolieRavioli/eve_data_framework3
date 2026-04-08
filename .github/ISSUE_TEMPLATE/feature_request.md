@@ -1,8 +1,10 @@
 ---
 name: Feature Request
 about: Propose a new feature or enhancement for the EVE Data Framework
-labels: ["Feature", "enhancement"]
+title: ''
+labels: enhancement
 assignees: ''
+
 ---
 
 ## Problem Statement
