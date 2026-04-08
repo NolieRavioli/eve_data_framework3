@@ -45,6 +45,9 @@ def create_app(settings: Optional[RuntimeSettings] = None) -> Flask:
     try:
         from flask_sock import Sock
         from core.bus.websocket import bus_ws
+        # ping_interval keeps connections alive through proxies and detects dead
+        # clients without requiring application-level keepalive hacks.
+        app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
         sock = Sock(app)
         sock.route("/bus")(bus_ws)
     except ImportError:

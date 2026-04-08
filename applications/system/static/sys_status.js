@@ -1,5 +1,7 @@
 /* applications/sys_status/static/sys_status.js
-   System Status — process health via bus WebSocket + live bus log viewer.
+   System Status — process health + thread breakdown + live bus log viewer.
+   Process stats are received via the shared /bus connection (system/process topic)
+   rather than a separate /system/ws/process socket.
 */
 
 (function () {
@@ -8,8 +10,6 @@
     var root = document.getElementById("sys-root");
     if (!root) return;
 
-    var wsProcessUrl = root.dataset.urlWsProcess;
-
     /* ── helpers ─────────────────────────────────────────────────────────── */
 
     function setText(id, value) {
@@ -17,39 +17,45 @@
         if (el) el.textContent = value;
     }
 
-    /* ── Process stats: bus WebSocket push ───────────────────────────────── */
+    /* ── Process stats handler (called from bus message) ─────────────────── */
 
-    (function connectProcessWS() {
-        if (!wsProcessUrl) return;
-        var proto = location.protocol === "https:" ? "wss:" : "ws:";
-        var ws;
-        try {
-            ws = new WebSocket(proto + "//" + location.host + wsProcessUrl);
-        } catch (e) { return; }
+    function applyProcessSnapshot(p) {
+        if (!p) return;
+        if (p.memory_rss_mb != null) setText("proc-rss", p.memory_rss_mb + " MB");
+        if (p.thread_count  != null) setText("proc-threads", p.thread_count);
+        if (p.cpu_percent   != null) setText("proc-cpu", p.cpu_percent + "%");
+        if (p.threads       != null) renderThreadTable(p.threads, p.thread_cpu || {});
+    }
 
-        ws.onmessage = function (event) {
-            try {
-                var msg = JSON.parse(event.data);
-                // The bus sends {type:"publish", topic:"system/process", data:{...}}
-                var p = (msg.type === "publish" && msg.topic === "system/process") ? msg.data
-                      : (msg.type === "history") ? null   // history entries handled below
-                      : null;
-                if (!p && msg.type === "history") {
-                    var entries = msg.entries || [];
-                    if (entries.length) p = entries[entries.length - 1].data;
-                }
-                if (p) {
-                    if (p.memory_rss_mb != null) setText("proc-rss", p.memory_rss_mb + " MB");
-                    if (p.thread_count  != null) setText("proc-threads", p.thread_count);
-                    if (p.cpu_percent   != null) setText("proc-cpu", p.cpu_percent + "%");
-                }
-            } catch (e) {}
-        };
-        ws.onclose = function () { setTimeout(connectProcessWS, 8000); };
-        ws.onerror = function () { ws.close(); };
-    }());
+    /* ── Thread breakdown table ──────────────────────────────────────────── */
 
-    /* ── WebSocket: live bus logs ─────────────────────────────────────────── */
+    function renderThreadTable(threads, threadCpu) {
+        var card  = document.getElementById("thread-breakdown-card");
+        var tbody = document.getElementById("thread-tbody");
+        if (!card || !tbody || !threads.length) return;
+
+        card.style.display = "";
+        var html = "";
+        threads.forEach(function (t) {
+            var cpu = threadCpu[String(t.native_id)] || {};
+            var userTime = cpu.user_time != null ? cpu.user_time.toFixed(3) : "—";
+            var sysTime  = cpu.system_time != null ? cpu.system_time.toFixed(3) : "—";
+            var daemonMark = t.daemon ? '<span style="opacity:.5">D</span>' : "";
+            html +=
+                "<tr style=\"border-top:1px solid rgba(255,255,255,.06)\">" +
+                  "<td style=\"padding:0.2rem 0.5rem;font-family:monospace;font-size:0.78rem\">" +
+                    (t.name || "?") + "</td>" +
+                  "<td style=\"padding:0.2rem 0.5rem;text-align:center\">" + daemonMark + "</td>" +
+                  "<td style=\"padding:0.2rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums\">" +
+                    userTime + "</td>" +
+                  "<td style=\"padding:0.2rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums\">" +
+                    sysTime + "</td>" +
+                "</tr>";
+        });
+        tbody.innerHTML = html;
+    }
+
+    /* ── WebSocket: live bus logs + system/process topic ────────────────── */
 
     var ws = null;
     var logCount = 0;
@@ -147,7 +153,12 @@
 
         ws.onopen = function () {
             wsSetStatus("connected", true);
-            wsSubscribe(getSelectedTopics());
+            // Always subscribe to system/process for the process stats panel.
+            var logTopics = getSelectedTopics();
+            var allTopics = ["system/process"].concat(
+                logTopics.filter(function (t) { return t !== "system/process"; })
+            );
+            wsSubscribe(allTopics);
         };
         ws.onmessage = function (event) {
             try {
@@ -155,7 +166,17 @@
                 if (msg.type === "entry") {
                     addLogEntry(msg);
                 } else if (msg.type === "history") {
-                    (msg.entries || []).forEach(function (e) { addLogEntry(e); });
+                    if (msg.topic === "system/process") {
+                        // Use the most recent entry for initial process stats.
+                        var entries = msg.entries || [];
+                        if (entries.length) applyProcessSnapshot(entries[entries.length - 1].data);
+                    } else {
+                        (msg.entries || []).forEach(function (e) { addLogEntry(e); });
+                    }
+                } else if (msg.type === "publish") {
+                    if (msg.topic === "system/process") {
+                        applyProcessSnapshot(msg.data);
+                    }
                 } else if (msg.type === "error") {
                     wsSetStatus("error: " + msg.message, false);
                 }
@@ -168,7 +189,7 @@
         ws.onerror = function () { wsSetStatus("error", false); ws.close(); };
     }
 
-    // Topic checkbox change — re-subscribe
+    // Topic checkbox change — re-subscribe (log topics only; system/process is always on)
     document.addEventListener("change", function (evt) {
         if (!evt.target || !evt.target.classList.contains("topic-cb")) return;
         var topic = evt.target.dataset.topic;

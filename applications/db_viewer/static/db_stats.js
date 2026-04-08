@@ -126,6 +126,11 @@
   function startWS() {
     try { ws = new WebSocket(wsUrl); } catch (e) { return; }
 
+    ws.onopen = function () {
+      // Subscribe to db/stats via the /bus protocol.
+      ws.send(JSON.stringify({ action: 'subscribe', topics: ['db/stats'] }));
+    };
+
     ws.onmessage = function (ev) {
       try {
         var msg = JSON.parse(ev.data);

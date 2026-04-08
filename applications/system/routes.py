@@ -13,7 +13,6 @@ from flask import jsonify
 
 from applications._api import base_ctx, require_admin, tasks, system_bootstrap
 from core.bus.process_pub import collect_process_snapshot
-from core.bus.websocket import register_websock
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +23,8 @@ sys_bp = Blueprint(
     static_folder="static",
 )
 
-# Declare a focused push endpoint: publishes system/process metrics every 10 s.
-register_websock(
-    "/system/ws/process",
-    ["system/process"],
-    access_level="admin",
-)
+# WebSocket for this blueprint is handled by the shared /bus endpoint.
+# Clients subscribe to "system/process" via the /bus protocol.
 
 
 def _get_git_version() -> str | None:

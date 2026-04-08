@@ -359,13 +359,29 @@ import threading
 import time
 
 _publisher_thread: threading.Thread | None = None
+_write_activity_evt: threading.Event = threading.Event()
 
 
-def _publish_loop() -> None:
-    """Periodically publish DB stats to the bus."""
+def notify_write_activity() -> None:
+    """Signal that a DB write occurred; the stats publisher will debounce and publish."""
+    _write_activity_evt.set()
+
+
+def _publish_loop(stop_evt: threading.Event) -> None:
+    """Event-driven stats publisher.
+
+    Waits for write activity (or a 30 s heartbeat timeout), debounces 0.5 s
+    to batch burst writes, then publishes ``db/stats``.
+    """
     from core.bus import publish, DB_STATS
-    while True:
-        time.sleep(5.0)
+    while not stop_evt.is_set():
+        # Block until write activity is signalled or 30 s heartbeat fires.
+        _write_activity_evt.wait(timeout=30.0)
+        _write_activity_evt.clear()
+        if stop_evt.is_set():
+            break
+        # Debounce: collect any burst of writes arriving within 0.5 s.
+        stop_evt.wait(timeout=0.5)
         try:
             publish(DB_STATS, get_db_gateway_stats())
         except Exception:
@@ -373,15 +389,16 @@ def _publish_loop() -> None:
 
 
 def start_db_stats_publisher() -> None:
-    """Start the daemon thread that publishes ``db/stats`` every 5 s."""
+    """Start the daemon thread that publishes ``db/stats`` on write activity (or every 30 s)."""
     global _publisher_thread
     if _publisher_thread is not None and _publisher_thread.is_alive():
         return
+    stop_evt = threading.Event()
     _publisher_thread = threading.Thread(
-        target=_publish_loop, daemon=True, name="db-stats-pub"
+        target=_publish_loop, args=(stop_evt,), daemon=True, name="db-stats-pub"
     )
     _publisher_thread.start()
-    logger.info("[db-stats-pub] Started — publishing db/stats every 5s")
+    logger.info("[db-stats-pub] Started — publishes db/stats on write activity (heartbeat 30s)")
 
     # Register with the central lifecycle coordinator.
     try:
