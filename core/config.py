@@ -54,6 +54,9 @@ def _load_or_create_session_secret() -> str:
     os.makedirs(public_data, exist_ok=True)
     with open(secret_path, "w") as f:
         f.write(secret)
+    from pathlib import Path
+    from core.db.encryption import encrypt_file
+    encrypt_file(Path(secret_path))
     logger.info("[Config] Generated new session secret at %s", secret_path)
     return secret
 
