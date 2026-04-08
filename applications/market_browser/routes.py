@@ -159,7 +159,7 @@ def tree():
         return jsonify([dict(r) for r in rows])
     except Exception:
         logger.exception("[MarketBrowser] Error loading market tree")
-        return jsonify({"error": "Failed to load market tree"}), 500
+        return jsonify({"error": "Failed to load market tree. This may indicate a temporary data access issue."}), 500
 
 
 @market_bp.route("/group/<int:group_id>/types")

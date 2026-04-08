@@ -26,7 +26,7 @@ def _safe_sql_error(exc: Exception) -> str:
     import re
     msg = str(exc).split("\n")[0][:300]
     msg = re.sub(r'[A-Za-z]:\\[^\s"]+', '<path>', msg)
-    msg = re.sub(r'/[^\s"]*\.[a-z]{1,4}', '<path>', msg)
+    msg = re.sub(r'(^|\s)(/[^\s"]*\.[a-z]{1,4})', r'\1<path>', msg)
     return msg
 
 db_bp = Blueprint("db_viewer", __name__,

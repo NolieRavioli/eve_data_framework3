@@ -34,6 +34,15 @@ def _load_or_create_session_secret() -> str:
     """Load a persistent session secret from disk, or generate one on first boot."""
     public_data = os.getenv("PUBLIC_DATA_FOLDER", "_publicData")
     secret_path = os.path.join(public_data, "secret")
+    sealed_path = secret_path + ".sealed"
+
+    # If the file is still sealed, unseal it first (defensive — main.py
+    # normally calls unseal_all() before we get here).
+    if os.path.exists(sealed_path) and not os.path.exists(secret_path):
+        from core.db.encryption import decrypt_file
+        from pathlib import Path
+        decrypt_file(Path(sealed_path))
+
     try:
         with open(secret_path, "r") as f:
             secret = f.read().strip()
@@ -43,12 +52,8 @@ def _load_or_create_session_secret() -> str:
         pass
     secret = secrets.token_hex(32)
     os.makedirs(public_data, exist_ok=True)
-    # Write with restrictive permissions (owner-only read/write)
-    fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, secret.encode())
-    finally:
-        os.close(fd)
+    with open(secret_path, "w") as f:
+        f.write(secret)
     logger.info("[Config] Generated new session secret at %s", secret_path)
     return secret
 
