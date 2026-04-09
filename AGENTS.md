@@ -2,15 +2,12 @@
 <!-- wiki-flags: HTML comments tagged wiki:ID delimit content extracted by sync_wiki.py for the GitHub Wiki. Do not remove or rename these markers. -->
 
 This document is the authoritative reference for **human contributors** and **AI coding agents** working in this repository. Read it in full before making any changes.
+ - Current EVE Online documentation: https://developers.eveonline.com/docs/
+ - Current EVE Online API: https://developers.eveonline.com/api-explorer#/
 
-> **AI agents:** `_esi_docs/` contains the full official ESI documentation — rate limiting, pagination, best practices, SSO, and more. **Always consult `_esi_docs/` before writing or reviewing any ESI-related code.** Start with `_esi_docs/services/esi/` for API behaviour and `_esi_docs/services/sso/` for auth.
-> **AI agents — live ESI surface:** For the current operation catalog, scope list, and rate-limit notes for the **active compatibility date**, read `_esi_specs/latest.json` and open the file at the path stored in `_esi_specs/latest.json["agents_md"]`. That file is regenerated every time the ESI spec is refreshed and is the authoritative machine-readable summary of every available route.
-> **IMPORTANT — about this file:** Do **not** modify `AGENTS.md` yourself. If you believe a change is needed (outdated section, missing information, incorrect detail), relay the specific proposed change to the user and let them decide. This file is the ground truth — it must stay accurate and intentional.
-
-> Current documentation located at: https://developers.eveonline.com/docs/
-> ESI api: https://developers.eveonline.com/api-explorer#/
-
-> **⚠ BREAKING RELEASES:** Any breaking or milestone release **MUST** bump `BASE_VERSION` in [`.github/workflows/release.yml`](.github\workflows\release.yml). The workflow auto-increments the patch number from this base — changing `v0.2` to `v0.3` resets the patch counter to `v0.3.0`.
+> **⚠ BREAKING RELEASES:**  
+> Any breaking or milestone release **MUST** bump `BASE_VERSION` in [`.github/workflows/release.yml`](.github\workflows\release.yml).  
+> The workflow auto-increments the patch number from this base — changing `v0.2` to `v0.3` resets the patch counter to `v0.3.0`.
 >
 > **When to bump `BASE_VERSION` — mandatory triggers for AI agents and contributors:**
 >
@@ -28,6 +25,10 @@ This document is the authoritative reference for **human contributors** and **AI
 > **Rule of thumb:** if a user upgrading from the previous version would need to take manual action (rebuild the warehouse, update config, re-authenticate, or lose data), it is a breaking change — bump `BASE_VERSION`.
 >
 > **AI agents:** if you complete a task that matches any "YES" row above, explicitly note in your response that `BASE_VERSION` should be bumped and show the user the one-line change needed in `.github/workflows/release.yml` before finalising the work.
+
+> **AI agents:** `_esi_docs/` contains the full official ESI documentation — rate limiting, pagination, best practices, SSO, and more. **Always consult `_esi_docs/` before writing or reviewing any ESI-related code.** Start with `_esi_docs/services/esi/` for API behaviour and `_esi_docs/services/sso/` for auth.  
+> **AI agents — live ESI surface:** For the current operation catalog, scope list, and rate-limit notes for the **active compatibility date**, read `_esi_specs/latest.json` and open the file at the path stored in `_esi_specs/latest.json["agents_md"]`. That file is regenerated every time the ESI spec is refreshed and is the authoritative machine-readable summary of every available route.  
+> **IMPORTANT — about this file:** Do **not** modify `AGENTS.md` yourself. If you believe a change is needed (outdated section, missing information, incorrect detail), relay the specific proposed change to the user and let them decide. This file is the ground truth — it must stay accurate and intentional.  
 
 ---
 
