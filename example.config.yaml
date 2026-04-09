@@ -167,7 +167,6 @@ Auth:
   default_roles:
     - dashboard
     - database
-    - sde
     - tasks
 
 Structures:

@@ -1,4 +1,5 @@
 # EVE Data Framework
+<!-- wiki-flags: HTML comments tagged wiki:ID delimit content extracted by sync_wiki.py for the GitHub Wiki. Do not remove or rename these markers. -->
 
 [![Latest Release](https://img.shields.io/github/v/release/NolieRavioli/eve_data_framework3?style=flat-square)](https://github.com/NolieRavioli/eve_data_framework3/releases/latest)
 
@@ -34,6 +35,7 @@ A self-hosted web application and data platform for EVE Online. The framework pr
 
 ## Installation
 
+<!-- wiki:readme_install -->
 ### Prerequisites
 
 - Python 3.12 or later
@@ -78,11 +80,13 @@ Runtime:
   host: "0.0.0.0"
   port: 5000
 ```
+<!-- /wiki:readme_install -->
 
 ---
 
 ## First-Run Setup
 
+<!-- wiki:readme_first_run -->
 On the very first launch with a fresh database, the framework will display a **setup wizard** at `http://127.0.0.1:5000/setup`. This wizard walks through:
 
 1. **Registering your EVE developer application credentials** — paste in your `client_id` and `client_secret` from [developers.eveonline.com](https://developers.eveonline.com). The callback URL you register on CCP's portal should be `http://<your-host>/auth/callback`.
@@ -90,6 +94,7 @@ On the very first launch with a fresh database, the framework will display a **s
 3. **Triggering the initial SDE load** — downloads and unpacks the Static Data Export from CCP's servers into `_sde/` and builds the DuckDB warehouse. This can take several minutes depending on which SDE sections are enabled.
 
 After setup, subsequent starts skip directly to the login page.
+<!-- /wiki:readme_first_run -->
 
 ---
 
@@ -105,6 +110,7 @@ To add additional characters to your account, use the **Add Toon** link on the d
 
 ## Site Admin Guide
 
+<!-- wiki:readme_site_admin -->
 ### User Management
 
 Site admins can manage other users through the **Admin Panel** (`/admin`):
@@ -148,11 +154,13 @@ python build.py --force
 ```
 
 This fetches the latest OpenAPI spec, regenerates the typed Python client in `core/esi/generated/`, and regenerates the domain-specific wrappers in `core/esi/personal/`, `core/esi/corp/`, and `core/esi/public/`.
+<!-- /wiki:readme_site_admin -->
 
 ---
 
 ## Configuration Reference
 
+<!-- wiki:readme_config_ref -->
 All runtime settings live in `config.yaml` (gitignored). A fully annotated template is provided in `example.config.yaml`. Key sections:
 
 ### `Runtime`
@@ -223,20 +231,23 @@ SDE:
 ### `Structures` and `Market`
 
 Cooldown settings that prevent re-fetching recently inaccessible structures. See `example.config.yaml` for full details.
+<!-- /wiki:readme_config_ref -->
 
 ---
 
 ## Built-In Applications
 
+<!-- wiki:readme_apps_table -->
 | Application | URL Prefix | Access | Description |
 |-------------|------------|--------|-------------|
 | `market_browser` | `/market` | Public (no login) | Browse live market orders by region and item type |
 | `dashboard` | `/dashboard` | Role: `dashboard` | Character overview and quick links to all tools |
 | `task_viewer` | `/tasks` | Role: `tasks` | Background task queue, live rate monitoring, scheduler (admin), and ESI explorer (admin) |
 | `db_viewer` | `/db` | Role: `database` | DB queue stats, read stats; admin-tier schema browser and query tool |
-| `admin_panel` | `/admin` | Admin only | User management — roles, admin promotion, user list |
-| `sde_browser` | `/sde` | Admin only | SDE table browser, lookup tool, and reload trigger |
+| `admin_panel` | `/admin` | Admin only | Live log console and user management — roles, admin promotion, user list |
+| `sde_browser` | `/sde` | Role: `sde` | SDE table browser, lookup tool, and reload trigger |
 | `system` | `/system` | Admin only | Process metrics, git version, and system update |
+<!-- /wiki:readme_apps_table -->
 
 ---
 
@@ -248,9 +259,11 @@ The scheduler (`core/tasks/engine.py`) runs a background thread that ticks every
 
 | Job | Default Interval | Worker |
 |-----|-----------------|--------|
-| Market Data Refresh | 1 hour | `analysis.market.regions.fetch_all_market_data` |
-| Structure Discovery | 24 hours | `analysis.structures.discover.discover_structures` |
-| Character Data Refresh | 24 hours | refreshes all owners via `analysis.character.populate.populate_all` |
+| Market Data Refresh | 1 hour | `collectors.market.regions.fetch_all_market_data` |
+| Structure Market Orders Refresh | 1 hour | `collectors.market.structures.update_structure_market_orders` |
+| Structure Discovery | 24 hours | `collectors.structures.discover.discover_structures` |
+| Character Data Refresh | 24 hours | `collectors.character.populate.populate_all` (all owners) |
+| ESI Spec + Codegen Refresh | 24 hours (disabled by default) | `core.system.bootstrap.ensure_esi_ready` |
 
 Manage jobs through the **Scheduler** tab in the Task Manager (`/tasks/scheduler/`) or the `scheduler` adapter in code:
 
@@ -283,7 +296,7 @@ core/                    # infrastructure — never import from applications/
     sso.py               # auth_bp — EVE SSO OAuth2 flow: /login, /callback, /logout, /add_toon, /switch_character
   bus/
     __init__.py          # re-exports topics, BusHandler, registry fns, websocket helpers
-    topics.py            # LOG_DB, LOG_ESI, LOG_SCHEDULER, ESI_RATE, DB_STATS, SYSTEM_PROCESS, QUEUE_TASKS, classify()
+    topics.py            # LOG_DB, LOG_ESI, LOG_SCHEDULER, ESI_RATE, DB_STATS, SYSTEM_PROCESS, TASK_EVENTS, classify()
     handler.py           # BusHandler(logging.Handler) — ring-buffer per-topic, publish(), subscribe()
     registry.py          # TopicConfig, register_topic(), get_topic_config()
     websocket.py         # /bus WebSocket endpoint, register_websock(), attach_all_websocks()
@@ -313,14 +326,16 @@ core/                    # infrastructure — never import from applications/
     persist.py           # scheduler_jobs table DDL
     output.py            # task log routing and IO
     context.py           # thread-local task context
-    sde_loader.py        # SDE pipeline: download → unzip → prune → DuckDB warehouse
+  system/
+    lifecycle.py         # SystemLifecycle, get_lifecycle() — managed thread registration + graceful shutdown
+    bootstrap.py         # bootstrap_all(), ensure_sde_ready(), ensure_esi_ready(), update_sde_full(), update_esi_full(), get_subsystem_status()
+    updater.py           # check_for_updates(), apply_release_update(), restart_process()
   web/
     __init__.py          # create_app() — Flask app factory
     app.py               # start_webUI() entry point
     context.py           # base_ctx() sidebar helper
     home.py / setup.py   # home and setup wizard blueprints
 
-analysis/                # empty — reserved for future use
 collectors/              # data collection workers
   character/populate.py  # per-owner ESI → private SQLite (skills, wallet, assets)
   market/
@@ -488,7 +503,7 @@ collectors/my_domain/
 ### Table Ownership Pattern
 
 ```python
-# analysis/my_domain/worker.py
+# collectors/my_domain/worker.py
 import logging
 import core.db.public as db
 
@@ -667,6 +682,7 @@ python build.py --collectors # only regenerate core/esi/personal|corp|public/
 
 ## Security Notes
 
+<!-- wiki:readme_security_notes -->
 | File/Path | Risk | Mitigation |
 |-----------|------|-----------|
 | `_publicData/key` | Fernet symmetric key — decrypts all OAuth tokens | **Never commit.** Listed in `.gitignore`. |
@@ -680,6 +696,7 @@ Additional protections:
 - **SQL injection** — all DuckDB queries use parameterised `con.execute("... WHERE id = ?", [val])`. No user input is interpolated into SQL strings.
 - **Token encryption** — OAuth tokens are Fernet-encrypted before being written to disk. The symmetric key never leaves the server.
 - **Rate limiting** — `esi_req.py` enforces ESI's floating-window token bucket and automatically backs off on 429 responses.
+<!-- /wiki:readme_security_notes -->
 
 ---
 

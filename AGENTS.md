@@ -1,4 +1,5 @@
 ﻿# EVE Data Framework — Contributor & Agent Guide
+<!-- wiki-flags: HTML comments tagged wiki:ID delimit content extracted by sync_wiki.py for the GitHub Wiki. Do not remove or rename these markers. -->
 
 This document is the authoritative reference for **human contributors** and **AI coding agents** working in this repository. Read it in full before making any changes.
 
@@ -59,6 +60,7 @@ This document is the authoritative reference for **human contributors** and **AI
 
 ## Repository Overview
 
+<!-- wiki:overview -->
 **EVE Data Framework** is a self-hosted Flask web application that interfaces with the EVE Online ESI REST API. It is structured into clean architectural layers:
 
 | Layer | Package | Purpose |
@@ -79,11 +81,13 @@ This document is the authoritative reference for **human contributors** and **AI
 - **DuckDB** — single shared public store (SDE, market orders, structures, ESI spec metadata, scheduler state)
 - **requests** — all HTTP; wrapped by `core/esi/request.py` (rate limiter + caching)
 - **`config.yaml`** — runtime configuration; loaded once at startup (gitignored, never committed)
+<!-- /wiki:overview -->
 
 ---
 
 ## Directory Map
 
+<!-- wiki:directory_map -->
 ```
 main.py                  # startup: load config, init DB, start queue writer, start Flask
 config.yaml              # runtime config  [GITIGNORED — never commit]
@@ -102,13 +106,13 @@ core/                    # ── INFRASTRUCTURE ──────────�
     sso.py               # auth_bp — EVE SSO OAuth2 flow: OAuthStateCache, /login, /callback, /logout, /add_toon, /switch_character
   bus/
     __init__.py          # re-exports topics, BusHandler, registry fns, websocket helpers
-    topics.py            # LOG_DB, LOG_ESI, LOG_SCHEDULER, …, ESI_RATE, DB_STATS, SYSTEM_PROCESS, QUEUE_TASKS, classify()
+    topics.py            # LOG_DB, LOG_ESI, LOG_SCHEDULER, …, ESI_RATE, DB_STATS, SYSTEM_PROCESS, TASK_EVENTS, classify()
     handler.py           # BusHandler(logging.Handler) — ring-buffer per-topic, publish(), subscribe(), install_bus_handler()
     registry.py          # TopicConfig, register_topic(), get_topic_config(), get_all_topic_configs()
     websocket.py         # /bus WebSocket endpoint, register_websock(), attach_all_websocks()
     process_pub.py       # SYSTEM_PROCESS periodic publisher
   db/
-    __init__.py          # ensure_schema(), warm_caches(), initialize_all(), initialize_analysis_tables()
+    __init__.py          # ensure_schema(), warm_caches(), initialize_all(), initialize_collector_tables()
     public.py            # DuckDB: connect(), CRUD helpers, identity-table DDL  [was publicDB.py]
     private.py           # SQLite per owner: initialize_private_database(), get_private_session(), read_private()  [was privateDB.py]
     reader.py            # thread-safe reads: query_rows(), query_one(), query_scalar(), get_db_file_stats()
@@ -143,6 +147,11 @@ core/                    # ── INFRASTRUCTURE ──────────�
     jobs.py              # job catalog, _build_catalog(), register_all_jobs()
     context.py           # thread-local task context
     output.py            # IO routing + SSE streams: rate_stream(), log_stream()
+  system/
+    __init__.py          # re-exports: SystemLifecycle, get_lifecycle, bootstrap_all, ensure_sde_ready, ensure_esi_ready, update_sde_full, update_esi_full, update_config, get_subsystem_status
+    lifecycle.py         # SystemLifecycle, get_lifecycle() — managed thread registration + graceful shutdown
+    bootstrap.py         # bootstrap_all(), ensure_sde_ready(), ensure_esi_ready(), update_sde_full(), update_esi_full(), update_config(), get_subsystem_status()
+    updater.py           # check_for_updates(), apply_release_update(), restart_process(), get_latest_github_release()
   web/
     __init__.py          # create_app() — Flask app factory + WebSocket attachment
     app.py               # start_webUI(settings) — entry point called by main.py
@@ -194,11 +203,13 @@ _publicData/
 _privateData/<owner_id>/
   <owner_id>.db          # per-character SQLite                [NEVER COMMIT]
 ```
+<!-- /wiki:directory_map -->
 
 ---
 
 ## Layering Rules & Import Discipline
 
+<!-- wiki:layering_rules -->
 The three main layers have strict import rules. **Never violate these.**
 
 ### `core/`
@@ -233,11 +244,13 @@ import core.db.sde as sde
 # ❌ Wrong — application importing from core directly
 from core.db.public import connect          # forbidden in applications/
 ```
+<!-- /wiki:layering_rules -->
 
 ---
 
 ## Code Conventions
 
+<!-- wiki:code_conventions -->
 - **All ESI HTTP → `esi_request` / `esi_get` / `esi_post`** via `core.esi` (`core/esi/request.py`). Never use `requests` directly.
 - **Logging**: `logger = logging.getLogger(__name__)` at module level. No bare `print()` in production code.
 - **Thread safety**: fresh `connect()` per thread for DuckDB; `threading.Lock()` for shared mutable state.
@@ -248,11 +261,13 @@ from core.db.public import connect          # forbidden in applications/
 - **`@require_role` on new routes** — prefer over bare `@require_login`. Use `@require_admin` only for genuinely admin-only routes.
 - **Do not edit auto-generated packages** — `core/esi/generated/`, `core/esi/personal/`, `core/esi/corp/`, `core/esi/public/` are overwritten each `build.py` run.
 - **Config is gitignored** — `config.yaml` must never be committed. Use `example.config.yaml` for documentation and defaults.
+<!-- /wiki:code_conventions -->
 
 ---
 
 ## Database Architecture
 
+<!-- wiki:database -->
 ### Public — DuckDB (`_publicData/public.duckdb`)
 
 Single file, shared across all threads. **Get a fresh connection per thread; connections are not thread-safe.**
@@ -308,6 +323,7 @@ Each collector or application **owns** the DDL for its tables via an `ensure_tab
 | `structures` | `collectors/structures/discover.py` |
 | `market_orders`, `market_region_cooldowns` | `collectors/market/regions.py` |
 | `market_structures` | `collectors/market/structures.py` |
+| `market_history` | `collectors/market/history.py` |
 | `structures` cooldown columns | `collectors/market/structures.py` (`ensure_columns`) |
 | `character_skills`, `character_wallet`, `character_assets` | `collectors/character/populate.py` |
 | SDE tables (`sde_types`, etc.) | `core/db/sde_loader.py` |
@@ -326,11 +342,13 @@ def ensure_columns(con) -> None:
         ALTER TABLE structures ADD COLUMN IF NOT EXISTS my_col TIMESTAMP
     """)
 ```
+<!-- /wiki:database -->
 
 ---
 
 ## Making ESI Requests
 
+<!-- wiki:esi_requests -->
 **Never use `requests` directly.** All ESI HTTP must go through `core/esi/request.py`.
 
 ```python
@@ -393,11 +411,13 @@ The `core/esi/request.py` module automatically:
 - Backs off on `429` responses for `Retry-After` seconds.
 - Tracks `X-ESI-Error-Limit-Remain` and logs a warning below 20.
 - Caches ETags and sends `If-None-Match` on repeat requests (304 = 1 token instead of 2).
+<!-- /wiki:esi_requests -->
 
 ---
 
 ## Authentication & Tokens
 
+<!-- wiki:auth -->
 ### EVE SSO Flow
 
 `core/auth/sso.py` handles the OAuth 2.0 Authorization Code flow via `auth_bp`:
@@ -450,11 +470,13 @@ roles = get_user_roles(owner_id)                       # list[str]
 grant_user_roles(owner_id, ["dashboard", "queue"], granted_by=admin_id)
 revoke_user_role(owner_id, "queue")
 ```
+<!-- /wiki:auth -->
 
 ---
 
 ## Background Task Queue
 
+<!-- wiki:task_queue -->
 ```python
 from core.tasks import enqueue
 
@@ -471,11 +493,13 @@ cancel_task(task_id)       # signals pending task; running tasks complete normal
 ```
 
 Use `queue="public"` for market data, SDE, and other public tasks. Use `queue="private"` (default) for per-owner character work.
+<!-- /wiki:task_queue -->
 
 ---
 
 ## Scheduler
 
+<!-- wiki:scheduler -->
 `core/tasks/engine.py` runs a background thread (`_TICK_INTERVAL = 30s`) that fires jobs when their `next_run` is due. Job metadata is persisted in `scheduler_jobs` (DuckDB) so enabled/disabled state and intervals survive restarts.
 
 ### Job Catalog
@@ -518,11 +542,13 @@ scheduler.list_jobs()
 scheduler.set_enabled("market_refresh", False)
 task_id = scheduler.run_now("character_refresh")
 ```
+<!-- /wiki:scheduler -->
 
 ---
 
 ## Applications Layer
 
+<!-- wiki:applications -->
 ### Auto-Discovery
 
 `applications/__init__.py` uses `pkgutil.iter_modules` to discover all sub-packages. Any package that exposes a module-level `Tool` attribute (a `BaseTool` instance) and does not start with `_` is auto-registered into the global `tool_registry`. Auto-registration happens on import — no manual registration step required.
@@ -586,11 +612,13 @@ Templates inherit from `base.html` in `core/web/templates/`. Put JavaScript in `
 const el = document.getElementById("app-data");
 const ownerId = el.dataset.owner;
 ```
+<!-- /wiki:applications -->
 
 ---
 
 ## Collectors Layer
 
+<!-- wiki:collectors -->
 ### Structure
 
 ```
@@ -659,11 +687,13 @@ from collectors.my_domain.worker import collect_data as my_collect_data
 ```
 
 Otherwise leave `collectors/__init__.py` alone — schedulers and routes import directly from the module.
+<!-- /wiki:collectors -->
 
 ---
 
 ## Plugin Framework
 
+<!-- wiki:plugin_framework -->
 `applications/_api.py` provides the plugin framework classes that wire infrastructure to applications.
 
 ### `BaseTool` and `ToolManifest`
@@ -705,6 +735,8 @@ All singletons live directly in `applications/_api.py` and are imported from `co
 | `get_all_topics()` | Returns all registered topic configs |
 | `get_recent(topic, n)` | Returns the most recent `n` events from a topic |
 | `bus_publish(topic, payload)` | Publish a message to a bus topic |
+| `system_bootstrap` | `get_status()`, `update_sde()`, `update_esi()`, `update_config()` — subsystem readiness and update orchestration |
+| `system_update` | `apply_release_update()`, `get_latest_release()`, `restart()` — git-based self-update |
 
 ### Exposing New Core Functionality
 
@@ -722,11 +754,13 @@ Then use it in an application:
 ```python
 from applications._api import my_function
 ```
+<!-- /wiki:plugin_framework -->
 
 ---
 
 ## ESI Client & Code Generation
 
+<!-- wiki:esi_codegen -->
 ### `core/esi/generated/client.py`
 
 ```python
@@ -764,11 +798,13 @@ python build.py --date YYYY-MM-DD  # pin to a specific ESI compatibility date
 ### Spec Registry (`core/esi/registry.py`)
 
 Fetches and parses the ESI OpenAPI spec into `_publicData/esi_specs/<date>/` and populates the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes`.
+<!-- /wiki:esi_codegen -->
 
 ---
 
 ## Configuration
 
+<!-- wiki:configuration -->
 Runtime settings come from `config.yaml` (gitignored), loaded via `core.config.load_config()`. The `example.config.yaml` file is the annotated template. Key sections:
 
 | Section | Purpose |
@@ -791,11 +827,13 @@ settings = get_runtime_settings()
 print(settings.web_port)     # int
 print(settings.debug_mode)   # bool
 ```
+<!-- /wiki:configuration -->
 
 ---
 
 ## Security Rules
 
+<!-- wiki:security -->
 These rules are non-negotiable. Any code review must verify compliance:
 
 1. **Never commit secrets** — `config.yaml`, `_publicData/key`, `_publicData/client_cred`, `_privateData/` are all gitignored. Never add them to source control.
@@ -806,6 +844,7 @@ These rules are non-negotiable. Any code review must verify compliance:
 6. **`client_secret` stays server-side** — never expose it in templates, JavaScript, or API responses.
 7. **Fernet key rotation** — if `_publicData/key` is compromised, all stored tokens must be re-issued.
 8. **Token 401 = stop, 403 = skip** — 401 means the token is expired (do not retry with the same token); 403 means access denied (not retryable at all).
+<!-- /wiki:security -->
 
 ---
 
@@ -843,6 +882,7 @@ If the function needs to be grouped under an existing namespace object (e.g. on 
 
 ### Creating a New Collector
 
+<!-- wiki:task_new_collector -->
 Use this when adding a new data-collection domain (new ESI endpoint family, new data type, etc.).
 
 **Step 1 — Create the package.**
@@ -908,11 +948,13 @@ from collectors.my_domain.worker import fetch_my_domain_data
 
 task_id = tasks.enqueue("My Domain Refresh", fetch_my_domain_data, queue="public")
 ```
+<!-- /wiki:task_new_collector -->
 
 ---
 
 ### Creating a New Application
 
+<!-- wiki:task_new_application -->
 Use this to add a new user-facing web tool to the dashboard.
 
 **Step 1 — Create the package directory.**
@@ -997,11 +1039,13 @@ Start the server. Your tool should appear in the sidebar under the declared `nav
 **Step 6 — Add the new role to `example.config.yaml`.**
 
 Document the new role name in `example.config.yaml` under the `Auth` section comment so site admins know to add it to `default_roles` if desired.
+<!-- /wiki:task_new_application -->
 
 ---
 
 ### Registering a New Scheduled Job
 
+<!-- wiki:task_new_job -->
 **Step 1 — Open `core/tasks/jobs.py`.**
 
 Find `_build_catalog()`. Add a new try/except block:
@@ -1025,6 +1069,7 @@ The `try/except` guard is mandatory — it prevents import failures in any colle
 **Step 2 — Restart the server.**
 
 `register_all_jobs(engine)` is called from `core/web/__init__.py` (inside `create_app`) during startup. The new job row will be upserted into `scheduler_jobs` and visible in the Task Manager UI (`/tasks`).
+<!-- /wiki:task_new_job -->
 
 ---
 

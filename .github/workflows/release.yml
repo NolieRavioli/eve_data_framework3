@@ -15,12 +15,13 @@ on:
     paths-ignore:
       - "LICENCE.md"
       - "README.md"
+      - "AGENTS.md"
       - "addAutorun.sh"
       - "rmAutorun.sh"
       - "example.config.yaml"
-      - "AGENTS.md"
-      - ".github/**"
+      - "_eve_data_framework_docs/"
       - "development_active/**"
+      - ".github/**"
   workflow_dispatch:
 
 permissions:

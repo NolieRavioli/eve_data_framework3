@@ -7,7 +7,7 @@ import logging
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from applications._api import base_ctx, require_admin, db, tasks
+from applications._api import base_ctx, require_role, db, tasks
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ _SDE_TABLES = [
 
 
 @sde_bp.route("/")
-@require_admin
+@require_role("sde")
 def index():
     table_counts = {}
     for tbl in _SDE_TABLES:
@@ -39,7 +39,7 @@ def index():
 
 
 @sde_bp.route("/update", methods=["POST"])
-@require_admin
+@require_role("sde")
 def update():
     from core.db.sde_loader import update_sde
     task_id = tasks.enqueue("SDE Update", update_sde, queue="public")
@@ -47,7 +47,7 @@ def update():
 
 
 @sde_bp.route("/lookup")
-@require_admin
+@require_role("sde")
 def lookup():
     q = request.args.get("q", "").strip()
     if not q:
@@ -111,7 +111,7 @@ def lookup():
 
 
 @sde_bp.route("/lookup/type/<int:type_id>")
-@require_admin
+@require_role("sde")
 def type_detail(type_id: int):
     row = db.query_one(
         """
@@ -134,7 +134,7 @@ def type_detail(type_id: int):
 
 
 @sde_bp.route("/lookup/system/<int:system_id>")
-@require_admin
+@require_role("sde")
 def system_detail(system_id: int):
     row = db.query_one(
         """
@@ -168,7 +168,7 @@ def system_detail(system_id: int):
 
 
 @sde_bp.route("/lookup/region/<int:region_id>")
-@require_admin
+@require_role("sde")
 def region_detail(region_id: int):
     row = db.query_one(
         "SELECT region_id, name_en AS region_name, faction_id FROM sde_mapRegions WHERE region_id = ?",
