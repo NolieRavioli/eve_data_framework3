@@ -1,0 +1,896 @@
+{
+  "esi-alliances.read_contacts.v1": [
+    {
+      "method": "GET",
+      "path": "/alliances/{alliance_id}/contacts",
+      "operation_id": "GetAlliancesAllianceIdContacts",
+      "summary": "Get alliance contacts"
+    },
+    {
+      "method": "GET",
+      "path": "/alliances/{alliance_id}/contacts/labels",
+      "operation_id": "GetAlliancesAllianceIdContactsLabels",
+      "summary": "Get alliance contact labels"
+    }
+  ],
+  "esi-assets.read_assets.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/assets",
+      "operation_id": "GetCharactersCharacterIdAssets",
+      "summary": "Get character assets"
+    },
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/assets/locations",
+      "operation_id": "PostCharactersCharacterIdAssetsLocations",
+      "summary": "Get character asset locations"
+    },
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/assets/names",
+      "operation_id": "PostCharactersCharacterIdAssetsNames",
+      "summary": "Get character asset names"
+    }
+  ],
+  "esi-assets.read_corporation_assets.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/assets",
+      "operation_id": "GetCorporationsCorporationIdAssets",
+      "summary": "Get corporation assets"
+    },
+    {
+      "method": "POST",
+      "path": "/corporations/{corporation_id}/assets/locations",
+      "operation_id": "PostCorporationsCorporationIdAssetsLocations",
+      "summary": "Get corporation asset locations"
+    },
+    {
+      "method": "POST",
+      "path": "/corporations/{corporation_id}/assets/names",
+      "operation_id": "PostCorporationsCorporationIdAssetsNames",
+      "summary": "Get corporation asset names"
+    }
+  ],
+  "esi-calendar.read_calendar_events.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/calendar",
+      "operation_id": "GetCharactersCharacterIdCalendar",
+      "summary": "List calendar event summaries"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/calendar/{event_id}",
+      "operation_id": "GetCharactersCharacterIdCalendarEventId",
+      "summary": "Get an event"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/calendar/{event_id}/attendees",
+      "operation_id": "GetCharactersCharacterIdCalendarEventIdAttendees",
+      "summary": "Get attendees"
+    }
+  ],
+  "esi-calendar.respond_calendar_events.v1": [
+    {
+      "method": "PUT",
+      "path": "/characters/{character_id}/calendar/{event_id}",
+      "operation_id": "PutCharactersCharacterIdCalendarEventId",
+      "summary": "Respond to an event"
+    }
+  ],
+  "esi-characters.read_agents_research.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/agents_research",
+      "operation_id": "GetCharactersCharacterIdAgentsResearch",
+      "summary": "Get agents research"
+    }
+  ],
+  "esi-characters.read_blueprints.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/blueprints",
+      "operation_id": "GetCharactersCharacterIdBlueprints",
+      "summary": "Get blueprints"
+    }
+  ],
+  "esi-characters.read_contacts.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/contacts",
+      "operation_id": "GetCharactersCharacterIdContacts",
+      "summary": "Get contacts"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/contacts/labels",
+      "operation_id": "GetCharactersCharacterIdContactsLabels",
+      "summary": "Get contact labels"
+    },
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/cspa",
+      "operation_id": "PostCharactersCharacterIdCspa",
+      "summary": "Calculate a CSPA charge cost"
+    }
+  ],
+  "esi-characters.read_corporation_roles.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/roles",
+      "operation_id": "GetCharactersCharacterIdRoles",
+      "summary": "Get character corporation roles"
+    }
+  ],
+  "esi-characters.read_fatigue.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/fatigue",
+      "operation_id": "GetCharactersCharacterIdFatigue",
+      "summary": "Get jump fatigue"
+    }
+  ],
+  "esi-characters.read_freelance_jobs.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/freelance-jobs",
+      "operation_id": "GetCharactersFreelanceJobsListing",
+      "summary": "List character freelance jobs"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/freelance-jobs/{job_id}/participation",
+      "operation_id": "GetCharactersFreelanceJobsParticipation",
+      "summary": "Get character freelance job participation"
+    }
+  ],
+  "esi-characters.read_fw_stats.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/fw/stats",
+      "operation_id": "GetCharactersCharacterIdFwStats",
+      "summary": "Overview of a character involved in faction warfare"
+    }
+  ],
+  "esi-characters.read_loyalty.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/loyalty/points",
+      "operation_id": "GetCharactersCharacterIdLoyaltyPoints",
+      "summary": "Get loyalty points"
+    }
+  ],
+  "esi-characters.read_medals.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/medals",
+      "operation_id": "GetCharactersCharacterIdMedals",
+      "summary": "Get medals"
+    }
+  ],
+  "esi-characters.read_notifications.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/notifications",
+      "operation_id": "GetCharactersCharacterIdNotifications",
+      "summary": "Get character notifications"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/notifications/contacts",
+      "operation_id": "GetCharactersCharacterIdNotificationsContacts",
+      "summary": "Get new contact notifications"
+    }
+  ],
+  "esi-characters.read_standings.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/standings",
+      "operation_id": "GetCharactersCharacterIdStandings",
+      "summary": "Get standings"
+    }
+  ],
+  "esi-characters.read_titles.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/titles",
+      "operation_id": "GetCharactersCharacterIdTitles",
+      "summary": "Get character corporation titles"
+    }
+  ],
+  "esi-characters.write_contacts.v1": [
+    {
+      "method": "DELETE",
+      "path": "/characters/{character_id}/contacts",
+      "operation_id": "DeleteCharactersCharacterIdContacts",
+      "summary": "Delete contacts"
+    },
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/contacts",
+      "operation_id": "PostCharactersCharacterIdContacts",
+      "summary": "Add contacts"
+    },
+    {
+      "method": "PUT",
+      "path": "/characters/{character_id}/contacts",
+      "operation_id": "PutCharactersCharacterIdContacts",
+      "summary": "Edit contacts"
+    }
+  ],
+  "esi-clones.read_clones.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/clones",
+      "operation_id": "GetCharactersCharacterIdClones",
+      "summary": "Get clones"
+    }
+  ],
+  "esi-clones.read_implants.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/implants",
+      "operation_id": "GetCharactersCharacterIdImplants",
+      "summary": "Get active implants"
+    }
+  ],
+  "esi-contracts.read_character_contracts.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/contracts",
+      "operation_id": "GetCharactersCharacterIdContracts",
+      "summary": "Get contracts"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/contracts/{contract_id}/bids",
+      "operation_id": "GetCharactersCharacterIdContractsContractIdBids",
+      "summary": "Get contract bids"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/contracts/{contract_id}/items",
+      "operation_id": "GetCharactersCharacterIdContractsContractIdItems",
+      "summary": "Get contract items"
+    }
+  ],
+  "esi-contracts.read_corporation_contracts.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/contracts",
+      "operation_id": "GetCorporationsCorporationIdContracts",
+      "summary": "Get corporation contracts"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/contracts/{contract_id}/bids",
+      "operation_id": "GetCorporationsCorporationIdContractsContractIdBids",
+      "summary": "Get corporation contract bids"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/contracts/{contract_id}/items",
+      "operation_id": "GetCorporationsCorporationIdContractsContractIdItems",
+      "summary": "Get corporation contract items"
+    }
+  ],
+  "esi-corporations.read_blueprints.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/blueprints",
+      "operation_id": "GetCorporationsCorporationIdBlueprints",
+      "summary": "Get corporation blueprints"
+    }
+  ],
+  "esi-corporations.read_contacts.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/contacts",
+      "operation_id": "GetCorporationsCorporationIdContacts",
+      "summary": "Get corporation contacts"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/contacts/labels",
+      "operation_id": "GetCorporationsCorporationIdContactsLabels",
+      "summary": "Get corporation contact labels"
+    }
+  ],
+  "esi-corporations.read_container_logs.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/containers/logs",
+      "operation_id": "GetCorporationsCorporationIdContainersLogs",
+      "summary": "Get all corporation ALSC logs"
+    }
+  ],
+  "esi-corporations.read_corporation_membership.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/members",
+      "operation_id": "GetCorporationsCorporationIdMembers",
+      "summary": "Get corporation members"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/roles",
+      "operation_id": "GetCorporationsCorporationIdRoles",
+      "summary": "Get corporation member roles"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/roles/history",
+      "operation_id": "GetCorporationsCorporationIdRolesHistory",
+      "summary": "Get corporation member roles history"
+    }
+  ],
+  "esi-corporations.read_divisions.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/divisions",
+      "operation_id": "GetCorporationsCorporationIdDivisions",
+      "summary": "Get corporation divisions"
+    }
+  ],
+  "esi-corporations.read_facilities.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/facilities",
+      "operation_id": "GetCorporationsCorporationIdFacilities",
+      "summary": "Get corporation facilities"
+    }
+  ],
+  "esi-corporations.read_freelance_jobs.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/freelance-jobs",
+      "operation_id": "GetCorporationsFreelanceJobsListing",
+      "summary": "List corporation freelance jobs"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/freelance-jobs/{job_id}/participants",
+      "operation_id": "GetCorporationsFreelanceJobsParticipants",
+      "summary": "List participants of a freelance job"
+    }
+  ],
+  "esi-corporations.read_fw_stats.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/fw/stats",
+      "operation_id": "GetCorporationsCorporationIdFwStats",
+      "summary": "Overview of a corporation involved in faction warfare"
+    }
+  ],
+  "esi-corporations.read_medals.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/medals",
+      "operation_id": "GetCorporationsCorporationIdMedals",
+      "summary": "Get corporation medals"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/medals/issued",
+      "operation_id": "GetCorporationsCorporationIdMedalsIssued",
+      "summary": "Get corporation issued medals"
+    }
+  ],
+  "esi-corporations.read_projects.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/projects",
+      "operation_id": "GetCorporationsProjectsListing",
+      "summary": "List corporation projects"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/projects/{project_id}",
+      "operation_id": "GetCorporationsProjectsDetail",
+      "summary": "Get project details"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/projects/{project_id}/contribution/{character_id}",
+      "operation_id": "GetCorporationsProjectsContribution",
+      "summary": "Get your project contribution"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/projects/{project_id}/contributors",
+      "operation_id": "GetCorporationsProjectsContributors",
+      "summary": "List project contributors"
+    }
+  ],
+  "esi-corporations.read_standings.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/standings",
+      "operation_id": "GetCorporationsCorporationIdStandings",
+      "summary": "Get corporation standings"
+    }
+  ],
+  "esi-corporations.read_starbases.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/starbases",
+      "operation_id": "GetCorporationsCorporationIdStarbases",
+      "summary": "Get corporation starbases (POSes)"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/starbases/{starbase_id}",
+      "operation_id": "GetCorporationsCorporationIdStarbasesStarbaseId",
+      "summary": "Get starbase (POS) detail"
+    }
+  ],
+  "esi-corporations.read_structures.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/structures",
+      "operation_id": "GetCorporationsCorporationIdStructures",
+      "summary": "Get corporation structures"
+    }
+  ],
+  "esi-corporations.read_titles.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/members/titles",
+      "operation_id": "GetCorporationsCorporationIdMembersTitles",
+      "summary": "Get corporation's members' titles"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/titles",
+      "operation_id": "GetCorporationsCorporationIdTitles",
+      "summary": "Get corporation titles"
+    }
+  ],
+  "esi-corporations.track_members.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/members/limit",
+      "operation_id": "GetCorporationsCorporationIdMembersLimit",
+      "summary": "Get corporation member limit"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/membertracking",
+      "operation_id": "GetCorporationsCorporationIdMembertracking",
+      "summary": "Track corporation members"
+    }
+  ],
+  "esi-fittings.read_fittings.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/fittings",
+      "operation_id": "GetCharactersCharacterIdFittings",
+      "summary": "Get fittings"
+    }
+  ],
+  "esi-fittings.write_fittings.v1": [
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/fittings",
+      "operation_id": "PostCharactersCharacterIdFittings",
+      "summary": "Create fitting"
+    },
+    {
+      "method": "DELETE",
+      "path": "/characters/{character_id}/fittings/{fitting_id}",
+      "operation_id": "DeleteCharactersCharacterIdFittingsFittingId",
+      "summary": "Delete fitting"
+    }
+  ],
+  "esi-fleets.read_fleet.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/fleet",
+      "operation_id": "GetCharactersCharacterIdFleet",
+      "summary": "Get character fleet info"
+    },
+    {
+      "method": "GET",
+      "path": "/fleets/{fleet_id}",
+      "operation_id": "GetFleetsFleetId",
+      "summary": "Get fleet information"
+    },
+    {
+      "method": "GET",
+      "path": "/fleets/{fleet_id}/members",
+      "operation_id": "GetFleetsFleetIdMembers",
+      "summary": "Get fleet members"
+    },
+    {
+      "method": "GET",
+      "path": "/fleets/{fleet_id}/wings",
+      "operation_id": "GetFleetsFleetIdWings",
+      "summary": "Get fleet wings"
+    }
+  ],
+  "esi-fleets.write_fleet.v1": [
+    {
+      "method": "PUT",
+      "path": "/fleets/{fleet_id}",
+      "operation_id": "PutFleetsFleetId",
+      "summary": "Update fleet"
+    },
+    {
+      "method": "POST",
+      "path": "/fleets/{fleet_id}/members",
+      "operation_id": "PostFleetsFleetIdMembers",
+      "summary": "Create fleet invitation"
+    },
+    {
+      "method": "DELETE",
+      "path": "/fleets/{fleet_id}/members/{member_id}",
+      "operation_id": "DeleteFleetsFleetIdMembersMemberId",
+      "summary": "Kick fleet member"
+    },
+    {
+      "method": "PUT",
+      "path": "/fleets/{fleet_id}/members/{member_id}",
+      "operation_id": "PutFleetsFleetIdMembersMemberId",
+      "summary": "Move fleet member"
+    },
+    {
+      "method": "DELETE",
+      "path": "/fleets/{fleet_id}/squads/{squad_id}",
+      "operation_id": "DeleteFleetsFleetIdSquadsSquadId",
+      "summary": "Delete fleet squad"
+    },
+    {
+      "method": "PUT",
+      "path": "/fleets/{fleet_id}/squads/{squad_id}",
+      "operation_id": "PutFleetsFleetIdSquadsSquadId",
+      "summary": "Rename fleet squad"
+    },
+    {
+      "method": "POST",
+      "path": "/fleets/{fleet_id}/wings",
+      "operation_id": "PostFleetsFleetIdWings",
+      "summary": "Create fleet wing"
+    },
+    {
+      "method": "DELETE",
+      "path": "/fleets/{fleet_id}/wings/{wing_id}",
+      "operation_id": "DeleteFleetsFleetIdWingsWingId",
+      "summary": "Delete fleet wing"
+    },
+    {
+      "method": "PUT",
+      "path": "/fleets/{fleet_id}/wings/{wing_id}",
+      "operation_id": "PutFleetsFleetIdWingsWingId",
+      "summary": "Rename fleet wing"
+    },
+    {
+      "method": "POST",
+      "path": "/fleets/{fleet_id}/wings/{wing_id}/squads",
+      "operation_id": "PostFleetsFleetIdWingsWingIdSquads",
+      "summary": "Create fleet squad"
+    }
+  ],
+  "esi-industry.read_character_jobs.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/industry/jobs",
+      "operation_id": "GetCharactersCharacterIdIndustryJobs",
+      "summary": "List character industry jobs"
+    }
+  ],
+  "esi-industry.read_character_mining.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/mining",
+      "operation_id": "GetCharactersCharacterIdMining",
+      "summary": "Character mining ledger"
+    }
+  ],
+  "esi-industry.read_corporation_jobs.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/industry/jobs",
+      "operation_id": "GetCorporationsCorporationIdIndustryJobs",
+      "summary": "List corporation industry jobs"
+    }
+  ],
+  "esi-industry.read_corporation_mining.v1": [
+    {
+      "method": "GET",
+      "path": "/corporation/{corporation_id}/mining/extractions",
+      "operation_id": "GetCorporationCorporationIdMiningExtractions",
+      "summary": "Moon extraction timers"
+    },
+    {
+      "method": "GET",
+      "path": "/corporation/{corporation_id}/mining/observers",
+      "operation_id": "GetCorporationCorporationIdMiningObservers",
+      "summary": "Corporation mining observers"
+    },
+    {
+      "method": "GET",
+      "path": "/corporation/{corporation_id}/mining/observers/{observer_id}",
+      "operation_id": "GetCorporationCorporationIdMiningObserversObserverId",
+      "summary": "Observed corporation mining"
+    }
+  ],
+  "esi-killmails.read_corporation_killmails.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/killmails/recent",
+      "operation_id": "GetCorporationsCorporationIdKillmailsRecent",
+      "summary": "Get a corporation's recent kills and losses"
+    }
+  ],
+  "esi-killmails.read_killmails.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/killmails/recent",
+      "operation_id": "GetCharactersCharacterIdKillmailsRecent",
+      "summary": "Get a character's recent kills and losses"
+    }
+  ],
+  "esi-location.read_location.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/location",
+      "operation_id": "GetCharactersCharacterIdLocation",
+      "summary": "Get character location"
+    }
+  ],
+  "esi-location.read_online.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/online",
+      "operation_id": "GetCharactersCharacterIdOnline",
+      "summary": "Get character online"
+    }
+  ],
+  "esi-location.read_ship_type.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/ship",
+      "operation_id": "GetCharactersCharacterIdShip",
+      "summary": "Get current ship"
+    }
+  ],
+  "esi-mail.organize_mail.v1": [
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/mail/labels",
+      "operation_id": "PostCharactersCharacterIdMailLabels",
+      "summary": "Create a mail label"
+    },
+    {
+      "method": "DELETE",
+      "path": "/characters/{character_id}/mail/labels/{label_id}",
+      "operation_id": "DeleteCharactersCharacterIdMailLabelsLabelId",
+      "summary": "Delete a mail label"
+    },
+    {
+      "method": "DELETE",
+      "path": "/characters/{character_id}/mail/{mail_id}",
+      "operation_id": "DeleteCharactersCharacterIdMailMailId",
+      "summary": "Delete a mail"
+    },
+    {
+      "method": "PUT",
+      "path": "/characters/{character_id}/mail/{mail_id}",
+      "operation_id": "PutCharactersCharacterIdMailMailId",
+      "summary": "Update metadata about a mail"
+    }
+  ],
+  "esi-mail.read_mail.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/mail",
+      "operation_id": "GetCharactersCharacterIdMail",
+      "summary": "Return mail headers"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/mail/labels",
+      "operation_id": "GetCharactersCharacterIdMailLabels",
+      "summary": "Get mail labels and unread counts"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/mail/lists",
+      "operation_id": "GetCharactersCharacterIdMailLists",
+      "summary": "Return mailing list subscriptions"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/mail/{mail_id}",
+      "operation_id": "GetCharactersCharacterIdMailMailId",
+      "summary": "Return a mail"
+    }
+  ],
+  "esi-mail.send_mail.v1": [
+    {
+      "method": "POST",
+      "path": "/characters/{character_id}/mail",
+      "operation_id": "PostCharactersCharacterIdMail",
+      "summary": "Send a new mail"
+    }
+  ],
+  "esi-markets.read_character_orders.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/orders",
+      "operation_id": "GetCharactersCharacterIdOrders",
+      "summary": "List open orders from a character"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/orders/history",
+      "operation_id": "GetCharactersCharacterIdOrdersHistory",
+      "summary": "List historical orders by a character"
+    }
+  ],
+  "esi-markets.read_corporation_orders.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/orders",
+      "operation_id": "GetCorporationsCorporationIdOrders",
+      "summary": "List open orders from a corporation"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/orders/history",
+      "operation_id": "GetCorporationsCorporationIdOrdersHistory",
+      "summary": "List historical orders from a corporation"
+    }
+  ],
+  "esi-markets.structure_markets.v1": [
+    {
+      "method": "GET",
+      "path": "/markets/structures/{structure_id}",
+      "operation_id": "GetMarketsStructuresStructureId",
+      "summary": "List orders in a structure"
+    }
+  ],
+  "esi-planets.manage_planets.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/planets",
+      "operation_id": "GetCharactersCharacterIdPlanets",
+      "summary": "Get colonies"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/planets/{planet_id}",
+      "operation_id": "GetCharactersCharacterIdPlanetsPlanetId",
+      "summary": "Get colony layout"
+    }
+  ],
+  "esi-planets.read_customs_offices.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/customs_offices",
+      "operation_id": "GetCorporationsCorporationIdCustomsOffices",
+      "summary": "List corporation customs offices"
+    }
+  ],
+  "esi-search.search_structures.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/search",
+      "operation_id": "GetCharactersCharacterIdSearch",
+      "summary": "Search on a string"
+    }
+  ],
+  "esi-skills.read_skillqueue.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/skillqueue",
+      "operation_id": "GetCharactersCharacterIdSkillqueue",
+      "summary": "Get character's skill queue"
+    }
+  ],
+  "esi-skills.read_skills.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/attributes",
+      "operation_id": "GetCharactersCharacterIdAttributes",
+      "summary": "Get character attributes"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/skills",
+      "operation_id": "GetCharactersCharacterIdSkills",
+      "summary": "Get character skills"
+    }
+  ],
+  "esi-ui.open_window.v1": [
+    {
+      "method": "POST",
+      "path": "/ui/openwindow/contract",
+      "operation_id": "PostUiOpenwindowContract",
+      "summary": "Open Contract Window"
+    },
+    {
+      "method": "POST",
+      "path": "/ui/openwindow/information",
+      "operation_id": "PostUiOpenwindowInformation",
+      "summary": "Open Information Window"
+    },
+    {
+      "method": "POST",
+      "path": "/ui/openwindow/marketdetails",
+      "operation_id": "PostUiOpenwindowMarketdetails",
+      "summary": "Open Market Details"
+    },
+    {
+      "method": "POST",
+      "path": "/ui/openwindow/newmail",
+      "operation_id": "PostUiOpenwindowNewmail",
+      "summary": "Open New Mail Window"
+    }
+  ],
+  "esi-ui.write_waypoint.v1": [
+    {
+      "method": "POST",
+      "path": "/ui/autopilot/waypoint",
+      "operation_id": "PostUiAutopilotWaypoint",
+      "summary": "Set Autopilot Waypoint"
+    }
+  ],
+  "esi-universe.read_structures.v1": [
+    {
+      "method": "GET",
+      "path": "/universe/structures/{structure_id}",
+      "operation_id": "GetUniverseStructuresStructureId",
+      "summary": "Get structure information"
+    }
+  ],
+  "esi-wallet.read_character_wallet.v1": [
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/wallet",
+      "operation_id": "GetCharactersCharacterIdWallet",
+      "summary": "Get a character's wallet balance"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/wallet/journal",
+      "operation_id": "GetCharactersCharacterIdWalletJournal",
+      "summary": "Get character wallet journal"
+    },
+    {
+      "method": "GET",
+      "path": "/characters/{character_id}/wallet/transactions",
+      "operation_id": "GetCharactersCharacterIdWalletTransactions",
+      "summary": "Get wallet transactions"
+    }
+  ],
+  "esi-wallet.read_corporation_wallets.v1": [
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/shareholders",
+      "operation_id": "GetCorporationsCorporationIdShareholders",
+      "summary": "Get corporation shareholders"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/wallets",
+      "operation_id": "GetCorporationsCorporationIdWallets",
+      "summary": "Returns a corporation's wallet balance"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/wallets/{division}/journal",
+      "operation_id": "GetCorporationsCorporationIdWalletsDivisionJournal",
+      "summary": "Get corporation wallet journal"
+    },
+    {
+      "method": "GET",
+      "path": "/corporations/{corporation_id}/wallets/{division}/transactions",
+      "operation_id": "GetCorporationsCorporationIdWalletsDivisionTransactions",
+      "summary": "Get corporation wallet transactions"
+    }
+  ]
+}

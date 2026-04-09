@@ -253,7 +253,7 @@ def generate_cache_schema(
     """Generate ``core/esi/generated/cache_ddl.py`` from the live ESI routes.json.
 
     :param compatibility_date: Pin to a specific ESI compatibility date.
-        Defaults to the currently active date in ``_publicData/esi_specs/latest.json``.
+        Defaults to the currently active date in ``_esi_specs/latest.json``.
     :param force: Regenerate even if the output file already exists.
     :param output_path: Override the output file path (used in tests).
     :returns: Summary dict with ``compatibility_date``, ``route_count``, ``column_count``.

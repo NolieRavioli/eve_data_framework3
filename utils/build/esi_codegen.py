@@ -146,7 +146,8 @@ def _wrap_docstring(text: str, indent: int = 4) -> str:
 
 def _spec_root() -> Path:
 
-    return Path("_publicData") / "esi_specs"
+    import os
+    return Path(os.getenv("ESI_SPECS_FOLDER", "_esi_specs"))
 
 
 
@@ -160,7 +161,7 @@ def _latest_info() -> dict:
 
         raise FileNotFoundError(
 
-            "No ESI spec snapshot found at _publicData/esi_specs/latest.json. "
+            "No ESI spec snapshot found at _esi_specs/latest.json. "
 
             "Run util.esi_spec_registry.refresh_esi_spec_registry() first."
 

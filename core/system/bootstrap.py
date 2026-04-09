@@ -208,15 +208,15 @@ def ensure_esi_ready(auto_update: bool = True) -> None:
     """Ensure the ESI spec and generated packages are present and current.
 
     Compares the COMPATIBILITY_DATE in ``core/esi/generated/__init__.py`` against
-    ``_publicData/esi_specs/latest.json``.  If stale (or either file is missing),
+    ``_esi_specs/latest.json``.  If stale (or either file is missing),
     triggers a full ESI update when *auto_update* is True.
 
     Network or generation failures are caught and logged as warnings so they do
     not prevent the server from starting with existing (possibly stale) codegen.
     """
     latest_json = Path(
-        __import__("os").getenv("PUBLIC_DATA_FOLDER", "_publicData")
-    ) / "esi_specs" / "latest.json"
+        __import__("os").getenv("ESI_SPECS_FOLDER", "_esi_specs")
+    ) / "latest.json"
 
     if not latest_json.exists():
         if auto_update:

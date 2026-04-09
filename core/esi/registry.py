@@ -18,7 +18,7 @@ def _utc_now_iso() -> str:
 
 
 def get_specs_root() -> Path:
-    return Path(os.getenv("PUBLIC_DATA_FOLDER", "_publicData")) / "esi_specs"
+    return Path(os.getenv("ESI_SPECS_FOLDER", "_esi_specs"))
 
 
 def fetch_compatibility_dates(timeout: int = 30) -> list[str]:

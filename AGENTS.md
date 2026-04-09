@@ -4,6 +4,7 @@
 This document is the authoritative reference for **human contributors** and **AI coding agents** working in this repository. Read it in full before making any changes.
 
 > **AI agents:** `_esi_docs/` contains the full official ESI documentation — rate limiting, pagination, best practices, SSO, and more. **Always consult `_esi_docs/` before writing or reviewing any ESI-related code.** Start with `_esi_docs/services/esi/` for API behaviour and `_esi_docs/services/sso/` for auth.
+> **AI agents — live ESI surface:** For the current operation catalog, scope list, and rate-limit notes for the **active compatibility date**, read `_esi_specs/latest.json` and open the file at the path stored in `_esi_specs/latest.json["agents_md"]`. That file is regenerated every time the ESI spec is refreshed and is the authoritative machine-readable summary of every available route.
 > **IMPORTANT — about this file:** Do **not** modify `AGENTS.md` yourself. If you believe a change is needed (outdated section, missing information, incorrect detail), relay the specific proposed change to the user and let them decide. This file is the ground truth — it must stay accurate and intentional.
 
 > Current documentation located at: https://developers.eveonline.com/docs/
@@ -199,9 +200,60 @@ _publicData/
   public.duckdb          # DuckDB warehouse (gitignored)
   client_cred            # Fernet-encrypted OAuth credentials  [NEVER COMMIT]
   key                    # Fernet symmetric key                [NEVER COMMIT]
-  esi_specs/             # cached ESI OpenAPI spec snapshots
 _privateData/<owner_id>/
   <owner_id>.db          # per-character SQLite                [NEVER COMMIT]
+
+# ── DOCUMENTATION ────────────────────────────────────────────────────────────
+_esi_specs/              # cached ESI OpenAPI spec snapshots (gitignored)
+  latest.json            # pointer to active date: compatibility_date, agents_md path, route/scope counts
+  <date>/                # one folder per pinned compatibility date
+    AGENTS.md            # machine-readable route + scope + rate-limit summary for AI agents
+    openapi.json         # full ESI OpenAPI spec snapshot
+    routes.json          # parsed route catalog
+    schemas.json         # parsed schema catalog
+    scopes.json          # parsed scope catalog
+_esi_docs/               # official EVE Online developer documentation (static mirror)
+  index.md
+  contributors.md
+  support.md
+  menu.md
+  guides/                # reference articles
+    fitting.md
+    glossary.md
+    id-ranges.md
+    map-data/
+    pi.md
+    route-calculation.md
+    system-security.md
+    useful-formulae.md
+  resources/
+    index.md
+    license.md
+  services/
+    esi/                 # ESI API behaviour — START HERE for any ESI work
+      overview.md
+      best-practices.md
+      endpoints.md
+      rate-limiting.md
+      pagination/
+    sso/                 # EVE SSO / OAuth2 — START HERE for any auth work
+      index.md
+    image-server/
+    static-data/
+    iec/
+  community/             # community tools and libraries (one .md per project)
+_eve_data_framework_docs/  # project-specific developer documentation
+  analysis.md            # analysis workers: writing, scheduling, reading from DuckDB
+  architecture.md        # system architecture overview
+  authentication.md      # EVE SSO, token storage, role hierarchy
+  collectors.md          # collectors layer: structure, table ownership, ESI pagination
+  configuration.md       # config.yaml reference, runtime settings, environment variables
+  creating-a-new-application.md  # step-by-step guide to adding a new application tool
+  esi-client.md          # ESI client usage: execute_operation, fetch_all_pages, codegen
+  installation.md        # installation, first-run setup, directory structure
+  scheduler.md           # scheduler engine, job catalog, registering new jobs
+  usage.md               # general usage guide
+  sync_wiki.py           # script that syncs wiki:ID-tagged sections to GitHub Wiki
 ```
 <!-- /wiki:directory_map -->
 
@@ -797,7 +849,7 @@ python build.py --date YYYY-MM-DD  # pin to a specific ESI compatibility date
 
 ### Spec Registry (`core/esi/registry.py`)
 
-Fetches and parses the ESI OpenAPI spec into `_publicData/esi_specs/<date>/` and populates the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes`.
+Fetches and parses the ESI OpenAPI spec into `_esi_specs/<date>/` and populates the DuckDB tables `esi_routes`, `esi_schemas`, `esi_scopes`.
 <!-- /wiki:esi_codegen -->
 
 ---

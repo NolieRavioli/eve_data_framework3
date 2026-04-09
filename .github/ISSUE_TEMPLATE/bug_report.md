@@ -25,7 +25,7 @@ assignees: ''
 - **Branch / commit**: <!-- e.g. `main` @ `abc1234` -->
 - **Python version**: <!-- `python --version` -->
 - **OS**: <!-- e.g. Windows 11, Ubuntu 24.04 -->
-- **ESI spec date**: <!-- check `_publicData/esi_specs/latest.json` or the Task Manager UI -->
+- **ESI spec date**: <!-- check `_esi_specs/latest.json` or the Task Manager UI -->
 
 ## Relevant Logs
 <!-- Paste any relevant log output (bus log, Flask console, browser console). Redact tokens and secrets. -->

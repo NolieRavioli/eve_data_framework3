@@ -74,7 +74,8 @@ _publicData/
   public.duckdb       # DuckDB warehouse (market orders, SDE, structures, auth)
   client_cred         # Fernet-encrypted OAuth credentials
   key                 # Fernet key — back this up, losing it requires re-authentication
-  esi_specs/          # Cached ESI OpenAPI spec snapshots
+
+_esi_specs/           # Cached ESI OpenAPI spec snapshots
 
 _privateData/
   {owner_id}/

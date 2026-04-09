@@ -1,0 +1,12 @@
+{
+  "compatibility_date": "2025-12-16",
+  "generated_at": "2026-04-08T18:32:21.604672+00:00",
+  "openapi_json": "_esi_specs\\2025-12-16\\openapi.json",
+  "routes_json": "_esi_specs\\2025-12-16\\routes.json",
+  "scopes_json": "_esi_specs\\2025-12-16\\scopes.json",
+  "schemas_json": "_esi_specs\\2025-12-16\\schemas.json",
+  "agents_md": "_esi_specs\\2025-12-16\\AGENTS.md",
+  "route_count": 208,
+  "scope_count": 66,
+  "schema_count": 263
+}
