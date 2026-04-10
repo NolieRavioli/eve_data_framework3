@@ -14,6 +14,14 @@ Runtime:
   # transport: "http"              # "http" or "https" — set to "https" when behind a TLS-terminating proxy
   # github_repo: ""                # GitHub repository URL for system updates (default: NolieRavioli/eve_data_framework3)
 
+# Bootstrap controls which subsystems auto-update when the server starts.
+# Set either flag to false to skip auto-update on boot (useful for production
+# deployments that pin generated code to git and update manually).
+# Changes take effect on the next server restart.
+Bootstrap:
+  auto_update_sde: true   # download + rebuild SDE warehouse if stale
+  auto_update_esi: true   # fetch latest ESI spec + regenerate codegen if stale
+
 Python Console:
   global_log_level: INFO          # log level for the terminal / console output
   werkzeug_log_level: INFO        # log level for the Flask/Werkzeug request logger
@@ -22,11 +30,19 @@ Python Console:
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
   # werkzeug: INFO
   # flask: INFO
-  # sqlalchemy: INFO
   # duckdb: INFO
   # urllib3: INFO
   # requests: INFO
   #
+  # analysis.affiliation_sync: INFO
+  # analysis.alliance_enrichment: INFO
+  # analysis.asset_enrichment: INFO
+  # analysis.corporation_discovery: INFO
+  # analysis.freelance_enrichment: INFO
+  # analysis.killmail_enrichment: INFO
+  # analysis.market_browser: INFO
+  # analysis.public_contract_enrichment: INFO
+  # analysis.war_enrichment: INFO
   # applications: INFO
   # applications.admin_panel.routes: INFO
   # applications.dashboard.routes: INFO
@@ -35,11 +51,42 @@ Python Console:
   # applications.sde_browser.routes: INFO
   # applications.system.routes: INFO
   # applications.task_viewer.routes: INFO
+  # collectors.alliance: INFO
+  # collectors.alliance.contacts: INFO
   # collectors.character.collectors: INFO
-  # collectors.character.populate: INFO
+  # collectors.character.combat: INFO
+  # collectors.character.comms: INFO
+  # collectors.character.extended: INFO
+  # collectors.character.finance: INFO
+  # collectors.character.identity: INFO
+  # collectors.character.industry: INFO
+  # collectors.character.presence: INFO
+  # collectors.character.skillqueue: INFO
+  # collectors.character.social: INFO
+  # collectors.corp: INFO
+  # collectors.corp.assets: INFO
+  # collectors.corp.contacts: INFO
+  # collectors.corp.contracts: INFO
+  # collectors.corp.industry: INFO
+  # collectors.corp.infrastructure: INFO
+  # collectors.corp.market: INFO
+  # collectors.corp.members: INFO
+  # collectors.corp.misc: INFO
+  # collectors.corp.org: INFO
+  # collectors.corp.stats: INFO
+  # collectors.corp.wallet: INFO
   # collectors.market.history: INFO
   # collectors.market.regions: INFO
   # collectors.market.structures: INFO
+  # collectors.public_data.alliances: INFO
+  # collectors.public_data.contracts: INFO
+  # collectors.public_data.fw: INFO
+  # collectors.public_data.industry: INFO
+  # collectors.public_data.loyalty: INFO
+  # collectors.public_data.market: INFO
+  # collectors.public_data.sovereignty: INFO
+  # collectors.public_data.structures: INFO
+  # collectors.public_data.universe_extras: INFO
   # collectors.structures.discover: INFO
   # core.auth.credentials: INFO
   # core.auth.identity: INFO
@@ -50,8 +97,9 @@ Python Console:
   # core.bus.websocket: INFO
   # core.config: INFO
   # core.db: INFO
+  # core.db.encryption: INFO
+  # core.db.entity_db: INFO
   # core.db.market_buffer: INFO
-  # core.db.private: INFO
   # core.db.public: INFO
   # core.db.reader: INFO
   # core.db.sde: INFO
@@ -116,12 +164,12 @@ Python Console:
   # core.esi.public.wars: INFO
   # core.esi.rate: INFO
   # core.esi.registry: INFO
+  # core.system.bootstrap: INFO
   # core.system.lifecycle: INFO
   # core.system.updater: INFO
   # core.tasks.engine: INFO
   # core.tasks.jobs: INFO
   # core.tasks.persist: INFO
-  # core.tasks.sde_loader: INFO
   # core.web: INFO
   # main: INFO
 
@@ -144,20 +192,6 @@ Environment Variables:
   PUBLIC_DATA_FOLDER: "_publicData"
   EVE_PRIVATE_DATABASE_FOLDER: "_privateData/"
   SDE_PATH: "_sde/"
-  # ── At-rest encryption ──────────────────────────────────────────────────
-  # EVE_MASTER_KEY encrypts all database files and credential stores when
-  # the application is not running.  Set it in your OS environment or a
-  # .env file OUTSIDE the repository — NOT here (config.yaml sits next to
-  # the databases, so storing the key here would defeat the purpose).
-  #
-  # Generate a key:  python -c "import secrets; print(secrets.token_hex(32))"
-  #
-  # When set:
-  #   • startup  → sealed files are decrypted before any DB access
-  #   • shutdown → all data files are encrypted and plaintext copies removed
-  #
-  # When unset: encryption is disabled (backward compatible).
-  # EVE_MASTER_KEY: "<set in OS environment, not here>"
 
 # Role-based access control.
 # default_roles are granted to every new user on their first login
@@ -167,6 +201,7 @@ Auth:
   default_roles:
     - dashboard
     - database
+    - sde
     - tasks
 
 Structures:

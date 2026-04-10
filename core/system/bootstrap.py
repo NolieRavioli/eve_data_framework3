@@ -287,7 +287,7 @@ def ensure_sde_ready(auto_update: bool = True) -> None:
         if auto_update:
             logger.info(
                 "SDE stale (local=%s, remote=%s) — updating...",
-                currency["local_etag"], currency["remote_etag"],
+                currency["local_build"], currency["remote_build"],
             )
             try:
                 update_sde_full()
@@ -298,7 +298,7 @@ def ensure_sde_ready(auto_update: bool = True) -> None:
         else:
             logger.warning(
                 "SDE is stale (local=%s, remote=%s); auto-update disabled.",
-                currency["local_etag"], currency["remote_etag"],
+                currency["local_build"], currency["remote_build"],
             )
     else:
         logger.info("SDE warehouse is current.")

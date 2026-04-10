@@ -7,7 +7,7 @@ name: Auto Release
 # │  When you change this to v0.3, the first release becomes v0.3.0.  │
 # └─────────────────────────────────────────────────────────────────────┘
 env:
-  BASE_VERSION: "v0.2"
+  BASE_VERSION: "v0.3"
 
 on:
   push:

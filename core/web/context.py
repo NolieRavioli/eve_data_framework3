@@ -2,8 +2,7 @@
 """Shared template context for the base layout (sidebar, character mini-card)."""
 
 from flask import session
-from core.db.private import get_private_session
-from core.db.models import Character
+from core.db.entity_db import connect_entity, ensure_character_table
 
 
 def base_ctx(active_page: str = "") -> dict:
@@ -27,14 +26,18 @@ def base_ctx(active_page: str = "") -> dict:
     owner_id = session["owner_id"]
     is_admin = bool(session.get("is_admin"))
     is_site_owner = bool(session.get("is_site_owner"))
-    db = get_private_session(owner_id)
+    con = connect_entity(owner_id)
     try:
-        char    = db.get(Character, char_id)
-        granted = (char.scopes or "").split() if char else []
+        ensure_character_table(con)
+        row = con.execute(
+            "SELECT name, scopes FROM characters WHERE character_id = ?",
+            [char_id],
+        ).fetchone()
+        granted = (row[1] or "").split() if row else []
         ctx.update({
             "base_logged_in":  True,
             "base_char_id":    char_id,
-            "base_char_name":  (char.name if char else str(char_id)),
+            "base_char_name":  (row[0] if row else str(char_id)),
             "base_wallet":     0.0,
             "base_is_admin":   is_admin,
             "is_site_owner":   is_site_owner,
@@ -48,5 +51,5 @@ def base_ctx(active_page: str = "") -> dict:
             ),
         })
     finally:
-        db.close()
+        con.close()
     return ctx

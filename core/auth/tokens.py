@@ -1,18 +1,18 @@
 """Per-character token storage, refresh, and resolution helpers.
 
-Manages ESI OAuth tokens: encrypted storage in private SQLite,
+Manages ESI OAuth tokens: storage in per-owner DuckDB (entity_db),
 automatic refresh, and convenience lookup functions.
 """
 
 import logging
 import os
 import time
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional
 
 import requests
 
-from core.db.models import Character
 from core.auth.credentials import CredentialManager
+from core.db.entity_db import connect_entity, ensure_character_table
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,7 @@ class TokenDBManager:
     def __init__(self, owner_id: int):
         self.owner_id = owner_id
         from core.db.public import ensure_public_database
-        from core.db.private import initialize_private_database
         ensure_public_database()
-        initialize_private_database(owner_id)
 
     def save_tokens(
         self,
@@ -60,39 +58,33 @@ class TokenDBManager:
         scopes: str,
     ) -> None:
         from core.auth.identity import link_public_user
-        from core.db.private import get_private_session
-        from sqlalchemy import text
-
-        link_public_user(self.owner_id, character_id)
 
         name, corporation_id, birthday, security_status, alliance_id = lookup_info(character_id)
 
-        session_priv = get_private_session(self.owner_id)
+        link_public_user(
+            self.owner_id,
+            character_id,
+            corporation_id=corporation_id,
+            alliance_id=alliance_id,
+        )
+
+        con = connect_entity(self.owner_id)
         try:
-            session_priv.execute(
-                text(
-                    "INSERT OR REPLACE INTO characters "
-                    "(character_id, name, corporation_id, birthday, "
-                    "security_status, alliance_id, access_token, "
-                    "refresh_token, expires_at, scopes) "
-                    "VALUES (:cid, :nm, :corp, :bday, :sec, :alli, :at, :rt, :exp, :sc)"
-                ),
-                {
-                    "cid": character_id,
-                    "nm": name,
-                    "corp": corporation_id,
-                    "bday": birthday,
-                    "sec": security_status,
-                    "alli": alliance_id,
-                    "at": access_token,
-                    "rt": refresh_token,
-                    "exp": expires_at,
-                    "sc": scopes,
-                },
+            ensure_character_table(con)
+            con.execute(
+                """INSERT OR REPLACE INTO characters
+                   (character_id, name, corporation_id, birthday,
+                    security_status, alliance_id, access_token,
+                    refresh_token, expires_at, scopes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    character_id, name, corporation_id, birthday,
+                    security_status, alliance_id, access_token,
+                    refresh_token, expires_at, scopes,
+                ],
             )
-            session_priv.commit()
         finally:
-            session_priv.close()
+            con.close()
 
 
 # ---------------------------------------------------------------------------
@@ -105,56 +97,80 @@ def get_token(owner_id: int, character_ids: Optional[Iterable[int]] = None) -> d
 
     Expired tokens are refreshed automatically and persisted before returning.
     """
-    from core.db.private import get_private_session
-
     token_map = {}
     selected_ids = (
         {int(value) for value in character_ids} if character_ids is not None else None
     )
     now = time.time()
-    session = get_private_session(owner_id)
-    token_db = TokenDBManager(owner_id)
+
+    con = connect_entity(owner_id)
     try:
-        tokens = session.query(Character).all()
-        for token in tokens:
-            if selected_ids is not None and token.character_id not in selected_ids:
-                continue
-            if token.expires_at and token.expires_at < now:
-                logger.info("Token expired for %s, refreshing...", token.character_id)
-                try:
-                    refreshed = refresh_token(token.refresh_token)
-                    token.access_token = refreshed["access_token"]
-                    token.refresh_token = refreshed["refresh_token"]
-                    token.expires_at = refreshed.get(
-                        "expires_at", now + refreshed.get("expires_in", 1200)
-                    )
-                    token.scopes = refreshed.get("scope", token.scopes)
-                    session.commit()
-                    token_db.save_tokens(
-                        character_id=token.character_id,
-                        access_token=token.access_token,
-                        refresh_token=token.refresh_token,
-                        expires_at=token.expires_at,
-                        scopes=token.scopes,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "[TokenManager] Failed to refresh token for %s: %s",
-                        token.character_id,
-                        exc,
-                    )
-                    continue
-            token_map[token.character_id] = {
-                "corporation_id": token.corporation_id,
-                "alliance_id": token.alliance_id,
-                "security_status": token.security_status,
-                "access_token": token.access_token,
-                "refresh_token": token.refresh_token,
-                "expires_at": token.expires_at,
-                "scopes": token.scopes,
-            }
+        ensure_character_table(con)
+        rows = con.execute("SELECT * FROM characters").fetchall()
+        columns = [desc[0] for desc in con.description]
     finally:
-        session.close()
+        con.close()
+
+    for row in rows:
+        token = dict(zip(columns, row))
+        cid = token["character_id"]
+        if selected_ids is not None and cid not in selected_ids:
+            continue
+
+        if token["expires_at"] and token["expires_at"] < now:
+            logger.info("Token expired for %s, refreshing...", cid)
+            try:
+                refreshed = refresh_token(token["refresh_token"])
+                token["access_token"] = refreshed["access_token"]
+                token["refresh_token"] = refreshed["refresh_token"]
+                token["expires_at"] = refreshed.get(
+                    "expires_at", now + refreshed.get("expires_in", 1200)
+                )
+                try:
+                    import jwt as _jwt
+                    _dec = _jwt.decode(
+                        token["access_token"],
+                        options={"verify_signature": False},
+                        algorithms=["RS256"],
+                    )
+                    raw_scp = _dec.get("scp", [])
+                    token["scopes"] = (
+                        " ".join(raw_scp) if isinstance(raw_scp, list)
+                        else str(raw_scp or token["scopes"])
+                    )
+                except Exception:
+                    token["scopes"] = refreshed.get("scope", token["scopes"])
+
+                # Persist the refreshed token
+                con2 = connect_entity(owner_id)
+                try:
+                    con2.execute(
+                        """UPDATE characters
+                           SET access_token = ?, refresh_token = ?,
+                               expires_at = ?, scopes = ?
+                           WHERE character_id = ?""",
+                        [
+                            token["access_token"], token["refresh_token"],
+                            token["expires_at"], token["scopes"], cid,
+                        ],
+                    )
+                finally:
+                    con2.close()
+            except Exception as exc:
+                logger.error(
+                    "[TokenManager] Failed to refresh token for %s: %s", cid, exc,
+                )
+                continue
+
+        token_map[cid] = {
+            "corporation_id": token["corporation_id"],
+            "alliance_id": token["alliance_id"],
+            "security_status": token["security_status"],
+            "access_token": token["access_token"],
+            "refresh_token": token["refresh_token"],
+            "expires_at": token["expires_at"],
+            "scopes": token["scopes"],
+        }
     return token_map
 
 

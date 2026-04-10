@@ -155,19 +155,29 @@ import core.db.sde as sde  # the module itself is the public API
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 from core.db import public as _pub
-from core.db.private import get_private_session as _get_private_session
+from core.db.entity_db import connect_entity as _connect_entity, ensure_character_table as _ensure_char_tbl
 from core.db.reader import (
     query_rows as _read_public,
     query_one as _read_public_one,
     query_scalar as _read_public_scalar,
 )
-from core.db.private import read_private as _read_private
 from core.db.stats import get_db_gateway_stats
 from core.db.reader import get_db_file_stats
 
 
+def _entity_query(owner_id: int, sql: str, params: list | None = None) -> list[dict]:
+    """Run a read-only query against an owner's per-entity DuckDB."""
+    con = _connect_entity(owner_id)
+    try:
+        cursor = con.execute(sql, params or [])
+        columns = [desc[0] for desc in (cursor.description or [])]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        con.close()
+
+
 class _DB:
-    """Connection-lifecycle-aware DuckDB helpers."""
+    """DuckDB query helpers for public and per-entity databases."""
 
     connect = staticmethod(_pub.connect)
 
@@ -180,8 +190,8 @@ class _DB:
     def scalar(self, sql: str, params: list | None = None) -> Any:
         return _read_public_scalar(sql, params)
 
-    def private_query(self, owner_id: int, sql: str, params: dict | None = None) -> list[dict]:
-        return _read_private(owner_id, sql, params)
+    def entity_query(self, owner_id: int, sql: str, params: list | None = None) -> list[dict]:
+        return _entity_query(owner_id, sql, params)
 
     def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
         from core.db.market_buffer import try_market_price
@@ -204,45 +214,51 @@ class _DB:
 db = _DB()
 
 # ── Character data ────────────────────────────────────────────────────────────
-from core.db.models import Character as _Character
 
 
 class _CharData:
-    """Per-character private SQLite reads with ORM → dict conversion."""
+    """Per-character reads from entity DuckDB."""
 
     def get_character(self, owner_id: int, character_id: int) -> dict | None:
-        session = _get_private_session(owner_id)
+        con = _connect_entity(owner_id)
         try:
-            char = session.get(_Character, character_id)
-            if not char:
+            _ensure_char_tbl(con)
+            row = con.execute(
+                "SELECT character_id, name, scopes, expires_at FROM characters WHERE character_id = ?",
+                [character_id],
+            ).fetchone()
+            if not row:
                 return None
             return {
-                "character_id": char.character_id,
-                "name": char.name,
-                "scopes": char.scopes,
-                "token_expires": getattr(char, "token_expires", None),
+                "character_id": row[0],
+                "name": row[1],
+                "scopes": row[2],
+                "token_expires": row[3],
             }
         finally:
-            session.close()
+            con.close()
 
     def get_characters(self, owner_id: int) -> list[dict]:
         """Return all character dicts for an owner."""
-        session = _get_private_session(owner_id)
+        con = _connect_entity(owner_id)
         try:
-            chars = session.query(_Character).all()
+            _ensure_char_tbl(con)
+            rows = con.execute(
+                "SELECT character_id, name, scopes, expires_at FROM characters"
+            ).fetchall()
             return [
                 {
-                    "character_id": c.character_id,
-                    "name": c.name,
-                    "scopes": c.scopes,
-                    "token_expires": getattr(c, "token_expires", None),
+                    "character_id": r[0],
+                    "name": r[1],
+                    "scopes": r[2],
+                    "token_expires": r[3],
                 }
-                for c in chars
+                for r in rows
             ]
         except Exception:
             return []
         finally:
-            session.close()
+            con.close()
 
     def get_scopes(self, owner_id: int, character_id: int) -> list[str]:
         info = self.get_character(owner_id, character_id)
@@ -393,9 +409,9 @@ from core.config import get_db_unit_weights as _get_db_unit_weights
 
 db_admin = types.SimpleNamespace(
     list_tables=_pub.list_browser_tables,
-    list_private_tables=_pub.list_private_browser_tables,
+    list_entity_tables=_pub.list_entity_browser_tables,
     query_sql=_pub.query_browser_sql,
-    query_private_sql=_pub.query_private_browser_sql,
+    query_entity_sql=_pub.query_entity_browser_sql,
     table_counts=_pub.public_table_counts,
     get_warehouse_status=_pub.get_warehouse_status,
     get_site_admin=_identity_get_site_admin,
@@ -465,6 +481,33 @@ system_update = types.SimpleNamespace(
     restart=_restart_process,
 )
 
+# ── Analysis orchestration ────────────────────────────────────────────────────
+def _import_analysis() -> types.SimpleNamespace:
+    """Lazily build the analysis namespace so import errors don't break startup."""
+    ns: dict[str, Any] = {}
+    _mods = [
+        ("affiliation_sync", "run_affiliation_sync"),
+        ("asset_enrichment", "run_asset_enrichment"),
+        ("killmail_enrichment", "run_killmail_enrichment"),
+        ("alliance_enrichment", "run_alliance_enrichment"),
+        ("corporation_discovery", "run_corporation_discovery"),
+        ("public_contract_enrichment", "run_public_contract_enrichment"),
+        ("war_enrichment", "run_war_enrichment"),
+        ("freelance_enrichment", "run_freelance_enrichment"),
+        ("market_browser", "run_market_browser"),
+    ]
+    for mod_name, fn_name in _mods:
+        try:
+            import importlib
+            mod = importlib.import_module(f"analysis.{mod_name}")
+            ns[fn_name] = getattr(mod, fn_name)
+        except Exception:
+            pass
+    return types.SimpleNamespace(**ns)
+
+
+analysis = _import_analysis()
+
 __all__ = [
     # Plugin framework
     "ACCESS_LEVELS",
@@ -502,4 +545,5 @@ __all__ = [
     "bus_publish",
     "system_bootstrap",
     "system_update",
+    "analysis",
 ]

@@ -113,14 +113,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-
-
     # Load config so env vars (PUBLIC_DATA_FOLDER etc.) are set before anything touches paths.
-
     load_config(CONFIG_PATH)
 
-
-
+    # --fullclean and --example-config run before any DB/encryption init.
     if args.fullclean:
 
         _fullclean()
@@ -143,7 +139,21 @@ def main() -> None:
 
         sys.exit(0)
 
+    # ── Thin runtime initialization (mirrors main.py steps 0, 1, 4, 5) ──────
+    # Needed so DB-touching build steps (spec fetch, codegen) work correctly.
+    from core.db.encryption import unseal_all
+    unseal_all()
 
+    from core.config import ensure_dependencies, initialize_runtime_environment
+    settings = initialize_runtime_environment()
+    ensure_dependencies(settings)
+
+    from core.db.writer import start_writer
+    start_writer()
+
+    from core.db import ensure_schema
+    ensure_schema()
+    # ────────────────────────────────────────────────────────────────────────
 
     # --sde-schema: scan _sde/ YAML files and generate SDE schema JSON then exit.
 
@@ -159,11 +169,7 @@ def main() -> None:
 
             f"[build] SDE schema done \u2014 tables={result['table_count']}"
 
-            f"  fsd={result['fsd_tables']}"
-
-            f"  bsd={result['bsd_tables']}"
-
-            f"  universe={result['universe_tables']}"
+            f"  jsonl={result['jsonl_tables']}"
 
             f"  output={result['output_path']}"
 
@@ -331,11 +337,7 @@ def main() -> None:
 
             f"[build] SDE schema done \u2014 tables={sde_result['table_count']}"
 
-            f"  fsd={sde_result['fsd_tables']}"
-
-            f"  bsd={sde_result['bsd_tables']}"
-
-            f"  universe={sde_result['universe_tables']}"
+            f"  jsonl={sde_result['jsonl_tables']}"
 
         )
 

@@ -29,10 +29,60 @@
     No jobs registered. Jobs appear here after the first application start with collectors installed.
   </div>
   {% else %}
-  <section class="card">
-    <div class="section-head" style="margin-bottom:0.75rem">
-      <h2>Registered Jobs</h2>
-      <span class="pill">{{ jobs | length }} job{{ 's' if jobs | length != 1 }}</span>
+  <div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.75rem">
+    <h2 style="margin:0">Registered Jobs</h2>
+    <span class="pill">{{ jobs | length }} job{{ 's' if jobs | length != 1 }}</span>
+  </div>
+
+  {% macro job_rows(group_jobs) %}
+  {% for job in group_jobs %}
+  <tr id="row-{{ job.job_id }}">
+    <td>
+      <a href="{{ url_for('task_viewer.scheduler_detail', job_id=job.job_id) }}" style="color:var(--accent);text-decoration:none">
+        <strong>{{ job.label }}</strong>
+      </a>
+      <div class="mono" style="font-size:0.74rem;margin-top:0.1rem">{{ job.job_id }}</div>
+    </td>
+    <td class="mono">{{ job.interval_seconds }}s</td>
+    <td class="mono">{{ job.last_run.strftime('%Y-%m-%d %H:%M') if job.last_run else '&mdash;' }}</td>
+    <td>
+      {% if job.last_run_status == 'success' %}
+      <span class="badge badge-on">success</span>
+      {% elif job.last_run_status == 'failed' %}
+      <span class="badge badge-off">failed</span>
+      {% elif job.last_run_status == 'running' %}
+      <span class="badge badge-running">running</span>
+      {% else %}
+      <span class="muted">&mdash;</span>
+      {% endif %}
+    </td>
+    <td class="mono">{{ job.next_run.strftime('%Y-%m-%d %H:%M') if job.next_run else '&mdash;' }}</td>
+    <td>
+      <span class="badge {{ 'badge-on' if job.enabled else 'badge-off' }}" id="badge-{{ job.job_id }}">
+        {{ 'Enabled' if job.enabled else 'Disabled' }}
+      </span>
+    </td>
+    <td>
+      <div class="tbl-actions">
+        <button class="btn btn-g js-toggle-btn"
+                data-job="{{ job.job_id }}"
+                data-enabled="{{ 'true' if job.enabled else 'false' }}">
+          {{ 'Disable' if job.enabled else 'Enable' }}
+        </button>
+        <button class="btn btn-a js-run-btn" data-job="{{ job.job_id }}">
+          Run Now
+        </button>
+      </div>
+    </td>
+  </tr>
+  {% endfor %}
+  {% endmacro %}
+
+  {% for group in job_groups %}
+  <section class="card" style="margin-bottom:1rem">
+    <div class="section-head" style="margin-bottom:0.6rem">
+      <h3 style="margin:0;font-size:0.95rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">{{ group.label }}</h3>
+      <span class="pill" style="font-size:0.75rem">{{ group.jobs | length }}</span>
     </div>
     <div class="table-wrap">
       <table class="job-table">
@@ -48,51 +98,12 @@
           </tr>
         </thead>
         <tbody>
-          {% for job in jobs %}
-          <tr id="row-{{ job.job_id }}">
-            <td>
-              <a href="{{ url_for('task_viewer.scheduler_detail', job_id=job.job_id) }}" style="color:var(--accent);text-decoration:none">
-                <strong>{{ job.label }}</strong>
-              </a>
-              <div class="mono" style="font-size:0.74rem;margin-top:0.1rem">{{ job.job_id }}</div>
-            </td>
-            <td class="mono">{{ job.interval_seconds }}s</td>
-            <td class="mono">{{ job.last_run.strftime('%Y-%m-%d %H:%M') if job.last_run else '&mdash;' }}</td>
-            <td>
-              {% if job.last_run_status == 'success' %}
-              <span class="badge badge-on">success</span>
-              {% elif job.last_run_status == 'failed' %}
-              <span class="badge badge-off">failed</span>
-              {% elif job.last_run_status == 'running' %}
-              <span class="badge badge-running">running</span>
-              {% else %}
-              <span class="muted">&mdash;</span>
-              {% endif %}
-            </td>
-            <td class="mono">{{ job.next_run.strftime('%Y-%m-%d %H:%M') if job.next_run else '&mdash;' }}</td>
-            <td>
-              <span class="badge {{ 'badge-on' if job.enabled else 'badge-off' }}" id="badge-{{ job.job_id }}">
-                {{ 'Enabled' if job.enabled else 'Disabled' }}
-              </span>
-            </td>
-            <td>
-              <div class="tbl-actions">
-                <button class="btn btn-g js-toggle-btn"
-                        data-job="{{ job.job_id }}"
-                        data-enabled="{{ 'true' if job.enabled else 'false' }}">
-                  {{ 'Disable' if job.enabled else 'Enable' }}
-                </button>
-                <button class="btn btn-a js-run-btn" data-job="{{ job.job_id }}">
-                  Run Now
-                </button>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
+          {{ job_rows(group.jobs) }}
         </tbody>
       </table>
     </div>
   </section>
+  {% endfor %}
   {% endif %}
 </div>
 {% endblock %}

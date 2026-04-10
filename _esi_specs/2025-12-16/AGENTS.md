@@ -1,6 +1,6 @@
 # ESI API Notes
 
-- Generated at: 2026-04-08T18:32:21.604311+00:00
+- Generated at: 2026-04-10T06:11:45.813332+00:00
 - Active compatibility date: `2025-12-16`
 - Route count: `208`
 - Scope count: `66`
@@ -387,4 +387,4 @@
 - Corporation and fleet routes frequently include both OAuth scope requirements and `x-required-roles` metadata.
 - The raw `openapi.json` remains the source of truth; this document is a quick operating summary.
 
-Spec title: `EVE Stroopwafel Ingestion (ESI) - tranquility`
+Spec title: `EVE Spring Inebriation (ESI) - tranquility`

@@ -1,11 +1,4 @@
-"""Re-export identity models — domain table DDL is owned by collectors."""
+"""core.db.models — namespace anchor.
 
-from core.db.models.identity import PublicBase, PrivateBase, User, SiteAdmin, Character
-
-__all__ = [
-    "PublicBase",
-    "PrivateBase",
-    "User",
-    "SiteAdmin",
-    "Character",
-]
+All table DDL is managed via raw DuckDB SQL.  No ORM models remain.
+"""

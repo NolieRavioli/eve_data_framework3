@@ -231,7 +231,6 @@ _power = PowerMonitor()
 
 _tmp_dir: Optional[tempfile.TemporaryDirectory] = None
 _db_path: Optional[Path] = None
-_sqlite_path: Optional[Path] = None
 _orig_env: dict = {}
 _RESULTS: dict[str, dict] = {}  # test-class name → result dict
 
@@ -293,7 +292,7 @@ def _structure_enriched_rows(n: int, id_offset: int = 1_000_000_000) -> list[dic
 # ---------------------------------------------------------------------------
 
 def setUpModule() -> None:  # noqa: N802 (unittest convention)
-    global _tmp_dir, _db_path, _sqlite_path, _orig_env
+    global _tmp_dir, _db_path, _orig_env
 
     # Capture original env so tearDownModule can restore them
     _orig_env = {
@@ -305,7 +304,6 @@ def setUpModule() -> None:  # noqa: N802 (unittest convention)
     _tmp_dir = tempfile.TemporaryDirectory(prefix="bench_")
     tmp = Path(_tmp_dir.name)
     _db_path = tmp / "bench.duckdb"
-    _sqlite_path = tmp / "bench_private.db"
     private_dir = tmp / "private"
     private_dir.mkdir()
 
@@ -326,8 +324,8 @@ def setUpModule() -> None:  # noqa: N802 (unittest convention)
 
     # Create production schemas in the temp DB
     import duckdb
-    from collectors.market.regions import ensure_tables as _ensure_market
-    from collectors.structures.discover import (
+    from collectors.public_data.market import ensure_tables as _ensure_market
+    from collectors.public_data.structures import (
         ensure_tables as _ensure_structures,
         ensure_columns as _ensure_struct_cols,
     )
@@ -647,155 +645,7 @@ class TestStructureDiscovery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — Character data (SQLAlchemy SQLite)
-# (analysis/character/populate.py _fetch_skills / _fetch_assets)
-# Pattern: sa.text() row-by-row execute loop, single commit at end
-# ---------------------------------------------------------------------------
-
-N_SKILLS = 500
-N_ASSETS = 2_000
-
-
-class TestCharacterData(unittest.TestCase):
-    """Time SQLite row-by-row writes via SQLAlchemy sa.text() loop.
-
-    This matches populate.py exactly: no executemany, one sa.text() execute
-    per skill/asset inside a with engine.connect() block, commit at end.
-    """
-
-    CHAR_ID = 999_000_001
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        import sqlalchemy as sa
-
-        cls._engine = sa.create_engine(f"sqlite:///{_sqlite_path}")
-        with cls._engine.connect() as con:
-            con.execute(sa.text("""
-                CREATE TABLE IF NOT EXISTS character_skills (
-                    character_id    INTEGER NOT NULL,
-                    skill_id        INTEGER NOT NULL,
-                    trained_level   INTEGER NOT NULL,
-                    active_level    INTEGER NOT NULL,
-                    skillpoints_in_skill INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (character_id, skill_id)
-                )
-            """))
-            con.execute(sa.text("""
-                CREATE TABLE IF NOT EXISTS character_assets (
-                    item_id          INTEGER PRIMARY KEY,
-                    character_id     INTEGER NOT NULL,
-                    type_id          INTEGER NOT NULL,
-                    location_id      INTEGER NOT NULL,
-                    location_type    TEXT NOT NULL,
-                    location_flag    TEXT NOT NULL,
-                    quantity         INTEGER NOT NULL DEFAULT 1,
-                    is_singleton     INTEGER NOT NULL DEFAULT 0,
-                    is_blueprint_copy INTEGER
-                )
-            """))
-            con.commit()
-
-        cls.skills = [
-            {
-                "skill_id": 3300 + i,
-                "trained_level": min(i % 5 + 1, 5),
-                "active_level": min(i % 5 + 1, 5),
-                "skillpoints_in_skill": i * 1000,
-            }
-            for i in range(N_SKILLS)
-        ]
-        cls.assets = [
-            {
-                "item_id": 400_000_000 + i,
-                "type_id": 34 + i % 500,
-                "location_id": 60_003_760,
-                "location_type": "station",
-                "location_flag": "Hangar",
-                "quantity": 1 + i % 100,
-            }
-            for i in range(N_ASSETS)
-        ]
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._engine.dispose()
-
-    def test_A_skills_row_by_row(self) -> None:
-        """Row-by-row skill upsert via sa.text() — mirrors _fetch_skills."""
-        import sqlalchemy as sa
-
-        char_id = self.CHAR_ID
-        m0 = _power.mark()
-        t0 = time.perf_counter()
-        with self._engine.connect() as con:
-            for skill in self.skills:
-                con.execute(sa.text("""
-                    INSERT INTO character_skills
-                        (character_id, skill_id, trained_level, active_level,
-                         skillpoints_in_skill)
-                    VALUES
-                        (:character_id, :skill_id, :trained_level, :active_level,
-                         :skillpoints_in_skill)
-                    ON CONFLICT (character_id, skill_id) DO UPDATE SET
-                        trained_level        = excluded.trained_level,
-                        active_level         = excluded.active_level,
-                        skillpoints_in_skill = excluded.skillpoints_in_skill
-                """), {
-                    "character_id": char_id,
-                    "skill_id": skill["skill_id"],
-                    "trained_level": skill["trained_level"],
-                    "active_level": skill["active_level"],
-                    "skillpoints_in_skill": skill["skillpoints_in_skill"],
-                })
-            con.commit()
-        wall_s = time.perf_counter() - t0
-        m1 = _power.mark()
-
-        metrics = _power.delta(m0, m1, N_SKILLS)
-        metrics["wall_s"] = wall_s
-        _record("CharData_Skills_SQLite", metrics)
-
-    def test_B_assets_row_by_row(self) -> None:
-        """Row-by-row asset upsert via sa.text() — mirrors _fetch_assets."""
-        import sqlalchemy as sa
-
-        char_id = self.CHAR_ID
-        m0 = _power.mark()
-        t0 = time.perf_counter()
-        with self._engine.connect() as con:
-            for asset in self.assets:
-                con.execute(sa.text("""
-                    INSERT INTO character_assets
-                        (item_id, character_id, type_id, location_id,
-                         location_type, location_flag, quantity, is_singleton)
-                    VALUES
-                        (:item_id, :character_id, :type_id, :location_id,
-                         :location_type, :location_flag, :quantity, 0)
-                    ON CONFLICT (item_id) DO UPDATE SET
-                        location_id   = excluded.location_id,
-                        location_flag = excluded.location_flag,
-                        quantity      = excluded.quantity
-                """), {
-                    "item_id": asset["item_id"],
-                    "character_id": char_id,
-                    "type_id": asset["type_id"],
-                    "location_id": asset["location_id"],
-                    "location_type": asset["location_type"],
-                    "location_flag": asset["location_flag"],
-                    "quantity": asset["quantity"],
-                })
-            con.commit()
-        wall_s = time.perf_counter() - t0
-        m1 = _power.mark()
-
-        metrics = _power.delta(m0, m1, N_ASSETS)
-        metrics["wall_s"] = wall_s
-        _record("CharData_Assets_SQLite", metrics)
-
-
-# ---------------------------------------------------------------------------
-# Test 6 — DDL operations
+# Test 5 — DDL operations
 # (ensure_tables / ensure_columns pattern used by every collector)
 # Pattern: CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN IF NOT EXISTS
 # ---------------------------------------------------------------------------

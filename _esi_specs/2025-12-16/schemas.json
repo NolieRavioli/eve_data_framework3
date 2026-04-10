@@ -9963,7 +9963,7 @@
   },
   "DungeonID": {
     "examples": [
-      33
+      12367
     ],
     "format": "int64",
     "type": "integer",

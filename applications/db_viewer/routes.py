@@ -45,10 +45,10 @@ def index():
     owner_id = session.get("owner_id")
     is_admin = session.get("is_admin", False)
 
-    # Personal: user’s own private tables
-    private_tables = {}
+    # Personal: user's own entity tables
+    entity_tables = {}
     try:
-        private_tables = db_admin.list_private_tables(owner_id) if owner_id else {}
+        entity_tables = db_admin.list_entity_tables(owner_id) if owner_id else {}
     except FileNotFoundError:
         pass
 
@@ -81,7 +81,7 @@ def index():
     return render_template(
         "db_index.html",
         **base_ctx("db_viewer"),
-        private_tables=private_tables,
+        entity_tables=entity_tables,
         public_counts=public_counts,
         is_admin=is_admin,
         owner_id=owner_id,
@@ -91,21 +91,21 @@ def index():
     )
 
 
-# ── Personal tier — private DB ────────────────────────────────────────────────
+# ── Personal tier — entity DB ─────────────────────────────────────────────────
 
 @db_bp.route("/private/")
 @require_role("database")
 def private_browser_self():
     owner_id = session.get("owner_id")
     try:
-        tables = db_admin.list_private_tables(owner_id)
+        tables = db_admin.list_entity_tables(owner_id)
     except FileNotFoundError:
         tables = {}
     return render_template(
         "db_private_browser.html",
         **base_ctx("db_viewer"),
         tables=tables,
-        db_label=f"Your private database (owner {owner_id})",
+        db_label=f"Your entity database (owner {owner_id})",
         browser_owner_id=owner_id,
         query_url=url_for("db_viewer.private_query_self"),
     )
@@ -120,9 +120,9 @@ def private_query_self():
     if not raw_sql:
         return jsonify({"error": "No SQL provided"}), 400
     try:
-        return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
+        return jsonify(db_admin.query_entity_sql(owner_id, raw_sql, row_limit=500))
     except Exception:
-        logger.exception("Private query error for owner %s", owner_id)
+        logger.exception("Entity query error for owner %s", owner_id)
         return jsonify({"error": "Query failed"}), 400
 
 
@@ -192,20 +192,20 @@ def public_query():
         return jsonify({"error": "Query failed"}), 400
 
 
-# ── Admin tier — specific owner private browser ──────────────────────────────
+# ── Admin tier — specific owner entity browser ──────────────────────────────
 
 @db_bp.route("/<int:owner_id>/")
 @require_admin
 def private_browser(owner_id: int):
     try:
-        tables = db_admin.list_private_tables(owner_id)
+        tables = db_admin.list_entity_tables(owner_id)
     except FileNotFoundError:
         abort(404)
     return render_template(
         "db_private_browser.html",
         **base_ctx("db_viewer"),
         tables=tables,
-        db_label=f"owner {owner_id} private db",
+        db_label=f"owner {owner_id} entity db",
         browser_owner_id=owner_id,
         query_url=url_for("db_viewer.private_query", owner_id=owner_id),
     )
@@ -219,9 +219,9 @@ def private_query(owner_id: int):
     if not raw_sql:
         return jsonify({"error": "No SQL provided"}), 400
     try:
-        return jsonify(db_admin.query_private_sql(owner_id, raw_sql, row_limit=500))
+        return jsonify(db_admin.query_entity_sql(owner_id, raw_sql, row_limit=500))
     except Exception:
-        logger.exception("Private query error for owner %s", owner_id)
+        logger.exception("Entity query error for owner %s", owner_id)
         return jsonify({"error": "Query failed"}), 400
 
 
@@ -253,10 +253,10 @@ def stats():
 
     owner_id = session.get("owner_id")
     try:
-        tables = db_admin.list_private_tables(owner_id)
-        return jsonify({"tables": {t: len(cols) for t, cols in tables.items()}, "type": "private"})
+        tables = db_admin.list_entity_tables(owner_id)
+        return jsonify({"tables": {t: len(cols) for t, cols in tables.items()}, "type": "entity"})
     except FileNotFoundError:
-        return jsonify({"tables": {}, "type": "private"})
+        return jsonify({"tables": {}, "type": "entity"})
 
 
 @db_bp.route("/stats/personal")

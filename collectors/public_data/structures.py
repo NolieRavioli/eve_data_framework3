@@ -1,14 +1,11 @@
-"""Discover and enrich all public player-owned structures.
+"""collectors/public_data/structures.py — Discover and enrich public player structures.
 
-Owns the ``structures`` table DDL via :func:`ensure_tables`.
+Migrated from collectors/structures/discover.py (Phase 5 — no schema changes).
+The old module re-exports from here for backward compatibility.
 
-Phase 1 — Seed
-    Pull the full list of public structure IDs from ESI (no auth required).
-    Any IDs not already in the structures table are inserted as bare rows.
+**Table ownership:**
 
-Phase 2 — Enrich
-    For structures where name IS NULL (and not inside an enrich cooldown window),
-    fetch full metadata using an authenticated character token.
+- ``structures`` — owned by this module via :func:`ensure_tables`
 """
 
 import logging
@@ -28,7 +25,7 @@ ESI_BASE = "https://esi.evetech.net/latest"
 DATASOURCE = {"datasource": "tranquility"}
 
 
-# ── Table DDL — this collector OWNS the structures table ──────────────────────
+# ── Table DDL ─────────────────────────────────────────────────────────────────
 
 def ensure_tables(con) -> None:
     """Idempotent DDL for the structures table."""
@@ -47,11 +44,7 @@ def ensure_tables(con) -> None:
 
 
 def ensure_columns(con) -> None:
-    """Add enrichment cooldown columns to the structures table.
-
-    Called before the enrichment phase so that these columns exist only
-    when the enrichment logic actually needs them.
-    """
+    """Add enrichment cooldown columns to the structures table."""
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS forbidden_until TIMESTAMP")
     con.execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS enrich_refreshed_until TIMESTAMP")
 
@@ -93,7 +86,11 @@ def _fetch_structure_details(structure_id: int, token: str) -> tuple[dict | None
 # ── main worker ───────────────────────────────────────────────────────────────
 
 def discover_structures(owner_id: int | None = None) -> None:
-    """Discover public structures and enrich them with metadata."""
+    """Discover public structures and enrich them with metadata.
+
+    Phase 1: seed bare rows for newly discovered structure IDs.
+    Phase 2: enrich unenriched rows with ESI metadata (authenticated).
+    """
     if owner_id is None:
         owner_id = resolve_default_owner_id()
     if owner_id is None:
@@ -105,7 +102,6 @@ def discover_structures(owner_id: int | None = None) -> None:
     enrich_forbidden_cooldown    = int(_sc.get("forbidden_cooldown_days", 21)) * 86400
     enrich_authorized_cooldown   = int(_sc.get("authorized_cooldown_seconds", 3600))
 
-    # Ensure our table and enrichment columns exist before any writes
     con = public_connect(read_only=False)
     try:
         ensure_tables(con)
@@ -113,7 +109,6 @@ def discover_structures(owner_id: int | None = None) -> None:
     finally:
         con.close()
 
-    # ── Phase 1: seed ─────────────────────────────────────────────────────────
     logger.info("[DiscoverStructures] Fetching public structure list from ESI...")
     esi_ids = set(_fetch_public_structure_ids())
     if not esi_ids:
@@ -132,7 +127,6 @@ def discover_structures(owner_id: int | None = None) -> None:
         inserted = sde_store.upsert_structures(bare_rows)
         logger.info("[DiscoverStructures] Inserted %s new bare structure rows.", inserted)
 
-    # ── Phase 2: enrich ───────────────────────────────────────────────────────
     needs_enrichment = sde_store.list_public_structure_ids(missing_name_only=True)
     total = len(needs_enrichment)
     logger.info("[DiscoverStructures] %s structure(s) need enrichment.", total)
@@ -172,15 +166,11 @@ def discover_structures(owner_id: int | None = None) -> None:
                 succeeded += 1
 
             elif status == "unauthorized":
-                sde_store.mark_structures_forbidden(
-                    [structure_id], enrich_unauthorized_cooldown
-                )
+                sde_store.mark_structures_forbidden([structure_id], enrich_unauthorized_cooldown)
                 failed_403 += 1
 
             elif status == "forbidden":
-                sde_store.mark_structures_forbidden(
-                    [structure_id], enrich_forbidden_cooldown
-                )
+                sde_store.mark_structures_forbidden([structure_id], enrich_forbidden_cooldown)
                 failed_404 += 1
 
             else:
@@ -198,9 +188,3 @@ def discover_structures(owner_id: int | None = None) -> None:
                 count, total, (100 * count / total) if total else 100.0,
                 eta, succeeded, failed_403, failed_404, errors,
             )
-
-    logger.info(
-        "[DiscoverStructures] Done.  enriched=%s  403=%s  404=%s  errors=%s",
-        succeeded, failed_403, failed_404, errors,
-    )
-

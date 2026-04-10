@@ -1,12 +1,10 @@
-"""analysis/character — per-character ESI data population.
+"""collectors/character — per-character ESI data population.
 
-Owns the lifecycle of character-specific data in private SQLite databases.
-Called async after SSO callback and by the scheduler for daily refresh.
-
-Public entry point:
-    populate_all(owner_id)  — idempotent full populate + refresh
+Public entry points:
+    run_extended_refresh(owner_id=None)   — full scope-gated refresh of all data
+                                            pass owner_id to refresh one owner only
 """
 
-from collectors.character.populate import populate_all
+from collectors.character.extended import run_extended_refresh
 
-__all__ = ["populate_all"]
+__all__ = ["run_extended_refresh"]

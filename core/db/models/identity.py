@@ -1,36 +1,9 @@
-"""Identity models — User, SiteAdmin (DuckDB), Character (SQLite)."""
+"""Identity models — placeholder.
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
-from sqlalchemy.orm import declarative_base
-import datetime
+All auth tables (auth_users, auth_siteAdmins, auth_userRoles) are managed via
+raw DuckDB DDL in ``core/db/public.py``.  Character token storage lives in
+per-owner DuckDB entity databases managed by ``core/db/entity_db.py``.
 
-PublicBase = declarative_base()
-PrivateBase = declarative_base()
-
-
-class User(PublicBase):
-    __tablename__   = "auth_users"
-    owner_id        = Column(Integer, index=True)
-    character_id    = Column(Integer, primary_key=True)
-
-
-class SiteAdmin(PublicBase):
-    __tablename__     = "auth_siteAdmins"
-    owner_id          = Column(Integer, primary_key=True)
-    is_site_owner     = Column(Boolean, default=False)
-    granted_by        = Column(Integer, nullable=True)
-    granted_at        = Column(DateTime, default=datetime.datetime.utcnow)
-
-
-class Character(PrivateBase):
-    __tablename__   = "characters"
-    character_id    = Column(Integer, primary_key=True)
-    name            = Column(String)
-    corporation_id  = Column(Integer)
-    birthday        = Column(String)
-    security_status = Column(Float, nullable=True)
-    alliance_id     = Column(Integer, nullable=True)
-    access_token    = Column(String)
-    refresh_token   = Column(String)
-    expires_at      = Column(Float)
-    scopes          = Column(String)
+No ORM models remain — this module is kept as a namespace anchor for
+``core.db.models``.
+"""

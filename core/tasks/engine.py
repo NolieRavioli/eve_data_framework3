@@ -36,6 +36,8 @@ class SchedulerEngine:
         self._lock = threading.Lock()
         # fn_registry maps job_id -> callable for use at runtime
         self._fn_registry: dict[str, Callable] = {}
+        # category_registry maps job_id -> category label (UI use only)
+        self._category_registry: dict[str, str] = {}
         self._thread: threading.Thread | None = None
         self._stop_evt = threading.Event()
         self._started = False
@@ -52,10 +54,12 @@ class SchedulerEngine:
         fn: Callable,
         fn_path: str,
         interval_s: int,
+        category: str = "other",
     ) -> None:
         """Declare a job.  Upserts metadata into DuckDB, stores callable locally."""
         with self._lock:
             self._fn_registry[job_id] = fn
+            self._category_registry[job_id] = category
 
         import core.db.public as db
         from core.tasks.persist import ensure_tables, upsert_job_registration
@@ -104,9 +108,15 @@ class SchedulerEngine:
         con = db.connect()
         try:
             ensure_tables(con)
-            return get_all_jobs(con)
+            jobs = get_all_jobs(con)
         finally:
             con.close()
+        # Augment with in-memory category (not stored in DB)
+        with self._lock:
+            cat = dict(self._category_registry)
+        for job in jobs:
+            job["category"] = cat.get(job["job_id"], "other")
+        return jobs
 
     def set_enabled(self, job_id: str, enabled: bool) -> None:
         import core.db.public as db

@@ -291,7 +291,7 @@ def type_history(type_id: int):
 
     # Cache the results asynchronously
     try:
-        from collectors.market.history import cache_history_rows
+        from collectors.public_data.market import cache_history_rows
         cache_history_rows(type_id, region_id, data)
     except Exception:
         pass

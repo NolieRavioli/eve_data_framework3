@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import time
 from datetime import date, datetime, time as time_value, timezone
 from pathlib import Path
@@ -14,7 +13,6 @@ import duckdb
 logger = logging.getLogger(__name__)
 
 DEFAULT_SDE_DATABASE = "_publicData/public.duckdb"
-DEFAULT_PUBLIC_DATABASE = "_publicData/public.db"
 _BROWSER_PUBLIC_TABLES = (
     "auth_users",
     "auth_siteAdmins",
@@ -115,21 +113,6 @@ def get_database_path(cfg: dict | None = None) -> Path:
     if cfg and cfg.get("database_file"):
         return Path(cfg["database_file"])
     return Path(os.getenv("SDE_DATABASE_FILE", DEFAULT_SDE_DATABASE))
-
-
-def get_public_database_path() -> Path:
-    raw_value = os.getenv("EVE_PUBLIC_DATABASE_FILE", DEFAULT_PUBLIC_DATABASE)
-    candidate = Path(raw_value)
-    if candidate.exists() or candidate.is_absolute() or candidate.parent != Path("."):
-        return candidate
-    fallback = get_public_data_dir() / candidate.name
-    return fallback
-
-
-def get_private_database_path(owner_id: int) -> Path:
-    private_root = Path(os.getenv("EVE_PRIVATE_DATABASE_FOLDER", "_privateData/"))
-    owner_value = int(owner_id)
-    return private_root / str(owner_value) / f"{owner_value}.db"
 
 
 def warehouse_exists(database_file: str | Path | None = None) -> bool:
@@ -257,11 +240,16 @@ def _ensure_public_schema(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_users (
-            owner_id BIGINT,
-            character_id BIGINT PRIMARY KEY
+            owner_id        BIGINT,
+            character_id    BIGINT PRIMARY KEY,
+            corporation_id  BIGINT,
+            alliance_id     BIGINT
         )
         """
     )
+    # Idempotent migration for instances created before these columns existed
+    con.execute("ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS corporation_id BIGINT")
+    con.execute("ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS alliance_id BIGINT")
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_siteAdmins (
@@ -1157,55 +1145,41 @@ def query_browser_sql(
         con.close()
 
 
-def _connect_private_browser(owner_id: int) -> sqlite3.Connection:
-    target = get_private_database_path(owner_id)
-    if not target.exists():
-        raise FileNotFoundError(f"Private database not found for owner {owner_id}: {target}")
-    con = sqlite3.connect(
-        f"file:{target.as_posix()}?mode=ro",
-        uri=True,
-        timeout=30,
-        check_same_thread=False,
-    )
-    con.row_factory = sqlite3.Row
-    return con
-
-
-def list_private_browser_tables(owner_id: int) -> dict[str, list[str]]:
-    con = _connect_private_browser(owner_id)
+def list_entity_browser_tables(owner_id: int) -> dict[str, list[str]]:
+    from core.db.entity_db import connect_entity
+    con = connect_entity(int(owner_id))
     try:
         rows = con.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-            """
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name"
         ).fetchall()
         tables: dict[str, list[str]] = {}
         for row in rows:
-            table_name = str(row["name"])
-            column_rows = con.execute(f'PRAGMA table_info("{table_name}")').fetchall()
-            tables[table_name] = [str(col["name"]) for col in column_rows]
+            table_name = str(row[0])
+            col_rows = con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position",
+                [table_name],
+            ).fetchall()
+            tables[table_name] = [str(c[0]) for c in col_rows]
         return tables
     finally:
         con.close()
 
 
-def query_private_browser_sql(
+def query_entity_browser_sql(
     owner_id: int,
     raw_sql: str,
     *,
     row_limit: int = 500,
 ) -> dict:
     sql = _validate_browser_sql(raw_sql)
-    con = _connect_private_browser(owner_id)
+    from core.db.entity_db import connect_entity
+    con = connect_entity(int(owner_id))
     try:
-        cursor = con.execute(sql)
-        columns = [desc[0] for desc in (cursor.description or [])]
+        result = con.execute(sql)
+        columns = [desc[0] for desc in result.description] if result.description else []
         rows = [
             {columns[index]: _json_safe(value) for index, value in enumerate(row)}
-            for row in cursor.fetchmany(row_limit)
+            for row in result.fetchmany(row_limit)
         ]
         return {"columns": columns, "rows": rows}
     finally:

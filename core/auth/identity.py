@@ -41,13 +41,24 @@ def _ensure_schema(con) -> None:
 # ── User registration ────────────────────────────────────────────────────────
 
 
-def link_public_user(owner_id: int, character_id: int, database_file: str | Path | None = None) -> None:
+def link_public_user(
+    owner_id: int,
+    character_id: int,
+    corporation_id: int | None = None,
+    alliance_id: int | None = None,
+    database_file: str | Path | None = None,
+) -> None:
     con = _connect(database_file)
     try:
         _ensure_schema(con)
         con.execute(
-            "INSERT OR REPLACE INTO auth_users (owner_id, character_id) VALUES (?, ?)",
-            [owner_id, character_id],
+            """INSERT INTO auth_users (owner_id, character_id, corporation_id, alliance_id)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (character_id) DO UPDATE SET
+                   owner_id = excluded.owner_id,
+                   corporation_id = COALESCE(excluded.corporation_id, auth_users.corporation_id),
+                   alliance_id = COALESCE(excluded.alliance_id, auth_users.alliance_id)""",
+            [owner_id, character_id, corporation_id, alliance_id],
         )
     finally:
         con.close()

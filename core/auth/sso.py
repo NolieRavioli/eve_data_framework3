@@ -19,8 +19,7 @@ from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2Session
 
 
-from core.db.private import get_private_session
-from core.db.models import Character
+from core.db.entity_db import connect_entity, ensure_character_table
 from core.auth.credentials import CredentialManager
 from core.auth.tokens import TokenDBManager
 from core.auth import identity as _identity
@@ -254,13 +253,17 @@ def switch_character(character_id: int):
     if not owner_id:
         return redirect(url_for("auth.login"))
 
-    db = get_private_session(owner_id)
+    con = connect_entity(owner_id)
     try:
-        char = db.get(Character, character_id)
-        if not char:
+        ensure_character_table(con)
+        row = con.execute(
+            "SELECT character_id FROM characters WHERE character_id = ?",
+            [character_id],
+        ).fetchone()
+        if not row:
             return "Character not linked to this owner.", 404
     finally:
-        db.close()
+        con.close()
 
     session["character_id"] = character_id
     next_key = request.args.get("next", "")
@@ -306,10 +309,13 @@ def callback():
                 return "Authentication failed: unable to verify token signature.", 500
         character_id = int(decoded["sub"].split(":")[-1])
 
+        raw_scp = decoded.get("scp", [])
+        scopes_str = " ".join(raw_scp) if isinstance(raw_scp, list) else str(raw_scp or "")
+
         if _settings.debug_mode:
             print(
                 f"[Auth] Token received for character {character_id}. "
-                f"Scopes={token.get('scope')}"
+                f"Scopes={scopes_str[:120]}"
             )
 
         if is_add_toon:
@@ -323,11 +329,12 @@ def callback():
 
         is_first_owner = (_identity.count_public_owners() == 0) and not is_add_toon
 
-        db = get_private_session(owner_id)
+        # Ensure entity DB and characters table exist for this owner
+        con = connect_entity(owner_id)
         try:
-            db.get(Character, character_id)  # validates character exists
+            ensure_character_table(con)
         finally:
-            db.close()
+            con.close()
 
         mgr = TokenDBManager(owner_id)
         mgr.save_tokens(
@@ -335,7 +342,7 @@ def callback():
             token["access_token"],
             token["refresh_token"],
             token["expires_at"],
-            token.get("scope", ""),
+            scopes_str,
         )
 
         # Grant default roles to brand-new non-site-owner users
@@ -353,12 +360,12 @@ def callback():
             session["is_site_owner"] = bool(admin_record and admin_record.get("is_site_owner"))
             session["roles"]         = _identity.get_user_roles(owner_id)
 
-        # Kick off async character data collection
+        # Kick off full character data collection for this owner
         from core.tasks.queue import enqueue as _enqueue
-        from collectors.character.populate import populate_all
+        from collectors.character.extended import run_extended_refresh
         _enqueue(
-            "Populate Character",
-            populate_all,
+            "Character Full Refresh",
+            run_extended_refresh,
             owner_id,
             owner_id=owner_id,
             queue="private",

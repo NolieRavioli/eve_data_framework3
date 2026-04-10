@@ -43,12 +43,13 @@ from core.db.sde import refresh_all_caches
 logger = logging.getLogger(__name__)
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
+SDE_BUILD_URL = "https://developers.eveonline.com/static-data/tranquility/latest.jsonl"
 SDE_PATH = Path(os.getenv("SDE_PATH", "_sde"))
 SDE_ZIP_PATH = Path("_sde_tmp.zip")
 
 
 # ---------------------------------------------------------------------------
-# SDE currency check — HEAD request w/ ETag comparison
+# SDE currency check — build number comparison via CCP metadata endpoint
 # ---------------------------------------------------------------------------
 
 def warehouse_exists() -> bool:
@@ -57,48 +58,58 @@ def warehouse_exists() -> bool:
     return _wh_exists()
 
 
-def check_sde_currency(url: str = SDE_URL) -> dict:
+def _fetch_remote_build_number(url: str = SDE_BUILD_URL) -> int | None:
+    """Fetch the current SDE build number from the CCP metadata endpoint."""
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        for line in resp.text.strip().splitlines():
+            record = json.loads(line)
+            if record.get("_key") == "sde":
+                return int(record["buildNumber"])
+    except Exception:
+        return None
+    return None
+
+
+def check_sde_currency() -> dict:
     """Check whether the local SDE warehouse is still current.
 
-    Sends a HEAD request to the S3 SDE URL and compares the ETag with the
-    value stored in ``sde_manifest``.
+    Fetches the latest SDE build number from the CCP metadata endpoint and
+    compares it to the ``sde_version`` stored in ``sde_manifest``.
 
     Returns
     -------
     dict
-        ``{"current": bool, "local_etag": str | None, "remote_etag": str | None,
+        ``{"current": bool, "local_build": str | None, "remote_build": int | None,
            "error": str | None}``
     """
-    local_etag = None
+    local_build = None
     try:
         con = connect()
         try:
             row = con.execute(
-                "SELECT source_etag FROM sde_manifest ORDER BY manifest_id DESC LIMIT 1"
+                "SELECT sde_version FROM sde_manifest ORDER BY manifest_id DESC LIMIT 1"
             ).fetchone()
-            local_etag = row[0] if row else None
+            local_build = row[0] if row else None
         finally:
             con.close()
     except Exception:
         pass  # warehouse may not exist yet
 
-    remote_etag = None
-    try:
-        resp = requests.head(url, timeout=15)
-        resp.raise_for_status()
-        remote_etag = resp.headers.get("ETag")
-    except Exception as exc:
+    remote_build = _fetch_remote_build_number()
+    if remote_build is None:
         return {
-            "current": True,  # assume current if we can't reach S3
-            "local_etag": local_etag,
-            "remote_etag": None,
-            "error": str(exc),
+            "current": True,  # assume current if we can't reach CCP
+            "local_build": local_build,
+            "remote_build": None,
+            "error": "Could not fetch remote SDE build number",
         }
 
-    if local_etag and remote_etag and local_etag == remote_etag:
-        return {"current": True, "local_etag": local_etag, "remote_etag": remote_etag, "error": None}
+    if local_build and str(remote_build) == str(local_build):
+        return {"current": True, "local_build": local_build, "remote_build": remote_build, "error": None}
 
-    return {"current": False, "local_etag": local_etag, "remote_etag": remote_etag, "error": None}
+    return {"current": False, "local_build": local_build, "remote_build": remote_build, "error": None}
 
 # ---------------------------------------------------------------------------
 # Small helpers (build-time only)
@@ -393,6 +404,7 @@ def _merge_sde_to_live(temp_path: Path, target_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def download_sde(url: str = SDE_URL, dest: Path = SDE_ZIP_PATH, retries: int = 3) -> dict:
+    build_number = _fetch_remote_build_number()
     backoff = 2
     last_error = None
     for attempt in range(1, retries + 1):
@@ -407,6 +419,7 @@ def download_sde(url: str = SDE_URL, dest: Path = SDE_ZIP_PATH, retries: int = 3
             return {
                 "etag": response.headers.get("ETag"),
                 "last_modified": response.headers.get("Last-Modified"),
+                "build_number": str(build_number) if build_number else None,
                 "sha256": compute_file_sha256(dest),
                 "zip_path": str(dest),
             }
@@ -457,6 +470,7 @@ def build_sde_warehouse(
     source_zip_path: str | None = None,
     source_etag: str | None = None,
     source_last_modified: str | None = None,
+    build_number: str | None = None,
 ) -> dict:
     """Parse SDE JSONL files and write a fresh DuckDB warehouse."""
     target_path = Path(database_file) if database_file else get_database_path()
@@ -468,7 +482,7 @@ def build_sde_warehouse(
 
     build_started = _utc_now()
     effective_source_hash = source_hash or compute_source_tree_hash(source_root_path)
-    sde_version = source_last_modified or source_etag or effective_source_hash[:12]
+    sde_version = build_number or source_last_modified or source_etag or effective_source_hash[:12]
     dataset_stats: list[dict] = []
 
     logger.info("Building SDE warehouse at %s", target_path)
@@ -545,6 +559,7 @@ def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
         source_zip_path=source_meta.get("zip_path"),
         source_etag=source_meta.get("etag"),
         source_last_modified=source_meta.get("last_modified"),
+        build_number=source_meta.get("build_number"),
     )
     try:
         from core.db.public import sync_esi_registry_to_warehouse

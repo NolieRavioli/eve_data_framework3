@@ -13,7 +13,6 @@ PUBLIC alliances
 https://esi.evetech.net/alliances
 	Enrichment Analysis:
 	https://esi.evetech.net/alliances/{alliance_id}
-	https://esi.evetech.net/alliances/{alliance_id}/corporations
 
 PERSONAL assets
 https://esi.evetech.net/characters/{character_id}/assets
@@ -67,6 +66,9 @@ https://esi.evetech.net/alliances/{alliance_id}/contacts
 	Enrichment Analysis:
 	https://esi.evetech.net/alliances/{alliance_id}/contacts/labels
 
+ALLIANCE corporations
+	https://esi.evetech.net/alliances/{alliance_id}/corporations
+
 PERSONAL contacts
 https://esi.evetech.net/characters/{character_id}/contacts
 	Enrichment Analysis:
@@ -101,6 +103,7 @@ https://esi.evetech.net/corporations/npccorps
 PUBLIC corporations
 there is no way to get all corporations. we will have to do analysis enrichment to get corp ids via alliance and from private dbs.
 	Enrichment Analysis:
+	https://esi.evetech.net/alliances/{alliance_id}/corporations
 	https://esi.evetech.net/corporations/{corporation_id}
 	https://esi.evetech.net/corporations/{corporation_id}/members/limit (requires auth from soneone in the corp, may be NULL)
 

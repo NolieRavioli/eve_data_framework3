@@ -1,4 +1,3 @@
-sqlalchemy
 requests
 flask
 flask-sock

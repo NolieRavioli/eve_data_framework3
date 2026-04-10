@@ -319,10 +319,36 @@ def scheduler_index():
     jobs = scheduler.list_jobs()
     csrf = secrets.token_urlsafe(32)
     session["scheduler_csrf"] = csrf
+
+    # Group jobs by category, in a defined display order
+    _ORDER = ["character", "corporation", "alliance", "market", "public", "analysis", "system", "other"]
+    _LABELS = {
+        "character": "Character",
+        "corporation": "Corporation",
+        "alliance": "Alliance",
+        "market": "Market",
+        "public": "Public Universe",
+        "analysis": "Analysis & Enrichment",
+        "system": "System",
+        "other": "Other",
+    }
+    groups: dict[str, list] = {k: [] for k in _ORDER}
+    for job in jobs:
+        cat = job.get("category", "other")
+        if cat not in groups:
+            groups.setdefault(cat, [])
+        groups[cat].append(job)
+    job_groups = [
+        {"key": k, "label": _LABELS.get(k, k.title()), "jobs": groups[k]}
+        for k in _ORDER
+        if groups.get(k)
+    ]
+
     return render_template(
         "scheduler.html",
         **base_ctx("task_viewer"),
         jobs=jobs,
+        job_groups=job_groups,
         csrf_token=csrf,
     )
 

@@ -2,7 +2,7 @@
 
 Encrypts protected files when the application shuts down ("seal") and decrypts
 them on startup ("unseal").  While the application is running, files remain in
-plaintext on disk for normal DuckDB / SQLite access.
+plaintext on disk for normal DuckDB access.
 
 Master Key
 ----------
@@ -24,7 +24,7 @@ Protected files
 - ``_publicData/key``
 - ``_publicData/secret``
 - ``_publicData/client_cred``
-- ``_privateData/<owner_id>/<owner_id>.db``  (all discovered SQLite files)
+- ``_privateData/<owner_id>/<owner_id>.duckdb``  (all discovered entity DuckDB files)
 
 NOT protected: ``_sde/`` (public reference data, freely downloadable).
 """
@@ -160,7 +160,7 @@ def _discover_private_dbs() -> list[Path]:
     dbs: list[Path] = []
     for owner_dir in root.iterdir():
         if owner_dir.is_dir():
-            dbs.extend(owner_dir.glob("*.db"))
+            dbs.extend(owner_dir.glob("*.duckdb"))
     return dbs
 
 

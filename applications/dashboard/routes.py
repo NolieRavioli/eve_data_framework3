@@ -100,13 +100,13 @@ def home():
     for c in characters:
         cid = c["character_id"]
         try:
-            bal = db.private_query(owner_id, "SELECT balance FROM character_wallet WHERE character_id = :cid ORDER BY rowid DESC LIMIT 1", {"cid": cid})
+            bal = db.entity_query(owner_id, "SELECT balance FROM character_wallet WHERE character_id = ? ORDER BY rowid DESC LIMIT 1", [cid])
             if bal:
                 total_isk += bal[0].get("balance", 0) or 0
         except Exception:
             pass
         try:
-            sp = db.private_query(owner_id, "SELECT total_sp FROM character_skills WHERE character_id = :cid LIMIT 1", {"cid": cid})
+            sp = db.entity_query(owner_id, "SELECT total_sp FROM character_skills WHERE character_id = ? LIMIT 1", [cid])
             if sp:
                 total_sp += sp[0].get("total_sp", 0) or 0
         except Exception:
@@ -151,7 +151,7 @@ def skills(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "skills")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_skills WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_skills WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
     ctx["skills"] = rows
@@ -171,7 +171,7 @@ def wallet(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "wallet")
     try:
-        journal = db.private_query(owner_id, "SELECT * FROM character_wallet WHERE character_id = :cid ORDER BY date DESC LIMIT 200", {"cid": character_id})
+        journal = db.entity_query(owner_id, "SELECT * FROM character_wallet_journal WHERE character_id = ? ORDER BY date DESC LIMIT 200", [character_id])
     except Exception:
         journal = []
     ctx["journal"] = journal
@@ -191,7 +191,7 @@ def assets(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "assets")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_assets WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_assets WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
 
@@ -217,7 +217,7 @@ def mail(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "mail")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_mail WHERE character_id = :cid ORDER BY timestamp DESC LIMIT 50", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_mail WHERE character_id = ? ORDER BY timestamp DESC LIMIT 50", [character_id])
     except Exception:
         rows = []
     ctx["mail"] = rows
@@ -237,7 +237,7 @@ def contracts(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "contracts")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_contracts WHERE character_id = :cid ORDER BY date_issued DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_contracts WHERE character_id = ? ORDER BY date_issued DESC", [character_id])
     except Exception:
         rows = []
     ctx["contracts"] = rows
@@ -257,7 +257,7 @@ def calendar(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "calendar")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_calendar WHERE character_id = :cid ORDER BY event_date DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_events WHERE character_id = ? ORDER BY event_date DESC", [character_id])
     except Exception:
         rows = []
     ctx["calendar_events"] = rows
@@ -277,7 +277,7 @@ def contacts(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "contacts")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_contacts WHERE character_id = :cid ORDER BY standing DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_contacts WHERE character_id = ? ORDER BY standing DESC", [character_id])
     except Exception:
         rows = []
     ctx["contacts"] = rows
@@ -297,7 +297,7 @@ def notifications(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "notifications")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_notifications WHERE character_id = :cid ORDER BY timestamp DESC LIMIT 50", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_notifications WHERE character_id = ? ORDER BY timestamp DESC LIMIT 50", [character_id])
     except Exception:
         rows = []
     ctx["notifications"] = rows
@@ -317,7 +317,7 @@ def industry(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "industry")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_industry WHERE character_id = :cid ORDER BY start_date DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_industry_jobs WHERE character_id = ? ORDER BY start_date DESC", [character_id])
     except Exception:
         rows = []
     for r in rows:
@@ -341,7 +341,7 @@ def market(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "market")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_orders WHERE character_id = :cid ORDER BY issued DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_market_orders WHERE character_id = ? ORDER BY issued DESC", [character_id])
     except Exception:
         rows = []
     for r in rows:
@@ -365,7 +365,7 @@ def blueprints(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "blueprints")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_blueprints WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_blueprints WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
     for r in rows:
@@ -389,7 +389,7 @@ def pi(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "pi")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_planets WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_colonies WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
     ctx["planets"] = rows
@@ -409,7 +409,7 @@ def mining(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "mining")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_mining WHERE character_id = :cid ORDER BY date DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_mining WHERE character_id = ? ORDER BY date DESC", [character_id])
     except Exception:
         rows = []
     for r in rows:
@@ -433,7 +433,7 @@ def loyalty(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "loyalty")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_loyalty WHERE character_id = :cid ORDER BY loyalty_points DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_loyalty_points WHERE character_id = ? ORDER BY loyalty_points DESC", [character_id])
     except Exception:
         rows = []
     ctx["loyalty"] = rows
@@ -453,7 +453,7 @@ def research(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "research")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_research WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_agent_research WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
     ctx["research"] = rows
@@ -473,7 +473,7 @@ def fittings(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "fittings")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_fittings WHERE character_id = :cid", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_fittings WHERE character_id = ?", [character_id])
     except Exception:
         rows = []
     for r in rows:
@@ -497,7 +497,7 @@ def standings(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "standings")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_standings WHERE character_id = :cid ORDER BY standing DESC", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_standings WHERE character_id = ? ORDER BY standing DESC", [character_id])
     except Exception:
         rows = []
     ctx["standings"] = rows
@@ -517,7 +517,7 @@ def killmails(character_id):
 
     ctx = _character_ctx(owner_id, character_id, "killmails")
     try:
-        rows = db.private_query(owner_id, "SELECT * FROM character_killmails WHERE character_id = :cid ORDER BY killmail_time DESC LIMIT 50", {"cid": character_id})
+        rows = db.entity_query(owner_id, "SELECT * FROM character_killmails WHERE character_id = ? ORDER BY killmail_time DESC LIMIT 50", [character_id])
     except Exception:
         rows = []
     ctx["killmails"] = rows
