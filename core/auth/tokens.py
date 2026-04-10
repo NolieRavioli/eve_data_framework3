@@ -12,7 +12,7 @@ from typing import Iterable, Optional
 import requests
 
 from core.auth.credentials import CredentialManager
-from core.db.entity_db import connect_entity, ensure_character_table
+from core.io.entity_db import connect_entity, ensure_character_table
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class TokenDBManager:
 
     def __init__(self, owner_id: int):
         self.owner_id = owner_id
-        from core.db.public import ensure_public_database
+        from core.io.public import ensure_public_database
         ensure_public_database()
 
     def save_tokens(

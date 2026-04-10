@@ -51,7 +51,7 @@ ALL_STATIC_TOPICS: tuple[str, ...] = LOG_TOPICS + DATA_TOPICS
 
 _PREFIX_MAP: list[tuple[str, str]] = sorted(
     [
-        ("core.db",                LOG_DB),
+        ("core.io",                LOG_DB),
         ("core.esi.rate",          LOG_ESI),
         ("core.esi.request",       LOG_ESI),
         ("core.tasks",             LOG_SYSTEM),

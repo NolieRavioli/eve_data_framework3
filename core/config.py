@@ -39,7 +39,7 @@ def _load_or_create_session_secret() -> str:
     # If the file is still sealed, unseal it first (defensive — main.py
     # normally calls unseal_all() before we get here).
     if os.path.exists(sealed_path) and not os.path.exists(secret_path):
-        from core.db.encryption import decrypt_file
+        from core.io.encryption import decrypt_file
         from pathlib import Path
         decrypt_file(Path(sealed_path))
 
@@ -53,7 +53,7 @@ def _load_or_create_session_secret() -> str:
     secret = secrets.token_hex(32)
     os.makedirs(public_data, exist_ok=True)
     from pathlib import Path
-    from core.db.encryption import encrypt_file
+    from core.io.encryption import encrypt_file
     encrypt_file(Path(secret_path))
     logger.info("[Config] Generated new session secret at %s", secret_path)
     return secret

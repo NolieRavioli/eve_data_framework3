@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from core.db import public as sde_store
+from core.io import public as sde_store
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +67,12 @@ def _connect_ro():
 
 
 def _query_rows(sql: str, params: list[Any] | None = None) -> list[dict]:
-    from core.db.reader import query_rows
+    from core.io.reader import query_rows
     return query_rows(sql, params, _warehouse_path())
 
 
 def _query_one(sql: str, params: list[Any] | None = None) -> dict | None:
-    from core.db.reader import query_one
+    from core.io.reader import query_one
     return query_one(sql, params, _warehouse_path())
 
 

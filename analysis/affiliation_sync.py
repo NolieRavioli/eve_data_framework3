@@ -12,8 +12,8 @@ import logging
 import os
 from pathlib import Path
 
-from core.db.entity_db import connect_entity
-from core.db.writer import db_write
+from core.io.entity_db import connect_entity
+from core.io.writer import db_write
 from core.esi import esi_post
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ def run_affiliation_sync() -> None:
             logger.exception("[affiliation_sync] Failed writing to owner %s", owner_id)
 
     # Also update auth_users in the public DuckDB
-    import core.db.public as db
+    import core.io.public as db
     pub_con = db.connect()
     try:
         for char_id, aff in results.items():

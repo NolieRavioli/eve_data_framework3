@@ -13,14 +13,14 @@ This package owns all persistent data storage:
 import logging
 import os
 
-from core.db.reader import (
+from core.io.reader import (
     query_rows,
     query_one,
     query_scalar,
     table_count,
     get_db_file_stats,
 )
-from core.db.stats import (
+from core.io.stats import (
     get_table_stats,
     get_write_rate_stats,
     optimization_hints,
@@ -56,7 +56,7 @@ def ensure_data_dirs() -> None:
 
 def ensure_public_database(database_file=None):
     """Create / migrate the DuckDB operational schema (fast — idempotent)."""
-    from core.db import public
+    from core.io import public
     return public.ensure_public_database(database_file)
 
 
@@ -69,7 +69,7 @@ def ensure_schema() -> None:
 
 def warm_caches(sde_cfg: dict | None = None) -> None:
     """Load SDE dimension data into the in-memory lookup caches."""
-    from core.db.sde import startup_load_sde
+    from core.io.sde import startup_load_sde
     logger.info("Warming SDE in-memory caches...")
     startup_load_sde(sde_cfg or {})
     logger.info("SDE caches warm.")
@@ -110,7 +110,7 @@ def initialize_collector_tables() -> None:
 
     Opens a connection, calls initialize_analysis_tables, and checkpoints.
     """
-    from core.db import public
+    from core.io import public
     con = public.connect()
     try:
         initialize_analysis_tables(con)
@@ -121,7 +121,7 @@ def initialize_collector_tables() -> None:
 
 def seed_esi_cache() -> None:
     """Initialise ESI cache tables and seed route specs from generated DDL."""
-    from core.db import public
+    from core.io import public
     con = public.connect()
     try:
         try:

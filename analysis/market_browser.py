@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 
-import core.db.public as db
-import core.db.sde as sde
+import core.io.public as db
+import core.io.sde as sde
 
 logger = logging.getLogger(__name__)
 

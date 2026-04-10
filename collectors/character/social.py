@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 
-from core.db.entity_db import connect_entity
+from core.io.entity_db import connect_entity
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)

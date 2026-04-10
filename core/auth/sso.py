@@ -19,7 +19,7 @@ from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2Session
 
 
-from core.db.entity_db import connect_entity, ensure_character_table
+from core.io.entity_db import connect_entity, ensure_character_table
 from core.auth.credentials import CredentialManager
 from core.auth.tokens import TokenDBManager
 from core.auth import identity as _identity

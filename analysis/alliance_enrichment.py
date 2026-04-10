@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import logging
 
-import core.db.public as db
-from core.db.writer import db_write
+import core.io.public as db
+from core.io.writer import db_write
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)

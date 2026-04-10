@@ -61,7 +61,7 @@ class SchedulerEngine:
             self._fn_registry[job_id] = fn
             self._category_registry[job_id] = category
 
-        import core.db.public as db
+        import core.io.public as db
         from core.tasks.persist import ensure_tables, upsert_job_registration
 
         con = db.connect()
@@ -102,7 +102,7 @@ class SchedulerEngine:
     # ------------------------------------------------------------------
 
     def list_jobs(self) -> list[dict]:
-        import core.db.public as db
+        import core.io.public as db
         from core.tasks.persist import ensure_tables, get_all_jobs
 
         con = db.connect()
@@ -119,7 +119,7 @@ class SchedulerEngine:
         return jobs
 
     def set_enabled(self, job_id: str, enabled: bool) -> None:
-        import core.db.public as db
+        import core.io.public as db
         from core.tasks.persist import ensure_tables, set_enabled
 
         con = db.connect()
@@ -132,7 +132,7 @@ class SchedulerEngine:
 
     def run_now(self, job_id: str) -> str:
         """Schedule *job_id* to fire on the next tick and return the task_id."""
-        import core.db.public as db
+        import core.io.public as db
         from core.tasks.persist import ensure_tables, run_job_now
 
         con = db.connect()
@@ -158,7 +158,7 @@ class SchedulerEngine:
             self._stop_evt.wait(timeout=_TICK_INTERVAL)
 
     def _tick(self) -> None:
-        import core.db.public as db
+        import core.io.public as db
         from core.tasks.persist import ensure_tables, get_due_jobs, mark_job_ran
 
         con = db.connect()

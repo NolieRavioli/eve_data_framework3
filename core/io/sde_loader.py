@@ -24,7 +24,7 @@ from typing import Any
 import duckdb
 import requests
 
-from core.db.public import (
+from core.io.public import (
     _as_float,
     _ensure_registry_schema,
     _query_one,
@@ -38,7 +38,7 @@ from core.db.public import (
     compute_file_sha256,
 )
 from core.esi.registry import refresh_esi_spec_registry
-from core.db.sde import refresh_all_caches
+from core.io.sde import refresh_all_caches
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ SDE_ZIP_PATH = Path("_sde_tmp.zip")
 
 def warehouse_exists() -> bool:
     """Return True if the DuckDB warehouse has an sde_manifest table."""
-    from core.db.public import warehouse_exists as _wh_exists
+    from core.io.public import warehouse_exists as _wh_exists
     return _wh_exists()
 
 
@@ -244,7 +244,7 @@ def _ndjson_insert(
 # SDE schema loading + schema-driven DDL
 # ---------------------------------------------------------------------------
 
-_SDE_SCHEMA_PATH = Path("core/db/generated/sde_schema.json")
+_SDE_SCHEMA_PATH = Path("core/io/generated/sde_schema.json")
 
 
 def _load_sde_schema() -> dict:
@@ -349,7 +349,7 @@ def _merge_sde_to_live(temp_path: Path, target_path: Path) -> None:
     """
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    from core.db.writer import is_running, stop_writer, start_writer as _start_writer
+    from core.io.writer import is_running, stop_writer, start_writer as _start_writer
 
     writer_was_running = is_running()
     if writer_was_running:
@@ -562,7 +562,7 @@ def rebuild_sde_warehouse(source_meta: dict | None = None) -> dict:
         build_number=source_meta.get("build_number"),
     )
     try:
-        from core.db.public import sync_esi_registry_to_warehouse
+        from core.io.public import sync_esi_registry_to_warehouse
         sync_esi_registry_to_warehouse()
     except (FileNotFoundError, ImportError):
         logger.info("No ESI registry present yet; skipping DuckDB registry sync after SDE rebuild.")

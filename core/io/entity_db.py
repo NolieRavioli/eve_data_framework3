@@ -1,4 +1,4 @@
-"""core/db/entity_db.py — DuckDB connection manager for per-entity databases.
+"""core/io/entity_db.py — DuckDB connection manager for per-entity databases.
 
 Provides fresh DuckDB connections to per-entity database files stored at
 `_privateData/<entity_id>/<entity_id>.duckdb`.
@@ -7,7 +7,7 @@ Entities can be characters (owner_id), corporations, or alliances.
 All per-owner data — including auth tokens — is stored in DuckDB.
 
 Usage:
-    from core.db.entity_db import connect_entity
+    from core.io.entity_db import connect_entity
 
     con = connect_entity(owner_id)
     try:

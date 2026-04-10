@@ -36,7 +36,7 @@ def _fmt_expires(issued, duration_days) -> str:
 
 
 def _query_orders(type_id: int, region_id: int) -> tuple[list, list]:
-    from core.db.market_buffer import query_orders as _buf_query, buffered_region_ids
+    from core.io.market_buffer import query_orders as _buf_query, buffered_region_ids
 
     buf_hit, buf_rows = _buf_query(type_id, region_id)
 

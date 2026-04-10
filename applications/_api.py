@@ -151,18 +151,18 @@ class ToolRegistry:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── SDE ───────────────────────────────────────────────────────────────────────
-import core.db.sde as sde  # the module itself is the public API
+import core.io.sde as sde  # the module itself is the public API
 
 # ── DB ────────────────────────────────────────────────────────────────────────
-from core.db import public as _pub
-from core.db.entity_db import connect_entity as _connect_entity, ensure_character_table as _ensure_char_tbl
-from core.db.reader import (
+from core.io import public as _pub
+from core.io.entity_db import connect_entity as _connect_entity, ensure_character_table as _ensure_char_tbl
+from core.io.reader import (
     query_rows as _read_public,
     query_one as _read_public_one,
     query_scalar as _read_public_scalar,
 )
-from core.db.stats import get_db_gateway_stats
-from core.db.reader import get_db_file_stats
+from core.io.stats import get_db_gateway_stats
+from core.io.reader import get_db_file_stats
 
 
 def _entity_query(owner_id: int, sql: str, params: list | None = None) -> list[dict]:
@@ -194,7 +194,7 @@ class _DB:
         return _entity_query(owner_id, sql, params)
 
     def market_price(self, type_id: int, region_id: int, buy: bool = False) -> float | None:
-        from core.db.market_buffer import try_market_price
+        from core.io.market_buffer import try_market_price
         hit, price = try_market_price(type_id, region_id, buy)
         if hit:
             return price
@@ -404,7 +404,7 @@ from core.auth.identity import (
     grant_user_roles as _identity_grant_user_roles,
     revoke_user_role as _identity_revoke_user_role,
 )
-from core.db.stats import get_db_gateway_stats as _get_db_gateway_stats
+from core.io.stats import get_db_gateway_stats as _get_db_gateway_stats
 from core.config import get_db_unit_weights as _get_db_unit_weights
 
 db_admin = types.SimpleNamespace(

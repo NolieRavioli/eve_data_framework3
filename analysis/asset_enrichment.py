@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 
 from core.auth import pick_token, fresh_token
-from core.db.entity_db import connect_entity
+from core.io.entity_db import connect_entity
 from core.esi import esi_post
 
 logger = logging.getLogger(__name__)

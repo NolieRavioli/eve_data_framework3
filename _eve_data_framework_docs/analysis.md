@@ -57,8 +57,8 @@ The `analysis/` folder is at the repository root, alongside `collectors/`. Analy
 ```python
 # analysis/my_domain/worker.py
 import logging
-import core.db.public as db
-from core.db.writer import db_write, db_executemany
+import core.io.public as db
+from core.io.writer import db_write, db_executemany
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ from analysis.my_domain.worker import compute_margins
 Analysis workers have direct access to all tables in the warehouse:
 
 ```python
-import core.db.public as db
+import core.io.public as db
 
 con = db.connect()
 try:
@@ -177,7 +177,7 @@ DuckDB supports rich SQL — window functions, CTEs, ARRAY aggregations, and JSO
 Use the serialized writer for INSERT / UPDATE / DELETE to avoid DuckDB write contention:
 
 ```python
-from core.db.writer import db_write, db_executemany
+from core.io.writer import db_write, db_executemany
 
 # Single row
 db_write("""
@@ -199,10 +199,10 @@ If your analysis function already holds a DuckDB connection that nothing else wi
 
 ## Using SDE Data
 
-For fast name/ID lookups, use the in-memory SDE cache from `core.db.sde`:
+For fast name/ID lookups, use the in-memory SDE cache from `core.io.sde`:
 
 ```python
-import core.db.sde as sde
+import core.io.sde as sde
 
 name = sde.name_from_type_id(34)                    # "Tritanium"
 group_id = sde.group_id_from_type_id(34)             # 18

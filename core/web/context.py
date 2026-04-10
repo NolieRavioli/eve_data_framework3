@@ -2,7 +2,7 @@
 """Shared template context for the base layout (sidebar, character mini-card)."""
 
 from flask import session
-from core.db.entity_db import connect_entity, ensure_character_table
+from core.io.entity_db import connect_entity, ensure_character_table
 
 
 def base_ctx(active_page: str = "") -> dict:

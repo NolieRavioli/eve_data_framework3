@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 
-from core.db.public import connect as public_connect
-from core.db.writer import db_executemany
-import core.db.sde as sde
+from core.io.public import connect as public_connect
+from core.io.writer import db_executemany
+import core.io.sde as sde
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def _get_npc_corp_ids() -> list[int]:
         return sde.get_npc_corp_ids()
     except AttributeError:
         pass
-    from core.db.public import connect as pub_connect
+    from core.io.public import connect as pub_connect
     import json
     con = pub_connect()
     try:

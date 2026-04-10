@@ -12,10 +12,10 @@ import logging
 import time
 from datetime import datetime
 
-from core.db.public import connect as public_connect
-from core.db import public as sde_store
+from core.io.public import connect as public_connect
+from core.io import public as sde_store
 from core.esi import esi_get as _esi_get
-import core.db.sde as sde
+import core.io.sde as sde
 from core.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.config import get_structures_config
 

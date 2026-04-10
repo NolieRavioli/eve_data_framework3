@@ -41,7 +41,7 @@ TestMarketCooldowns       — db_write_nowait single-row INSERT ON CONFLICT × N
 Setup
 -----
 setUpModule patches SDE_DATABASE_FILE to a temp DuckDB file and starts the
-real core.db.writer thread so all write operations funnel through the actual
+real core.io.writer thread so all write operations funnel through the actual
 production serialisation path.  The temp DB is torn down in tearDownModule.
 """
 
@@ -319,7 +319,7 @@ def setUpModule() -> None:  # noqa: N802 (unittest convention)
     except Exception:
         pass  # config.yaml may not exist in CI; env vars are sufficient
 
-    from core.db.writer import start_writer, db_write
+    from core.io.writer import start_writer, db_write
     start_writer(db_path=_db_path)
 
     # Create production schemas in the temp DB
@@ -350,7 +350,7 @@ def setUpModule() -> None:  # noqa: N802 (unittest convention)
 
 
 def tearDownModule() -> None:  # noqa: N802
-    from core.db.writer import stop_writer
+    from core.io.writer import stop_writer
     stop_writer(timeout=30.0)
 
     _power.shutdown()
@@ -376,7 +376,7 @@ def _drain_writer() -> None:
     Sends a blocking no-op write through the same writer queue so that by
     the time it returns, every earlier nowait op has been processed.
     """
-    from core.db.writer import db_write
+    from core.io.writer import db_write
     db_write("INSERT OR REPLACE INTO _bench_sync VALUES (?)", [1])
 
 
@@ -461,11 +461,11 @@ class TestMarketRegionRefresh(unittest.TestCase):
         # Pre-build data outside the timed window
         cls.rows = _market_order_rows(N_MARKET_REGION_ROWS, region_id=_REGION_A)
         # Prime the table with stale data so the DELETE has real work to do
-        from core.db.public import replace_market_orders_for_region
+        from core.io.public import replace_market_orders_for_region
         replace_market_orders_for_region(_REGION_A, cls.rows)
 
     def test_region_market_replace(self) -> None:
-        from core.db.public import replace_market_orders_for_region
+        from core.io.public import replace_market_orders_for_region
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -501,7 +501,7 @@ class TestStructureMarketOrders(unittest.TestCase):
         cls.rows = _market_order_rows(N_STRUCTURE_ORDERS, region_id=_REGION_B)
 
     def test_structure_market_upsert(self) -> None:
-        from core.db.public import upsert_market_orders
+        from core.io.public import upsert_market_orders
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -517,7 +517,7 @@ class TestStructureMarketOrders(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # Test 3 — Writer coalescing
-# (core/db/writer.py coalescing logic)
+# (core/io/writer.py coalescing logic)
 # Pattern A: single blocking db_executemany — one BEGIN/COMMIT round-trip
 # Pattern B: N × db_executemany_nowait same SQL — writer batches into one txn
 # ---------------------------------------------------------------------------
@@ -555,12 +555,12 @@ class TestWriterCoalescing(unittest.TestCase):
 
     def _reset_table(self) -> None:
         """TRUNCATE _bench_coalesce via the writer so each sub-test starts clean."""
-        from core.db.writer import db_write
+        from core.io.writer import db_write
         db_write("TRUNCATE TABLE _bench_coalesce")
 
     def test_A_blocking_single(self) -> None:
         """Single blocking db_executemany() — one round-trip through the writer."""
-        from core.db.writer import db_executemany
+        from core.io.writer import db_executemany
         self._reset_table()
 
         m0 = _power.mark()
@@ -575,7 +575,7 @@ class TestWriterCoalescing(unittest.TestCase):
 
     def test_B_coalesced_nowait(self) -> None:
         """N × db_executemany_nowait() with same SQL — writer coalesces into one txn."""
-        from core.db.writer import db_executemany_nowait
+        from core.io.writer import db_executemany_nowait
         self._reset_table()
 
         m0 = _power.mark()
@@ -616,7 +616,7 @@ class TestStructureDiscovery(unittest.TestCase):
 
     def test_A_phase1_seed(self) -> None:
         """Bulk seed: db_executemany INSERT OR REPLACE for N bare structure rows."""
-        from core.db.public import upsert_structures
+        from core.io.public import upsert_structures
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -630,7 +630,7 @@ class TestStructureDiscovery(unittest.TestCase):
 
     def test_B_phase2_enrich(self) -> None:
         """Enrich loop: one upsert_structures([row]) call per structure."""
-        from core.db.public import upsert_structures
+        from core.io.public import upsert_structures
 
         m0 = _power.mark()
         t0 = time.perf_counter()
@@ -750,7 +750,7 @@ class TestMarketCooldowns(unittest.TestCase):
         cls.refreshed_until = datetime.now(timezone.utc) + timedelta(hours=1)
 
     def test_cooldown_nowait_loop(self) -> None:
-        from core.db.writer import db_write_nowait
+        from core.io.writer import db_write_nowait
 
         sql = "INSERT OR REPLACE INTO market_region_cooldowns VALUES (?, ?)"
         until = self.refreshed_until

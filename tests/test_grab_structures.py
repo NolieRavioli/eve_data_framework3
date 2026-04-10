@@ -10,7 +10,7 @@ import sys
 # Allow imports from the project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.db.public import connect
+from core.io.public import connect
 
 OUTPUT = os.path.join(os.path.dirname(__file__), "structures.csv")
 

@@ -44,7 +44,7 @@ Do **not** write a collector for:
 ## Rules
 
 1. **All ESI HTTP** goes through `core.esi` functions — never use `requests` directly
-2. **Table DDL** lives in the owning collector's `ensure_tables()` — never in `core/db/public.py`
+2. **Table DDL** lives in the owning collector's `ensure_tables()` — never in `core/io/public.py`
 3. **Call `ensure_tables(con)` before any writes** — every `connect()` should be followed by `ensure_tables()`
 4. **Thread-safe DuckDB** — get a fresh `db.connect()` per call; never share connections across threads
 5. **Import from `core.*` only** — collectors never import from `applications/`

@@ -18,7 +18,7 @@ assignees: ''
 <!-- Check all that apply -->
 - [ ] `core/auth/` — authentication / token / scope handling
 - [ ] `core/esi/` — ESI HTTP client / rate limiting / codegen
-- [ ] `core/db/` — DuckDB / SQLite / SDE cache
+- [ ] `core/io/` — DuckDB / SQLite / SDE cache
 - [ ] `core/tasks/` — task queue / scheduler
 - [ ] `core/web/` — Flask app / SSO / templates
 - [ ] `collectors/` — data collection (market, structures, character)

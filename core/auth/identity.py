@@ -1,7 +1,7 @@
 """User, admin, and role CRUD — extracted from publicDB.py.
 
 These functions operate on the ``auth_users``, ``auth_siteAdmins``, and ``auth_userRoles``
-DuckDB tables.  They still call ``core.db.public.connect()`` internally — they
+DuckDB tables.  They still call ``core.io.public.connect()`` internally — they
 *use* the database but don't *own* the connection infrastructure.
 """
 
@@ -29,12 +29,12 @@ def _query_one(con, sql: str, params=None) -> dict | None:
 
 
 def _connect(database_file=None):
-    from core.db.public import connect, get_database_path
+    from core.io.public import connect, get_database_path
     return connect(database_file or get_database_path(), read_only=False)
 
 
 def _ensure_schema(con) -> None:
-    from core.db.public import _ensure_public_schema
+    from core.io.public import _ensure_public_schema
     _ensure_public_schema(con)
 
 

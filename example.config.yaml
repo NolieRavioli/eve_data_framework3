@@ -96,16 +96,16 @@ Python Console:
   # core.bus.process_pub: INFO
   # core.bus.websocket: INFO
   # core.config: INFO
-  # core.db: INFO
-  # core.db.encryption: INFO
-  # core.db.entity_db: INFO
-  # core.db.market_buffer: INFO
-  # core.db.public: INFO
-  # core.db.reader: INFO
-  # core.db.sde: INFO
-  # core.db.sde_loader: INFO
-  # core.db.stats: INFO
-  # core.db.writer: INFO
+  # core.io: INFO
+  # core.io.encryption: INFO
+  # core.io.entity_db: INFO
+  # core.io.market_buffer: INFO
+  # core.io.public: INFO
+  # core.io.reader: INFO
+  # core.io.sde: INFO
+  # core.io.sde_loader: INFO
+  # core.io.stats: INFO
+  # core.io.writer: INFO
   # core.esi.cache: INFO
   # core.esi.corp.assets: INFO
   # core.esi.corp.contacts: INFO

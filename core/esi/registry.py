@@ -444,7 +444,7 @@ def refresh_esi_spec_registry(compatibility_date: str | None = None) -> dict:
     latest_path.write_text(json.dumps(latest_payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     try:
-        from core.db import public
+        from core.io import public
 
         public.sync_esi_registry_to_warehouse(
             compatibility_date=active_date,

@@ -98,7 +98,7 @@ See §4 for the exhaustive endpoint → table mapping. Summary of gaps:
 | **Alliance** | `_privateData/<alliance_id>/<alliance_id>.duckdb` | none (implicit in file) | Alliance contacts |
 
 Auth/token storage remains in existing SQLite per-owner (`_privateData/<owner_id>/<owner_id>.db`).
-The `.db` SQLite file is managed by `core/db/private.py` (unchanged). The `.duckdb` data file
+The `.db` SQLite file is managed by `core/io/private.py` (unchanged). The `.duckdb` data file
 is a new addition alongside it.
 
 **Rationale:**
@@ -108,7 +108,7 @@ is a new addition alongside it.
 - Per-entity isolation: deleting corp/alliance data is a single file removal.
 - Entity-specific data never sits in the shared public warehouse.
 
-**New infrastructure — `core/db/entity_db.py`:**
+**New infrastructure — `core/io/entity_db.py`:**
 
 ```python
 import duckdb, os
@@ -2003,7 +2003,7 @@ CREATE TABLE IF NOT EXISTS alliance_contact_labels (
 
 | Phase | Work | New Jobs | New Tables | Effort |
 |-------|------|----------|------------|--------|
-| **0** — Infrastructure | Create `core/db/entity_db.py`; migrate existing character tables to DuckDB + character_id | 0 | 0 (migration) | Medium |
+| **0** — Infrastructure | Create `core/io/entity_db.py`; migrate existing character tables to DuckDB + character_id | 0 | 0 (migration) | Medium |
 | **1** — Wire WIP character collectors | Split collectors.py; create extended.py; wire 1 job | 1 | 15 (personal DuckDB) | Low |
 | **2** — New personal collectors | Code ~17 new character collectors | 2 | ~17 (personal DuckDB) | Medium |
 | **3** — Corporation collectors | New `collectors/corp/` package; ~12 domain modules | ~10 | ~30 (corp DuckDB) | **High** |
@@ -2358,7 +2358,7 @@ except Exception:
 
 | Requirement | Phase | Notes |
 |-------------|-------|-------|
-| `core/db/entity_db.py` created | 0 | DuckDB connection manager for per-entity DBs. Provides `connect_entity(id)`, analogous to `core.db.public.connect()` for per-entity files. |
+| `core/io/entity_db.py` created | 0 | DuckDB connection manager for per-entity DBs. Provides `connect_entity(id)`, analogous to `core.io.public.connect()` for per-entity files. |
 | Existing character SQLite tables migrated to DuckDB | 0 | `character_skills`, `character_wallet`, `character_assets` → owner DuckDB with `character_id` column |
 | `auth_users.corporation_id` column | 3 | `ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS corporation_id BIGINT` |
 | `auth_users.alliance_id` column | 4 | `ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS alliance_id BIGINT` |
@@ -2373,7 +2373,7 @@ except Exception:
 ## 10. Verification Checklist
 
 ### Phase 0 — Infrastructure
-- [ ] `core/db/entity_db.py` provides `connect_entity()` returning fresh DuckDB connections
+- [ ] `core/io/entity_db.py` provides `connect_entity()` returning fresh DuckDB connections
 - [ ] Existing `character_skills`, `character_wallet`, `character_assets` migrated to `<owner_id>.duckdb` with `character_id` column
 - [ ] Auth token storage in SQLite remains functional (no regressions)
 

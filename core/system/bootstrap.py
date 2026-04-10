@@ -37,7 +37,7 @@ def get_subsystem_status() -> dict:
 
     # SDE warehouse
     try:
-        import core.db.public as _pub
+        import core.io.public as _pub
         ws = _pub.get_warehouse_status()
         manifest = ws.get("manifest") or {}
         status["sde"] = {
@@ -100,7 +100,7 @@ def prepare_sde_sources() -> None:
         return  # Already available
 
     logger.info("SDE sources not found — downloading and preparing...")
-    from core.db.sde_loader import download_sde, unzip_sde
+    from core.io.sde_loader import download_sde, unzip_sde
     download_sde()
     unzip_sde()
     logger.info("SDE sources ready.")
@@ -109,14 +109,14 @@ def prepare_sde_sources() -> None:
 def update_sde_full() -> dict:
     """Full SDE pipeline: download → extract → prune → schema regen → warehouse → cleanup.
 
-    Unlike ``core.db.sde_loader.update_sde()``, this function regenerates
-    ``core/db/generated/sde_schema.json`` from the freshly extracted YAML files
+    Unlike ``core.io.sde_loader.update_sde()``, this function regenerates
+    ``core/io/generated/sde_schema.json`` from the freshly extracted YAML files
     *before* building the warehouse.  This keeps the schema in sync whenever CCP
     adds new SDE columns or tables between releases.
 
-    Returns the warehouse status dict from ``core.db.sde_loader.rebuild_sde_warehouse()``.
+    Returns the warehouse status dict from ``core.io.sde_loader.rebuild_sde_warehouse()``.
     """
-    from core.db.sde_loader import (
+    from core.io.sde_loader import (
         download_sde, unzip_sde,
         rebuild_sde_warehouse, cleanup,
     )
@@ -260,7 +260,7 @@ def ensure_sde_ready(auto_update: bool = True) -> None:
     *auto_update* is True.  Network or build failures are caught and logged so
     startup continues with whatever state the warehouse is currently in.
     """
-    from core.db.sde_loader import warehouse_exists, check_sde_currency
+    from core.io.sde_loader import warehouse_exists, check_sde_currency
 
     if not warehouse_exists():
         if auto_update:

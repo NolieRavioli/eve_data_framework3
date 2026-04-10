@@ -450,7 +450,7 @@ Use `@require_admin` for admin-only routes. Avoid bare `@require_login` on new r
 | Adapter | Type | Description |
 |---------|------|-------------|
 | `db` | `_LiveDBAdapter` | `query()`, `query_one()`, `scalar()`, `private_query()`, `market_price()` |
-| `sde` | `core.db.sde` module | All SDE lookup functions directly |
+| `sde` | `core.io.sde` module | All SDE lookup functions directly |
 | `raw_esi` | `_LiveRawESIAdapter` | `get()`, `post()`, `request()` — rate-limited HTTP |
 | `esi` | `_LiveESIAdapter` | `execute(op_id, ...)`, `fetch_pages(op_id, ...)` — typed client |
 | `tokens` | `_LiveTokenAdapter` | `get(owner_id)` — raw token map |
@@ -505,7 +505,7 @@ collectors/my_domain/
 ```python
 # collectors/my_domain/worker.py
 import logging
-import core.db.public as db
+import core.io.public as db
 
 logger = logging.getLogger(__name__)
 
@@ -593,12 +593,12 @@ The `core/` layer is the infrastructure backbone. Applications import from `appl
 | `core.auth` | `require_login`, `require_admin`, `require_role`, SSO flow (`auth_bp`), user/role CRUD |
 | `core.auth.tokens` | `get_token()`, `pick_token()`, `fresh_token()`, `resolve_default_owner_id()` |
 | `core.auth.credentials` | `CredentialManager` — Fernet-encrypts/decrypts OAuth client credentials |
-| `core.db.public` | DuckDB connections and CRUD helpers |
-| `core.db.private` | Per-owner SQLite session factory |
-| `core.db.models` | `User`, `SiteAdmin` (DuckDB ORM), `Character` (SQLite ORM) |
-| `core.db.reader` | Read helpers — `query_rows()`, `query_one()`, `query_scalar()`, `get_db_file_stats()` |
-| `core.db.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()` |
-| `core.db.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
+| `core.io.public` | DuckDB connections and CRUD helpers |
+| `core.io.private` | Per-owner SQLite session factory |
+| `core.io.models` | `User`, `SiteAdmin` (DuckDB ORM), `Character` (SQLite ORM) |
+| `core.io.reader` | Read helpers — `query_rows()`, `query_one()`, `query_scalar()`, `get_db_file_stats()` |
+| `core.io.writer` | Serialised DuckDB write thread — `db_write()`, `db_executemany()` |
+| `core.io.sde` | SDE cache lookups — `name_from_type_id()`, `region_id_from_system_id()`, etc. |
 | `core.esi` | Re-exports `esi_get()`, `esi_post()`, `esi_request()` — all ESI HTTP |
 | `core.esi.rate` | `ESIRateLimiter` — floating-window token bucket, ETag caching, 429 backoff |
 | `core.esi.registry` | Fetch and parse ESI OpenAPI spec |
@@ -609,10 +609,10 @@ The `core/` layer is the infrastructure backbone. Applications import from `appl
 
 ### Adding a new private DB model
 
-Subclass `PrivateBase` in `core/db/models/identity.py` (or a new model file imported there):
+Subclass `PrivateBase` in `core/io/models/identity.py` (or a new model file imported there):
 
 ```python
-from core.db.models import PrivateBase
+from core.io.models import PrivateBase
 from sqlalchemy import Column, Integer, String
 
 class MyCharacterData(PrivateBase):
@@ -629,7 +629,7 @@ class MyCharacterData(PrivateBase):
 DuckDB connections are **not thread-safe**. Always get a fresh connection per operation:
 
 ```python
-import core.db.public as db
+import core.io.public as db
 
 con = db.connect()
 try:
@@ -641,7 +641,7 @@ finally:
 For writes that must be serialised (to avoid DuckDB write contention), use the write thread:
 
 ```python
-from core.db.writer import db_write, db_executemany
+from core.io.writer import db_write, db_executemany
 
 db_write("INSERT INTO my_table VALUES (?, ?)", [1, "value"])
 db_executemany("INSERT INTO my_table VALUES (?, ?)", [(1, "a"), (2, "b")])

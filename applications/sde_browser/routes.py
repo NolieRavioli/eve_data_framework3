@@ -41,7 +41,7 @@ def index():
 @sde_bp.route("/update", methods=["POST"])
 @require_role("sde")
 def update():
-    from core.db.sde_loader import update_sde
+    from core.io.sde_loader import update_sde
     task_id = tasks.enqueue("SDE Update", update_sde, queue="public")
     return redirect(url_for("task_viewer.task_detail", task_id=task_id))
 

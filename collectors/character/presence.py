@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 
-import core.db.public as db
+import core.io.public as db
 from core.auth.tokens import pick_token, fresh_token
-from core.db.entity_db import connect_entity
+from core.io.entity_db import connect_entity
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-import core.db.public as db
+import core.io.public as db
 from core.auth.tokens import pick_token, fresh_token
 
 logger = logging.getLogger(__name__)

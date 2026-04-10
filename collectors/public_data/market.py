@@ -32,12 +32,12 @@ import logging
 import time
 from datetime import datetime
 
-from core.db.public import connect as public_connect
-from core.db import public as sde_store
-from core.db.market_buffer import begin_region, add_page, finish_region, discard_region
-from core.db.writer import db_executemany
+from core.io.public import connect as public_connect
+from core.io import public as sde_store
+from core.io.market_buffer import begin_region, add_page, finish_region, discard_region
+from core.io.writer import db_executemany
 from core.esi import esi_get as _esi_get
-import core.db.sde as sde
+import core.io.sde as sde
 from core.auth import resolve_default_owner_id, pick_token, fresh_token
 from core.config import get_market_config, get_structures_config
 

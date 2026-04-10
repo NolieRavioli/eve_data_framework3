@@ -12,9 +12,9 @@ Architecture:
         <module>.py       — ensure_tables(), data-fetch/write functions
 
 Write Discipline:
-    - DuckDB writes → core.db.writer (db_write, db_executemany, db_write_dataframe)
+    - DuckDB writes → core.io.writer (db_write, db_executemany, db_write_dataframe)
     - DuckDB DDL → direct public.connect() (synchronous, idempotent)
     - DuckDB reads → direct public.connect() (no serialization needed)
-    - Entity DuckDB writes → core.db.entity_db.connect_entity() per owner
+    - Entity DuckDB writes → core.io.entity_db.connect_entity() per owner
 """
 

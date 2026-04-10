@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 
-from core.db.public import connect as public_connect
-from core.db.writer import db_executemany
+from core.io.public import connect as public_connect
+from core.io.writer import db_executemany
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)

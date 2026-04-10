@@ -338,7 +338,7 @@ def _writer_loop(db_path: Path) -> None:
                             entry["rows"] += 1
             # Notify the DB stats publisher that a write occurred.
             try:
-                from core.db.stats import notify_write_activity
+                from core.io.stats import notify_write_activity
                 notify_write_activity()
             except Exception:
                 pass
@@ -381,7 +381,7 @@ def start_writer(db_path: str | Path | None = None) -> None:
         return  # already running
 
     if db_path is None:
-        from core.db.public import get_database_path
+        from core.io.public import get_database_path
         db_path = get_database_path()
 
     _db_path = Path(db_path)
@@ -440,7 +440,7 @@ def _current_task_id() -> str | None:
 
 def _fallback_write(sql: str, params: list[Any] | None) -> None:
     """Direct-connection fallback used when the writer is not running."""
-    from core.db.public import connect, get_database_path
+    from core.io.public import connect, get_database_path
     con = connect(get_database_path())
     try:
         con.execute(sql, params or [])
@@ -451,7 +451,7 @@ def _fallback_write(sql: str, params: list[Any] | None) -> None:
 
 def _fallback_executemany(sql: str, rows: list[Sequence[Any]]) -> None:
     """Direct-connection fallback used when the writer is not running."""
-    from core.db.public import connect, get_database_path
+    from core.io.public import connect, get_database_path
     con = connect(get_database_path())
     try:
         if rows:
@@ -526,7 +526,7 @@ def db_write_dataframe(sql: str, df: Any) -> int:
         return 0
     if not is_running():
         # Fallback: direct connection
-        from core.db.public import connect, get_database_path
+        from core.io.public import connect, get_database_path
         con = connect(get_database_path())
         try:
             con.register("_df_staging", df)

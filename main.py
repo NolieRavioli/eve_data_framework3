@@ -14,7 +14,7 @@ def main() -> None:
         time.sleep(1)
 
     # ── 0. At-rest decryption (before anything reads data files) ──────
-    from core.db.encryption import unseal_all, seal_all
+    from core.io.encryption import unseal_all, seal_all
     unseal_all()
 
     # ── 1. Config → RAM (single load, cached forever) ─────────────────────
@@ -31,11 +31,11 @@ def main() -> None:
     lifecycle.register_post_shutdown(seal_all)
 
     # ── 4. DB writer thread (registers with lifecycle) ────────────────────
-    from core.db.writer import start_writer
+    from core.io.writer import start_writer
     start_writer()
 
     # ── 5. Ensure public database exists (DDL only — fast, idempotent) ────
-    from core.db import ensure_schema
+    from core.io import ensure_schema
     ensure_schema()
 
     # ── 6. Bootstrap: ensure ESI codegen + SDE warehouse are current ───────
@@ -43,11 +43,11 @@ def main() -> None:
     bootstrap_all(settings)
 
     # ── 7. Warm SDE in-memory caches ──────────────────────────────────────
-    from core.db import warm_caches
+    from core.io import warm_caches
     warm_caches(get_sde_config())
 
     # ── 8. Collector tables + ESI cache ───────────────────────────────────
-    from core.db import initialize_collector_tables, seed_esi_cache
+    from core.io import initialize_collector_tables, seed_esi_cache
     initialize_collector_tables()
     seed_esi_cache()
 
@@ -59,7 +59,7 @@ def main() -> None:
     scheduler.start()
 
     # ── 10. Stats & process publishers (register with lifecycle) ──────────
-    from core.db.stats import start_db_stats_publisher
+    from core.io.stats import start_db_stats_publisher
     from core.bus.process_pub import start_process_publisher
     start_db_stats_publisher()
     start_process_publisher()

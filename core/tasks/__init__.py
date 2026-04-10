@@ -18,8 +18,8 @@ from core.tasks.output import rate_stream, log_stream
 from core.tasks.engine import get_engine, SchedulerEngine
 from core.tasks.jobs import register_all_jobs
 
-# Writer thread start/stop stays in core.db.writer — it's a DB concern
-from core.db.writer import start_writer, stop_writer
+# Writer thread start/stop stays in core.io.writer — it's a DB concern
+from core.io.writer import start_writer, stop_writer
 
 __all__ = [
     "Task", "enqueue", "get_task", "get_tasks_for_owner", "get_all_tasks",

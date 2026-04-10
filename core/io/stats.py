@@ -51,7 +51,7 @@ def get_table_stats(db_path: str | Path | None = None) -> list[dict]:
         estimated_size_bytes — int | None  (from DuckDB internal stats)
         column_count         — int | None
     """
-    from core.db.public import connect, get_database_path
+    from core.io.public import connect, get_database_path
 
     target = Path(db_path) if db_path else get_database_path()
     if not target.exists():
@@ -109,7 +109,7 @@ def get_write_rate_stats() -> dict:
     Returns the full ``get_writer_stats()`` dict plus:
         error_rate_pct — float: percentage of writes that failed
     """
-    from core.db.writer import get_writer_stats
+    from core.io.writer import get_writer_stats
 
     stats = get_writer_stats()
     total = stats.get("writes_total", 0)
@@ -133,7 +133,7 @@ def optimization_hints(db_path: str | Path | None = None) -> list[dict]:
     hints: list[dict] = []
 
     # ── DB file / WAL ──────────────────────────────────────────────────────────
-    from core.db.reader import get_db_file_stats
+    from core.io.reader import get_db_file_stats
     fs = get_db_file_stats(db_path)
     wal_bytes = fs.get("wal_size_bytes", 0)
     db_bytes = fs.get("file_size_bytes", 0)
@@ -154,7 +154,7 @@ def optimization_hints(db_path: str | Path | None = None) -> list[dict]:
         })
 
     # ── Writer performance ─────────────────────────────────────────────────────
-    from core.db.writer import get_writer_stats
+    from core.io.writer import get_writer_stats
     ws = get_writer_stats()
     p95 = ws.get("p95_ms")
     p99 = ws.get("p99_ms")
@@ -307,9 +307,9 @@ def get_db_gateway_stats() -> dict:
         owner_totals  — per-owner aggregated totals ("SYSTEM" bucket for owner_id 0)
         weights       — configured DB-unit weights from config.yaml / defaults
     """
-    from core.db.writer import get_writer_stats, get_attribution_snapshot
-    from core.db.reader import get_read_stats
-    from core.db.market_buffer import get_cache_stats
+    from core.io.writer import get_writer_stats, get_attribution_snapshot
+    from core.io.reader import get_read_stats
+    from core.io.market_buffer import get_cache_stats
     from core.config import get_db_unit_weights
 
     weights = get_db_unit_weights()

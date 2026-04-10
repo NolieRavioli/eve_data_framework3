@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-import core.db.public as db
+import core.io.public as db
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)

@@ -109,7 +109,7 @@ def main() -> None:
 
     parser.add_argument("--example-config", dest="example_config", action="store_true", help="Only generate example.config.yaml (discover all loggers, SDE keys); skip ESI steps.")
 
-    parser.add_argument("--sde-schema", dest="sde_schema", action="store_true", help="Only generate core/db/generated/sde_schema.json from _sde/ YAML files.")
+    parser.add_argument("--sde-schema", dest="sde_schema", action="store_true", help="Only generate core/io/generated/sde_schema.json from _sde/ YAML files.")
 
     args = parser.parse_args()
 
@@ -141,17 +141,17 @@ def main() -> None:
 
     # ── Thin runtime initialization (mirrors main.py steps 0, 1, 4, 5) ──────
     # Needed so DB-touching build steps (spec fetch, codegen) work correctly.
-    from core.db.encryption import unseal_all
+    from core.io.encryption import unseal_all
     unseal_all()
 
     from core.config import ensure_dependencies, initialize_runtime_environment
     settings = initialize_runtime_environment()
     ensure_dependencies(settings)
 
-    from core.db.writer import start_writer
+    from core.io.writer import start_writer
     start_writer()
 
-    from core.db import ensure_schema
+    from core.io import ensure_schema
     ensure_schema()
     # ────────────────────────────────────────────────────────────────────────
 

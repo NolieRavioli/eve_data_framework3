@@ -536,7 +536,7 @@ def replace_market_orders_for_region(region_id: int, rows: list[dict]) -> int:
     if not payload:
         return 0
     import pandas as pd
-    from core.db.writer import db_write, db_write_dataframe
+    from core.io.writer import db_write, db_write_dataframe
     _COLUMNS = [
         "order_id", "type_id", "location_id", "region_id", "is_buy_order",
         "issued", "duration", "price", "order_range", "volume_remain",
@@ -558,7 +558,7 @@ def upsert_market_orders(rows: list[dict]) -> int:
     payload = _market_order_payload(rows)
     if not payload:
         return 0
-    from core.db.writer import db_executemany_nowait
+    from core.io.writer import db_executemany_nowait
     return db_executemany_nowait(
         """
         INSERT INTO market_orders (
@@ -670,7 +670,7 @@ def upsert_structures(rows: list[dict]) -> int:
         for row in rows
         if row.get("structure_id") is not None
     ]
-    from core.db.writer import db_executemany
+    from core.io.writer import db_executemany
     return db_executemany(
         """
         INSERT OR REPLACE INTO structures (
@@ -694,7 +694,7 @@ def mark_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.db.writer import db_write
+    from core.io.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -715,7 +715,7 @@ def mark_structures_enrich_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.db.writer import db_write
+    from core.io.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -736,7 +736,7 @@ def mark_market_structures_forbidden(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.db.writer import db_write
+    from core.io.writer import db_write
     forbidden_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -757,7 +757,7 @@ def mark_structures_market_refreshed(
     if not structure_ids:
         return
     from datetime import timedelta
-    from core.db.writer import db_write
+    from core.io.writer import db_write
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     placeholders = ", ".join(["?"] * len(structure_ids))
     db_write(
@@ -805,7 +805,7 @@ def mark_region_market_refreshed(
 ) -> None:
     """Record that a region's market was successfully fetched; skip it for cooldown_seconds."""
     from datetime import timedelta
-    from core.db.writer import db_write_nowait
+    from core.io.writer import db_write_nowait
     refreshed_until = _utc_now() + timedelta(seconds=cooldown_seconds)
     db_write_nowait(
         """
@@ -825,7 +825,7 @@ def cleanup_stale_market_orders_for_region(region_id: int, before_timestamp: dat
     Orders refreshed during the current fetch cycle have ``last_seen`` ≥
     before_timestamp and are not affected.
     """
-    from core.db.writer import db_write_nowait
+    from core.io.writer import db_write_nowait
     db_write_nowait(
         "DELETE FROM market_orders WHERE region_id = ? AND last_seen < ?",
         [region_id, before_timestamp],
@@ -847,7 +847,7 @@ def upsert_market_structures(rows: list[dict]) -> int:
         for row in rows
         if row.get("structure_id") is not None
     ]
-    from core.db.writer import db_executemany
+    from core.io.writer import db_executemany
     return db_executemany(
         """
         INSERT OR REPLACE INTO market_structures (
@@ -1146,7 +1146,7 @@ def query_browser_sql(
 
 
 def list_entity_browser_tables(owner_id: int) -> dict[str, list[str]]:
-    from core.db.entity_db import connect_entity
+    from core.io.entity_db import connect_entity
     con = connect_entity(int(owner_id))
     try:
         rows = con.execute(
@@ -1172,7 +1172,7 @@ def query_entity_browser_sql(
     row_limit: int = 500,
 ) -> dict:
     sql = _validate_browser_sql(raw_sql)
-    from core.db.entity_db import connect_entity
+    from core.io.entity_db import connect_entity
     con = connect_entity(int(owner_id))
     try:
         result = con.execute(sql)

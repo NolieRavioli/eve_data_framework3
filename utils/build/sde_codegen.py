@@ -1,7 +1,7 @@
 """SDE schema codegen — introspect ``_sde/`` JSONL files and emit a JSON schema.
 
-The generated schema (``core/db/generated/sde_schema.json``) drives the SDE
-warehouse builder in ``core/db/sde_loader.py``.  All SDE tables use the
+The generated schema (``core/io/generated/sde_schema.json``) drives the SDE
+warehouse builder in ``core/io/sde_loader.py``.  All SDE tables use the
 ``sde_{stem}`` naming convention.
 
 Entry point
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SDE_ROOT = Path(os.getenv("SDE_PATH", "_sde"))
-_DEFAULT_OUTPUT = Path("core/db/generated/sde_schema.json")
+_DEFAULT_OUTPUT = Path("core/io/generated/sde_schema.json")
 
 # ---------------------------------------------------------------------------
 # camelCase → snake_case conversion

@@ -17,8 +17,8 @@ import logging
 import os
 from pathlib import Path
 
-import core.db.public as db
-from core.db.entity_db import connect_entity
+import core.io.public as db
+from core.io.entity_db import connect_entity
 from core.esi import esi_get
 
 logger = logging.getLogger(__name__)
