@@ -1,6 +1,6 @@
 
 
-collectors simply workat the lowest level to pass esi over to the db writer.  
+collectors simply workat the lowest level to pass esi over to the db writer. The biggest difference between analysis and collectors is that collectors must be given the current users' esi auth token. Analysis task might have to perform a task using specific auth tokens or multiple auth tokens.  
 collectors are considered, not generated. They must be manually rebuilt when affected by ESI and SDE updates.  
 these collectors own and register each of the tables with `io` modules' model engine.
 
@@ -20,6 +20,11 @@ PUBLIC alliances
 https://esi.evetech.net/alliances  
  **Database enrichment needed from `analysis/`:**  
    - https://esi.evetech.net/alliances/{alliance_id}
+
+---
+
+ALLIANCE corporations  
+https://esi.evetech.net/alliances/{alliance_id}/corporations
 
 ---
 
@@ -112,11 +117,6 @@ ALLIANCE contacts
 https://esi.evetech.net/alliances/{alliance_id}/contacts  
  **Database enrichment needed from `analysis/`:**  
    - https://esi.evetech.net/alliances/{alliance_id}/contacts/labels
-
----
-
-ALLIANCE corporations  
-   - https://esi.evetech.net/alliances/{alliance_id}/corporations
 
 ---
 
@@ -456,3 +456,74 @@ https://esi.evetech.net/wars
    - https://esi.evetech.net/wars/{war_id}/killmails
 
 ---
+```
+collectors/												# define the table model, required scopes, `esi` passing to `io`. invokers:
+	__init__.py											# get proper token,  
+
+	alliance/
+		alliance.py										# corporations(alliance_id)
+		contacts.py										# contacts(alliance_id)
+
+	corp/
+		__init__.py										# ensure Corp Role Token for the
+		assets.py										# assets(), names(asset_id: list) locations(asset_id: list)
+		contacts.py										# contacts()
+		contracts.py									# contracts(), items(contract_id), bids(contract_id)
+		corporation.py									# 
+		corp_projects.py								# 
+		faction_warfare.py
+		fleets.py
+		freelance.py
+		industry.py
+		killmails.py
+		market.py
+		planetary_interaction.py
+		wallet.py
+
+	personal/
+		assets.py										# characterAssets(character_id), 
+		calandar.py										# 
+		character.py									#
+		clones.py
+		contacts.py
+		contracts.py
+		corporation.py
+		corp_projects.py
+		faction_warfare.py
+		fittings.py
+		fleets.py
+		freelance.py
+		industry.py
+		killmails.py
+		location.py
+		loyalty.py
+		mail.py
+		market.py
+		planetary_interaction.py
+		skills.py
+		wallet.py
+
+	public/
+		alliance.py										# allAlliances()
+		characters.py									# character(character_id), 
+		contracts.py
+		corporation.py
+		dogma.py # if needed
+		faction_warfare.py
+		freelance.py
+		incursions.py
+		industry.py
+		insurance.py # if needed
+		loyalty.py
+		market.py										
+		meta.py # if needed
+		planetary_interaction.py # not really needed
+		routes.py										# simple table for route caching.
+		soverngty.py
+		status.py
+		universe.py
+		wars.py
+
+
+		
+```

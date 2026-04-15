@@ -2,6 +2,7 @@
 
 the `io` module is a data persistence framework for the whole codebase. all data is encrypted at rest.  
 It holds the data in accessible memory buffers that get copied to disk as fast as possible for persistent data storage.  
+The memory buffer keeps recently written or read data fresh in-memory cache. If data is read or written
 The data is stored in very fast duckDB files. There is one file for all public data, and there are 'entity_db's that are one file for each corp_id/alliance_id/character_id.
 
 `io` has a framework for collectors and analysis tasks to define new tables themselves. There should be no need to modify any core systems to implement new analysis tables / esi collector tables.  
@@ -55,15 +56,16 @@ Here is how i imagine the flow (after initalization, before population of all ta
 
 i imagine this:
 ```
-io/
+io/                     # 'local data' core module
     __init__.py
-    writer.py       # write data engine, functions and helpers
-    reader.py       # read data engine, functions and helpers
-    usage.py        # usage tracking engine via writer and reader
-    modelEngine.py  # table framework engine functions and helpers invoked in core, collectors, and analysis.
-    encryption.py   # database encryption functions and helpers
-    public.py       # framework for _publicData/public.duckDB . Owns the file creation.
-    entity.py       # framework for _privateData/*.duckDB . Owns the file creation.
+    writer.py           # write data engine, functions and helpers
+    reader.py           # read data engine, functions and helpers
+    cache.py            # cache engine, functions and helpers
+    usage.py            # usage tracking engine via writer and reader
+    models.py           # table framework engine functions and helpers invoked in core, collectors, and analysis.
+    encryption.py       # database encryption functions and helpers
+    public.py           # framework for _publicData/public.duckDB
+    entity.py           # framework for _privateData/*.duckDB
 ```
 
 remove the non-framework shit from `core/io/`.
