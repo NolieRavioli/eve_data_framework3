@@ -1,5 +1,6 @@
 .git
 development/
+testing/
 
 # data folders
 _privateData
