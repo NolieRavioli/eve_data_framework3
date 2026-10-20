@@ -29,6 +29,9 @@ def index():
 
 @setup_bp.route("/setup", methods=["POST"])
 def save():
+    # Same guard as the GET handler: once configured, nobody may overwrite the SSO credentials.
+    if _credentials_exist():
+        return redirect(url_for("home.index"))
     client_id = request.form.get("client_id", "").strip()
     client_secret = request.form.get("client_secret", "").strip()
     redirect_uri = request.form.get("redirect_uri", "").strip()
