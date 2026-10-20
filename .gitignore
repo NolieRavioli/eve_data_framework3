@@ -15,3 +15,15 @@ config.yaml
 # Virtual environments
 .venv/
 venv/
+
+# Local secrets and data: never commit
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+client_secret*.json
+token*.json
+*.db
+*.sqlite
+*.sqlite3
